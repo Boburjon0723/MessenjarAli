@@ -38,6 +38,22 @@ export function parseCreatedToMs(raw: unknown): number | null {
 }
 
 /**
+ * `created_at` bo‘sh/null bo‘lganda — **Date.now() emas**; backend bilan bir xil.
+ * 2020-01-01 emas — "2020 yanvar" va haqiqiy sanalar aralashmasin.
+ */
+const SYNTHETIC_DAY_ANCHOR_UTC_MS = Date.UTC(2026, 3, 12);
+
+export function stableIsoWhenCreatedAtNull(messageId: string, index: number): string {
+    const hex = String(messageId).replace(/-/g, '');
+    let n = 0;
+    for (let i = 0; i < Math.min(hex.length, 16); i++) {
+        const v = parseInt(hex[i]!, 16);
+        if (!Number.isNaN(v)) n = (n * 16 + v) >>> 0;
+    }
+    return new Date(SYNTHETIC_DAY_ANCHOR_UTC_MS + (n % 86_400_000) + index).toISOString();
+}
+
+/**
  * Kanonik `created_at` qatori (UI sort / ko‘rsatish).
  * API allaqachon ISO yuborsa — o‘zgartirmaymiz; `Date` — `toISOString()`; raqam/unix — `parseCreatedToMs` + ISO.
  * Mavjud ISO qatorni `parseCreatedToMs` → `new Date(ms).toISOString()` qilib aylantirmaslik (backend bilan bir xil).
@@ -90,10 +106,13 @@ export function getDisplayTimeForMessage(
 function deriveSenderFromRaw(raw: Record<string, unknown>): ChatSender {
     const user = getUser();
     const myId = user?.id != null ? String(user.id) : '';
-    if (raw.sender === 'me' || raw.sender === 'them') return raw.sender;
     const sid = raw.sender_id ?? raw.senderId;
     const sidStr = sid != null && sid !== '' ? String(sid) : '';
-    if (myId && sidStr && sidStr === myId) return 'me';
+    /** `sender` maydoni kesh / eski optimistic da noto‘g‘ri bo‘lishi mumkin — `sender_id` ustun (DB/API). */
+    if (myId && sidStr) {
+        return sidStr === myId ? 'me' : 'them';
+    }
+    if (raw.sender === 'me' || raw.sender === 'them') return raw.sender;
     return 'them';
 }
 
@@ -396,23 +415,18 @@ export function sortChatMessagesLocal<T extends SortableChatRow>(arr: T[]): T[] 
 
 export function mapApiMessagesToLocal(history: unknown[]): ChatMessage[] {
     const user = (getUser() || {}) as { id?: string };
-    const n = history.length;
     const mapped = history.map((raw, index) => {
         const m = raw as Record<string, unknown>;
         const senderIdRaw = m.sender_id ?? m.senderId ?? (m.sender as { id?: unknown } | undefined)?.id;
         let createdRaw = readMessageCreatedRaw(m);
         let created = normalizeCreatedAtIso(createdRaw);
-        /** API `created_at` yo‘q/noto‘g‘ri — `normalizeChatMessage` dagi `new Date()` o‘rniga ketma-ket farq */
+        /** API `created_at` null — Date.now() emas, id ga bog‘liq barqaror ISO (backend bilan mos). */
         if (!created && parseCreatedToMs(createdRaw) == null) {
-            const staggeredMs = Date.now() - (n - 1 - index) * 1000;
-            createdRaw = new Date(staggeredMs).toISOString();
+            const sid = String(m.id ?? m._id ?? m.messageId ?? `row_${index}`);
+            createdRaw = stableIsoWhenCreatedAtNull(sid, index);
             created = normalizeCreatedAtIso(createdRaw);
             if (process.env.NODE_ENV === 'development') {
-                chatDebug('mapApiMessagesToLocal: missing created_at, staggered fallback', {
-                    id: m.id,
-                    index,
-                    staggeredMs,
-                });
+                chatDebug('mapApiMessagesToLocal: missing created_at, stable id fallback', { id: sid, index });
             }
         }
         const fallbackId = `fallback_${String(senderIdRaw ?? '')}_${String(parseCreatedToMs(createdRaw) ?? 'na')}_${index}`;
