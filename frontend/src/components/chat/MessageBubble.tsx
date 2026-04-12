@@ -3,10 +3,9 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import MediaContextMenu from './MediaContextMenu';
 import { useNotification } from '@/context/NotificationContext';
-import { translateText } from '@/lib/translation';
 import { useLanguage } from '@/context/LanguageContext';
 import type { ChatMessage, ChatMessageMetadata } from '@/types/chat-message';
-import { getDisplayTimeForMessage } from '@/lib/chat-message-cache';
+import { getDisplayTimeForMessage, normalizeMessageType } from '@/lib/chat-message-cache';
 
 interface MessageBubbleProps {
     message: ChatMessage;
@@ -24,7 +23,6 @@ interface MessageBubbleProps {
     onReplyClick?: (parentId: string) => void;
     activeAudioId?: string | null;
     onAudioPlay?: (id: string | null) => void;
-    onReact?: (emoji: string) => void;
     /** Rasm yuklanganda scroll saqlash (chat oxirida bo‘lsa) */
     onImageLoad?: () => void;
 }
@@ -32,7 +30,7 @@ interface MessageBubbleProps {
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message, chatId, onReply, isSelecting, isSelected, onSelect,
     uploadProgress, onMediaClick, onForward, onDelete,
-    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onReact, onImageLoad
+    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad
 }) => {
     const { t, language } = useLanguage();
     const { showError } = useNotification();
@@ -49,6 +47,37 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         }
         return md;
     }, [message.metadata]);
+
+    /** Faqat UI tarmoq tanlash: `img` → `image` (cache/legacy); shartlar message.text ga bog‘lanmaydi */
+    const messageType = useMemo(() => normalizeMessageType(message.type), [message.type]);
+
+    /** Rasm/video/audio src: normalizeChatMessage allaqachon metadata dan to‘ldirgan message.text */
+    const mediaSrc = useMemo(() => {
+        const raw = (message.text || '').trim();
+        if (!raw) return '';
+        if (/^https?:\/\//i.test(raw)) return raw;
+        const base = (process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app').replace(/\/$/, '');
+        return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
+    }, [message.text]);
+
+    /**
+     * Audio UI faqat `voice` yoki `file` + audio mimetype/uzantisi.
+     * Eski xato: `message.text` faqat .mp3 bilan tekshirilgan — `image` ham audio bo‘lib qolishi mumkin edi.
+     */
+    const isAudioFile = useMemo(() => {
+        if (messageType === 'voice') return true;
+        if (messageType === 'image' || messageType === 'video') return false;
+        if (messageType === 'file') {
+            if (typeof fileMeta.mimetype === 'string' && fileMeta.mimetype.startsWith('audio/')) return true;
+            if (message.text && /\.(mp3|wav|m4a|ogg)$/i.test(message.text)) return true;
+        }
+        return false;
+    }, [messageType, fileMeta.mimetype, message.text]);
+
+    const parentPreviewType = message.parentMessage
+        ? normalizeMessageType(message.parentMessage.type ?? 'text')
+        : 'text';
+
     /** Vaqt: avvalo `created_at` / `createdAt` (getDisplayTimeForMessage), keyin legacy `time` */
     const displayTime = useMemo(() => {
         const loc = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
@@ -59,23 +88,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const [currentTime, setCurrentTime] = useState(0);
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
-
-    const [isTranslating, setIsTranslating] = useState(false);
-    const [translatedText, setTranslatedText] = useState<string | null>(null);
-    const [translationError, setTranslationError] = useState(false);
-
-    const handleTranslate = async () => {
-        if (translatedText) {
-            setTranslatedText(null);
-            return;
-        }
-        setIsTranslating(true);
-        setTranslationError(false);
-        const result = await translateText(message.text, language === 'uz' ? 'en' : 'uz');
-        if (result) setTranslatedText(result);
-        else setTranslationError(true);
-        setIsTranslating(false);
-    };
 
     const handleMediaContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -90,13 +102,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     };
-
-    const isAudioFile = message.type === 'voice' ||
-        (typeof fileMeta.mimetype === 'string' && fileMeta.mimetype.startsWith('audio/')) ||
-        (message.text && message.text.toLowerCase().endsWith('.mp3')) ||
-        (message.text && message.text.toLowerCase().endsWith('.wav')) ||
-        (message.text && message.text.toLowerCase().endsWith('.m4a')) ||
-        (message.text && message.text.toLowerCase().endsWith('.ogg'));
 
     useEffect(() => {
         const audio = audioRef.current;
@@ -210,8 +215,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     };
 
     return (
-        <div id={`msg-${message.id}`} className={`flex flex-col mb-1 ${isOwn ? 'items-end' : 'items-start'} ${isContinuation ? 'mt-[-10px]' : 'mt-2'}`}>
-            <div className={`flex items-end gap-1 max-w-[92%] sm:max-w-[70%] group`}>
+        <div id={`msg-${message.id}`} className={`message-row ${isOwn ? 'items-end' : 'items-start'} ${isContinuation ? 'mt-1' : 'mt-2'}`}>
+            <div className={`relative flex items-end gap-1 max-w-[92%] sm:max-w-[70%] min-w-0 group`}>
                 {isSelecting && (
                     <div
                         className={`absolute inset-0 z-10 flex items-center ${isOwn ? 'justify-start pl-4' : 'justify-end pr-4'} bg-black/0 hover:bg-white/5 transition-colors rounded-xl cursor-pointer`}
@@ -243,13 +248,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     )
                 )}
 
-                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1`}>
+                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1 min-w-0 flex-1`}>
                     {!isOwn && !isContinuation && message.senderName && (
                         <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider px-2">{message.senderName}</span>
                     )}
 
-                    <div className={`relative shadow-sm overflow-hidden min-w-[60px]
-                        ${message.type === 'image' || message.type === 'video' ? 'rounded-2xl' : 'px-4 py-3 rounded-2xl'}
+                    <div className={`message-bubble relative shadow-sm overflow-hidden min-w-0
+                        ${messageType === 'image' || messageType === 'video' ? 'rounded-2xl' : 'px-4 py-3 rounded-2xl'}
                         ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white/10 backdrop-blur-xl text-white border border-white/5 rounded-bl-sm'}
                     `} onContextMenu={isSelecting ? undefined : handleMediaContextMenu}>
 
@@ -265,7 +270,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     {message.parentMessage.sender === (isOwn ? 'me' : 'them') ? t('me') : (message.parentMessage.senderName || t('interlocutor'))} {t('reply_to')}
                                 </p>
                                 <p className="text-[11px] text-white/60 truncate italic">
-                                    {message.parentMessage.type === 'text' ? message.parentMessage.text : (message.parentMessage.type === 'image' ? `🖼️ ${t('image')}` : (message.parentMessage.type === 'video' ? `🎥 ${t('video')}` : `📄 ${t('file')}`))}
+                                    {parentPreviewType === 'text'
+                                        ? message.parentMessage.text
+                                        : parentPreviewType === 'image'
+                                          ? `🖼️ ${t('image')}`
+                                          : parentPreviewType === 'video'
+                                            ? `🎥 ${t('video')}`
+                                            : `📄 ${t('file')}`}
                                 </p>
                             </div>
                         )}
@@ -291,34 +302,49 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             </div>
                         )}
 
-                        {message.type === 'image' ? (
-                            <div className="relative group/img min-w-[200px] cursor-pointer overflow-hidden" onClick={() => onMediaClick?.(message.text, 'image')}>
-                                <img
-                                    src={(message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`}
-                                    className="w-full max-h-[400px] object-cover rounded-lg bg-white/5"
-                                    decoding="async"
-                                    onLoad={onImageLoad}
-                                />
+                        {messageType === 'image' ? (
+                            <div className="message-bubble-body">
+                                <div
+                                    className="image-wrapper relative group/img cursor-pointer"
+                                    onClick={() => onMediaClick?.(mediaSrc, 'image')}
+                                >
+                                    {mediaSrc ? (
+                                        <img
+                                            src={mediaSrc}
+                                            alt=""
+                                            className="bg-white/5"
+                                            decoding="async"
+                                            onLoad={onImageLoad}
+                                        />
+                                    ) : (
+                                        <div className="min-h-[120px] flex items-center justify-center bg-white/5 text-white/45 text-xs px-4">
+                                            {t('image') || 'Image'}
+                                        </div>
+                                    )}
+                                </div>
                                 {fileMeta.caption != null && String(fileMeta.caption) !== '' && (
                                     <div className="px-4 py-2 text-sm text-white/90 border-t border-white/5">{String(fileMeta.caption)}</div>
                                 )}
-                                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-bold">{displayTime}</div>
                             </div>
-                        ) : message.type === 'video' ? (
-                            <div className="relative min-w-[200px] cursor-pointer group/video" onClick={() => onMediaClick?.(message.text, 'video')}>
-                                <video preload="metadata" src={(message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`} className="w-full max-h-[400px] object-cover rounded-lg" />
-                                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/video:opacity-100 transition-opacity bg-black/20">
-                                    <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
-                                        <svg className="h-6 w-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                        ) : messageType === 'video' ? (
+                            <div className="message-bubble-body">
+                                <div
+                                    className="video-wrapper relative cursor-pointer group/video"
+                                    onClick={() => onMediaClick?.(mediaSrc, 'video')}
+                                >
+                                    <video preload="metadata" src={mediaSrc || undefined} className="pointer-events-none" />
+                                    <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/video:opacity-100 transition-opacity bg-black/20 pointer-events-none rounded-[inherit]">
+                                        <div className="w-12 h-12 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30 pointer-events-auto">
+                                            <svg className="h-6 w-6 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                        </div>
                                     </div>
                                 </div>
                                 {fileMeta.caption != null && String(fileMeta.caption) !== '' && (
                                     <div className="px-4 py-2 text-sm text-white/90 border-t border-white/5">{String(fileMeta.caption)}</div>
                                 )}
-                                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-full bg-black/40 backdrop-blur-md text-[10px] font-bold">{displayTime}</div>
                             </div>
                         ) : isAudioFile ? (
-                            <div className="flex items-center gap-3 min-w-[260px] py-2 px-1">
+                            <div className="message-bubble-body flex items-center gap-3 w-full py-2 px-1 min-w-0">
                                 <button onClick={handlePlayPause} className={`w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isPlaying ? 'bg-blue-600 shadow-blue-500/50' : 'bg-blue-500 hover:bg-blue-400'}`}>
                                     {isPlaying ? (
                                         <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
@@ -331,8 +357,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                         <p className="text-[13px] font-bold text-white truncate min-w-0">
                                             {(typeof fileMeta.name === 'string' && fileMeta.name) ||
                                                 (typeof fileMeta.file_name === 'string' && fileMeta.file_name) ||
-                                                (message.text && message.text.split('/').pop()) ||
-                                                (message.type === 'voice' ? t('voice_message') : 'Audio')}
+                                                (mediaSrc && mediaSrc.split('/').pop()) ||
+                                                (messageType === 'voice' ? t('voice_message') : 'Audio')}
                                         </p>
                                         <span className="text-[11px] font-bold text-white/60 tabular-nums flex-shrink-0">
                                             {formatDuration(isPlaying ? currentTime : duration)}
@@ -346,16 +372,16 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     <div className="flex items-center justify-between mt-0.5">
                                         <span className="text-[10px] font-bold text-white/50">{formatDuration(isPlaying ? currentTime : duration)}</span>
                                         <span className="text-[9px] font-bold text-white/30 uppercase">
-                                            {message.type === 'voice' ? t('active') : formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
+                                            {messageType === 'voice' ? t('active') : formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
                                         </span>
                                     </div>
                                 </div>
-                                <audio preload="metadata" ref={audioRef} src={(message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`} className="hidden" />
+                                <audio preload="metadata" ref={audioRef} src={mediaSrc || undefined} className="hidden" />
                             </div>
-                        ) : message.type === 'file' ? (
-                            <div className="flex items-center gap-4 py-2 px-1 min-w-[260px] cursor-pointer group/file" onClick={() => {
+                        ) : messageType === 'file' ? (
+                            <div className="message-bubble-body flex items-center gap-4 w-full py-2 px-1 min-w-0 cursor-pointer group/file" onClick={() => {
                                 if (!message.isUploading) {
-                                    onMediaClick?.(message.text, 'file');
+                                    onMediaClick?.(mediaSrc, 'file');
                                 }
                             }}>
                                 <div className="w-12 h-12 rounded-2xl bg-white/10 group-hover/file:bg-blue-500/20 border border-white/5 transition-colors flex items-center justify-center text-blue-400 relative">
@@ -386,8 +412,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     </div>
                                 </div>
                             </div>
-                        ) : message.type === 'lesson_start' || message.type === 'consult_panel_invite' ? (
-                            <div className="flex flex-col gap-2 min-w-[200px]">
+                        ) : messageType === 'lesson_start' || messageType === 'consult_panel_invite' ? (
+                            <div className="message-bubble-body flex flex-col gap-2 w-full min-w-0">
                                 <p className="text-sm leading-relaxed font-semibold text-white">
                                     {renderText()}
                                 </p>
@@ -422,108 +448,56 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     </svg>
                                     {(() => {
                                         const isConsult =
-                                            message.type === 'consult_panel_invite' ||
+                                            messageType === 'consult_panel_invite' ||
                                             String(fileMeta.sessionStyle ?? '') === 'consult' ||
                                             /\bkonsultatsiy/i.test(message.text || '');
                                         return isConsult ? t('joined_meeting') : t('joined_lesson');
                                     })()}
                                 </button>
                             </div>
-                        ) : message.type === 'lesson_end' ? (
-                            <div className="min-w-[200px] rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2.5">
+                        ) : messageType === 'lesson_end' ? (
+                            <div className="message-bubble-body w-full min-w-0 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2.5">
                                 <p className="text-sm font-semibold leading-relaxed text-white">{renderText()}</p>
                             </div>
                         ) : (
-                            <div className="flex flex-col gap-1">
+                            <div className="message-bubble-body flex flex-col gap-1 w-full min-w-0">
                                 <p className="text-sm leading-relaxed">{renderText()}</p>
-                                {translatedText && (
-                                    <div className="mt-1 pt-1 border-t border-white/10 text-[13px] text-white/90 italic">
-                                        {translatedText}
-                                    </div>
-                                )}
-                                {isTranslating && (
-                                    <div className="mt-1 text-[10px] text-white/50 animate-pulse">{t('translating')}</div>
-                                )}
-                                {translationError && (
-                                    <div className="mt-1 text-[10px] text-red-400">{t('translation_error')}</div>
-                                )}
                             </div>
                         )}
                     </div>
-                    {/* Reactions row */}
-                    {message.reactions && Object.keys(message.reactions).length > 0 && (
-                        <div className="flex flex-wrap gap-1 px-1 mt-1">
-                            {Object.values(message.reactions).map((r) =>
-                                r.users && r.users.length > 0 ? (
-                                    <span
-                                        key={r.emoji}
-                                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/10 text-[10px] text-white/80"
-                                    >
-                                        <span>{r.emoji}</span>
-                                        <span className="text-[9px] font-semibold">{r.users.length}</span>
-                                    </span>
-                                ) : null
-                            )}
-                        </div>
-                    )}
-                    {message.type !== 'image' && message.type !== 'video' && (
-                        <div className="flex items-center gap-1 px-1 mt-0.5">
-                            {message.type === 'text' && (
-                                <button
-                                    onClick={handleTranslate}
-                                    className={`mr-1 text-[10px] font-bold transition-colors ${translatedText ? 'text-blue-400' : 'text-white/30 hover:text-white/60'}`}
-                                    title={t('back')} // repurposed for simplicity or could add new key
+                    <div className="flex items-center gap-1 px-1 mt-0.5">
+                        <span className="text-[9px] text-white/30 font-bold">{displayTime}</span>
+                        {isOwn && (
+                            message.isPending ? (
+                                <svg
+                                    className="h-3 w-3 text-white/40"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
                                 >
-                                    A/文
-                                </button>
-                            )}
-                            {onReact && (
-                                <div className="flex items-center gap-0.5 mr-1">
-                                    {['😃', '👍', '❤️'].map(emoji => (
-                                        <button
-                                            key={emoji}
-                                            type="button"
-                                            onClick={() => onReact(emoji)}
-                                            className="text-[12px] hover:scale-110 transition-transform"
-                                        >
-                                            {emoji}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-                            <span className="text-[9px] text-white/30 font-bold">{displayTime}</span>
-                            {isOwn && (
-                                message.isPending ? (
-                                    <svg
-                                        className="h-3 w-3 text-white/40"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                    >
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                ) : message.is_read ? (
-                                    <div className="flex -space-x-1.5 opacity-90">
-                                        <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                        <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    </div>
-                                ) : (
-                                    <svg
-                                        className="h-3 w-3 text-white/50"
-                                        fill="none"
-                                        viewBox="0 0 24 24"
-                                        stroke="currentColor"
-                                    >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                            ) : message.is_read ? (
+                                <div className="flex -space-x-1.5 opacity-90">
+                                    <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                                     </svg>
-                                )
-                            )}
-                        </div>
-                    )}
+                                    <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                    </svg>
+                                </div>
+                            ) : (
+                                <svg
+                                    className="h-3 w-3 text-white/50"
+                                    fill="none"
+                                    viewBox="0 0 24 24"
+                                    stroke="currentColor"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                </svg>
+                            )
+                        )}
+                    </div>
                 </div>
             </div>
 

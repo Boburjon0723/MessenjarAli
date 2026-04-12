@@ -71,6 +71,10 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         socketInstance.on('connect', () => {
             console.log('[SocketContext] Connected:', socketInstance.id);
             setIsConnected(true);
+        });
+
+        /** Faqat tarmoq uzilgandan keyin qayta ulanishda — birinchi `connect` da emas (ChatWindow ikki marta fetch qilmasin). */
+        socketInstance.on('reconnect', () => {
             window.dispatchEvent(new CustomEvent('socket_reconnected'));
         });
 

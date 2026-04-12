@@ -29,8 +29,10 @@ import {
     mergeIncomingSocketMessage,
     socketMessageTargetsChat,
     createOptimisticChatMessage,
+    normalizeMessageType,
 } from '@/lib/chat-message-cache';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
+import { computeMessageContinuation } from '@/lib/chat-continuation';
 import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage } from '@/types/chat-message';
 
@@ -79,6 +81,8 @@ interface ChatWindowProps {
     onMarkAsRead?: (chatId: string) => void;
     /** ChatCarouselPanel: karusel siljishi bilan ildiz fade ustma-ust tushmasin */
     suppressRootFade?: boolean;
+    /** Ikkita ChatWindow bir vaqtda (exit + active) bo‘lsa, faqat bittasiga socket obuna */
+    subscribeSocket?: boolean;
 }
 
 export default function ChatWindow({
@@ -88,6 +92,7 @@ export default function ChatWindow({
     onBack,
     onMarkAsRead,
     suppressRootFade = false,
+    subscribeSocket = true,
 }: ChatWindowProps) {
     const { t, tLines, language } = useLanguage();
     const { socket, isConnected } = useSocket();
@@ -105,6 +110,9 @@ export default function ChatWindow({
     const [isAddingContact, setIsAddingContact] = useState(false);
     const [isComplianceDismissed, setIsComplianceDismissed] = useState(false);
     const [blockStatus, setBlockStatus] = useState<{ isBlocked: boolean, blockedByMe: boolean }>({ isBlocked: false, blockedByMe: false });
+
+    const chatRef = useRef(chat);
+    chatRef.current = chat;
 
     // Media & Advanced Feature States
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -235,39 +243,6 @@ export default function ChatWindow({
             }
         } catch (e) {
             console.error(e);
-        }
-    };
-
-    const handleReactMessage = (msg: ChatMessage, emoji: string) => {
-        try {
-            const currentUser = getUser() || {};
-            const userId = String(currentUser?.id ?? '');
-            if (!userId) return;
-
-            setMessages(prev =>
-                prev.map(m => {
-                    if (m.id !== msg.id) return m;
-                    const reactions = m.reactions || {};
-                    const rawUsers = reactions[emoji]?.users;
-                    const existing: string[] = Array.isArray(rawUsers)
-                        ? rawUsers.map(u => String(u))
-                        : [];
-                    const hasReacted = existing.includes(userId);
-                    const updatedUsers: string[] = hasReacted
-                        ? existing.filter(id => id !== userId)
-                        : [...existing, userId];
-                    const next: ChatMessage = {
-                        ...m,
-                        reactions: {
-                            ...reactions,
-                            [emoji]: { emoji, users: updatedUsers }
-                        }
-                    };
-                    return next;
-                })
-            );
-        } catch {
-            // ignore reaction errors
         }
     };
 
@@ -984,17 +959,21 @@ export default function ChatWindow({
         }
     }, [messages, chat?.id]);
 
+    /** Strict Mode / ketma-ket renderda bir xil snapshot uchun takroriy CHAT_DEBUG oldini olish */
+    const lastDebugLast10KeyRef = useRef<string>('');
     useEffect(() => {
         if (!messages.length) return;
-        chatDebug('state last10 (after sort)', {
-            items: messages.slice(-10).map((m) => ({
-                id: m.id,
-                clientSideId: m.clientSideId,
-                created_at: m.created_at,
-                sender: m.sender,
-                text: (m.text || '').length > 40 ? `${(m.text || '').slice(0, 40)}…` : (m.text || ''),
-            })),
-        });
+        const items = messages.slice(-10).map((m) => ({
+            id: m.id,
+            clientSideId: m.clientSideId,
+            created_at: m.created_at,
+            sender: m.sender,
+            text: (m.text || '').length > 40 ? `${(m.text || '').slice(0, 40)}…` : (m.text || ''),
+        }));
+        const key = JSON.stringify(items);
+        if (key === lastDebugLast10KeyRef.current) return;
+        lastDebugLast10KeyRef.current = key;
+        chatDebug('state last10 (after sort)', { items });
     }, [messages]);
 
     const toggleMute = () => {
@@ -1041,6 +1020,31 @@ export default function ChatWindow({
         }
     }, [chat?.id, onMarkAsRead]);
 
+    const handleReceiveMessage = useCallback(
+        (message: Record<string, unknown>) => {
+            const cid = chatRef.current?.id;
+            if (!cid) return;
+            if (!socketMessageTargetsChat(message, String(cid))) return;
+            chatDebug('receive_message raw', {
+                incomingId: message.id,
+                incomingClientSideId: message.clientSideId,
+                incomingCreatedAt: message.created_at ?? message.createdAt,
+                sender_id: message.sender_id ?? message.senderId,
+                textPreview: String(message.content ?? message.text ?? '').slice(0, 60),
+            });
+            const user = (getUser() || {});
+            const senderId = message.sender_id ?? message.senderId;
+            setMessages((prev) =>
+                mergeIncomingSocketMessage(prev, message, user.id != null ? String(user.id) : undefined)
+            );
+            if (String(senderId) !== String(user.id)) {
+                if (audioRef.current) audioRef.current.play().catch(() => {});
+                markAsRead();
+            }
+        },
+        [markAsRead]
+    );
+
     // Handle incoming messages_read from socket
     useEffect(() => {
         if (!socket || !chat?.id) return;
@@ -1078,18 +1082,19 @@ export default function ChatWindow({
     }, [socket, chat?.id]);
 
     useEffect(() => {
-        if (!socket || !chat) return;
+        if (!socket || !chat?.id || subscribeSocket === false) return;
 
         const fetchHistory = async () => {
-            if (!chat.id) return;
+            const c = chatRef.current;
+            if (!c?.id) return;
             try {
-                const res = await apiFetch(`/api/chats/${chat.id}/messages`);
+                const res = await apiFetch(`/api/chats/${c.id}/messages`);
                 if (res.ok) {
                     const history = await res.json();
                     const mapped = mapApiMessagesToLocal(history);
                     setMessages((prev) => {
                         const next = mergeFetchedChatMessages(prev, mapped);
-                        writeChatMessageCache(chat.id, next);
+                        writeChatMessageCache(c.id!, next);
                         return next;
                     });
                     setTimeout(() => {
@@ -1104,27 +1109,11 @@ export default function ChatWindow({
         };
         fetchHistory();
         const joinCurrentRoom = () => {
-            if (chat?.id) socket.emit('join_room', chat.id);
+            const id = chatRef.current?.id;
+            if (id) socket.emit('join_room', id);
         };
         joinCurrentRoom();
 
-        const handleReceiveMessage = (message: Record<string, unknown>) => {
-            if (!socketMessageTargetsChat(message, String(chat.id))) return;
-            chatDebug('receive_message raw', {
-                incomingId: message.id,
-                incomingClientSideId: message.clientSideId,
-                incomingCreatedAt: message.created_at ?? message.createdAt,
-                sender_id: message.sender_id ?? message.senderId,
-                textPreview: String(message.content ?? message.text ?? '').slice(0, 60),
-            });
-            const user = (getUser() || {});
-            const senderId = message.sender_id ?? message.senderId;
-            setMessages((prev) => mergeIncomingSocketMessage(prev, message, user.id != null ? String(user.id) : undefined));
-            if (String(senderId) !== String(user.id)) {
-                if (audioRef.current) audioRef.current.play().catch(() => { });
-                markAsRead();
-            }
-        };
         socket.on('receive_message', handleReceiveMessage);
         socket.on('connect', joinCurrentRoom);
 
@@ -1141,74 +1130,87 @@ export default function ChatWindow({
         };
         window.addEventListener('socket_reconnected', handleReconnect);
 
-        return () => { 
+        return () => {
             socket.off('receive_message', handleReceiveMessage);
             socket.off('connect', joinCurrentRoom);
             socket.off('error', handleSocketError);
             window.removeEventListener('socket_reconnected', handleReconnect);
         };
-    }, [socket, chat, markAsRead, showError]);
+    }, [socket, chat?.id, subscribeSocket, markAsRead, showError, handleReceiveMessage]);
 
+    /** Bir xil tickda ikki marta chaqirish (masalan, g‘ayriixtiyoriy re-entrancy) oldini olish */
+    const sendMessageReentrantGuardRef = useRef(false);
+
+    const sendMessageRef = useRef<(textOverride?: string) => void | Promise<void>>(() => {});
     const sendMessage = async (textOverride?: string) => {
+        if (sendMessageReentrantGuardRef.current) return;
         const content = String(textOverride ?? inputValue ?? '').trim();
         if (!content || !chat) return;
-        const clientSideId = `temp_${Date.now()}`;
-        const inputContent = content;
-        const currentReplyTo = replyTo;
+        sendMessageReentrantGuardRef.current = true;
+        try {
+            const clientSideId = `temp_${Date.now()}`;
+            const inputContent = content;
+            const currentReplyTo = replyTo;
 
-        setInputValue("");
-        setReplyTo(null);
+            setInputValue("");
+            setReplyTo(null);
 
-        const meId = (getUser() as { id?: string } | null)?.id;
-        const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
-        setMessages((prev) => {
-            const optimistic = createOptimisticChatMessage({
-                id: clientSideId,
-                text: inputContent,
-                senderId: meId,
-                prevMessages: prev,
-                type: 'text',
-                parentId: currentReplyTo?.id,
-                parentMessage: currentReplyTo ?? undefined,
-                isPending: !isNetworkOnline || !isConnected,
-                locale: chatTimeLocale,
+            const meId = (getUser() as { id?: string } | null)?.id;
+            const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
+            setMessages((prev) => {
+                const optimistic = createOptimisticChatMessage({
+                    id: clientSideId,
+                    text: inputContent,
+                    senderId: meId,
+                    prevMessages: prev,
+                    type: 'text',
+                    parentId: currentReplyTo?.id,
+                    parentMessage: currentReplyTo ?? undefined,
+                    isPending: !isNetworkOnline || !isConnected,
+                    locale: chatTimeLocale,
+                });
+                return sortChatMessagesLocal([...prev, optimistic]);
             });
-            return sortChatMessagesLocal([...prev, optimistic]);
-        });
 
-        if (isNetworkOnline && isConnected && socket) {
-            const sendPayload = {
-                roomId: chat.id,
-                content: inputContent,
-                type: 'text' as const,
-                clientSideId,
-                parentId: currentReplyTo?.id
-            };
-            logChatEmitSend(sendPayload);
-            socket.emit('send_message', sendPayload);
-        } else {
-            // Offline - Save to IndexedDB
-            const offlineMsg: OfflineMessage = {
-                id: clientSideId,
-                chatId: String(chat.id),
-                text: inputContent,
-                type: 'text',
-                timestamp: Date.now(),
-                status: 'pending',
-                parentId: currentReplyTo?.id
-            };
-            try {
-                await maliDB.saveMessage(offlineMsg);
-            } catch (e) {
-                console.error("Failed to save offline msg", e);
+            if (isNetworkOnline && isConnected && socket) {
+                const sendPayload = {
+                    roomId: chat.id,
+                    content: inputContent,
+                    type: 'text' as const,
+                    clientSideId,
+                    parentId: currentReplyTo?.id
+                };
+                logChatEmitSend(sendPayload);
+                socket.emit('send_message', sendPayload);
+            } else {
+                // Offline - Save to IndexedDB
+                const offlineMsg: OfflineMessage = {
+                    id: clientSideId,
+                    chatId: String(chat.id),
+                    text: inputContent,
+                    type: 'text',
+                    timestamp: Date.now(),
+                    status: 'pending',
+                    parentId: currentReplyTo?.id
+                };
+                try {
+                    await maliDB.saveMessage(offlineMsg);
+                } catch (e) {
+                    console.error("Failed to save offline msg", e);
+                }
             }
+        } finally {
+            queueMicrotask(() => {
+                sendMessageReentrantGuardRef.current = false;
+            });
         }
     };
+    sendMessageRef.current = sendMessage;
 
     // O'ng panel (UserInfoPanel) dan xabar yuborishni qo'llab-quvvatlash
     useEffect(() => {
         const handler = (e: CustomEvent<{ text: string }>) => {
-            if (chat && e.detail?.text?.trim()) sendMessage(e.detail.text.trim());
+            if (chat && e.detail?.text?.trim()) void sendMessageRef.current(e.detail.text.trim());
         };
         window.addEventListener('panel_quick_send', handler as EventListener);
         return () => window.removeEventListener('panel_quick_send', handler as EventListener);
@@ -1229,9 +1231,12 @@ export default function ChatWindow({
         setIsUploadingMedia(true);
         const { uploadFileWithProgress } = await import('@/lib/upload');
 
+        /** Bir tanlovda bir nechta fayl: temp id `i` indeksi sortda ketma-katlikni mustahkamlaydi */
+        const uploadBatchMs = Date.now();
+
         for (let i = 0; i < files.length; i++) {
             const file = files[i];
-            const tempId = `temp_${Date.now()}_${i}`;
+            const tempId = `temp_${uploadBatchMs}_${i}`;
 
             // Optimistic UI for each file
             const initialType = file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : (file.type.startsWith('audio/') ? 'voice' : 'file'));
@@ -1401,10 +1406,11 @@ export default function ChatWindow({
                 if (!text.includes(searchQuery.toLowerCase())) return false;
             }
 
-            // Type filter
-            if (searchType === 'text' && m.type !== 'text') return false;
-            if (searchType === 'media' && !['image', 'video', 'voice'].includes(m.type)) return false;
-            if (searchType === 'files' && m.type !== 'file') return false;
+            // Type filter (legacy `img` → `image` bilan bir xil)
+            const nt = normalizeMessageType(m.type);
+            if (searchType === 'text' && nt !== 'text') return false;
+            if (searchType === 'media' && !['image', 'video', 'voice'].includes(nt)) return false;
+            if (searchType === 'files' && nt !== 'file') return false;
 
             // Date filter
             const created = parseMessageDate(m) ?? new Date();
@@ -1481,6 +1487,10 @@ export default function ChatWindow({
     if (!chat) return <div className="flex-1 flex items-center justify-center text-white/40">{t('select_chat')}</div>;
 
     const currentUser = getUser() || {};
+    const continuationOpts = {
+        peerUserId: getPrivateChatPeerUserId(chat),
+        myUserId: currentUser?.id != null ? String(currentUser.id) : null,
+    };
     const chatCompliance =
         chat?.type === 'private' && chat?.otherUser
             ? getExpertComplianceNotice(
@@ -1812,28 +1822,12 @@ export default function ChatWindow({
                     </div>
                 )}
                 {renderedMessages.map((msg, i) => {
-                    const prevMsg = renderedMessages[i - 1];
+                    /** To‘liq ro‘yxatdagi indeks — virtual oyna boshidagi xabar uchun ham oldingi xabar `filteredMessages` dan olinadi. */
+                    const absoluteIdx = renderStartIndex + i;
+                    const prevMsg = absoluteIdx > 0 ? filteredMessages[absoluteIdx - 1] : undefined;
                     const msgDate = parseMessageDate(msg);
                     const prevMsgDate = prevMsg ? parseMessageDate(prevMsg) : null;
-                    const senderKey = (m: ChatMessage) =>
-                        m.sender_id != null && m.sender_id !== ''
-                            ? String(m.sender_id)
-                            : String(m.sender ?? '');
-                    /** Matn / media turini ajratish — rasm yoki videodan keyingi matn rasm “tagidagi davom” deb yopishilmasin */
-                    const isNonTextBubble = (t: string) =>
-                        ['image', 'video', 'voice', 'file'].includes(t);
-                    const prevT = String(prevMsg?.type ?? 'text');
-                    const currT = String(msg.type ?? 'text');
-                    const mediaTextBoundary =
-                        prevMsg && isNonTextBubble(prevT) !== isNonTextBubble(currT);
-                    const isContinuation = Boolean(
-                        prevMsg &&
-                        !mediaTextBoundary &&
-                        senderKey(prevMsg) === senderKey(msg) &&
-                        msgDate &&
-                        prevMsgDate &&
-                        msgDate.getTime() - prevMsgDate.getTime() < 300000
-                    );
+                    const isContinuation = computeMessageContinuation(prevMsg, msg, continuationOpts);
                     const isNewDay = Boolean(
                         msgDate &&
                         (!prevMsgDate || msgDate.toDateString() !== prevMsgDate.toDateString())
@@ -1849,7 +1843,7 @@ export default function ChatWindow({
                     };
 
                     return (
-                        <React.Fragment key={msg.id || i}>
+                        <React.Fragment key={msg.id || `msg-${absoluteIdx}`}>
                             {isNewDay && msgDate && (
                                 <div className="flex items-center justify-center my-4">
                                     <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-wider text-white/50">
@@ -1878,7 +1872,6 @@ export default function ChatWindow({
                                     onReplyClick={handleReplyClick}
                                     activeAudioId={activeAudioId}
                                     onAudioPlay={setActiveAudioId}
-                                    onReact={(emoji) => handleReactMessage(msg, emoji)}
                                 />
                             </div>
                         </React.Fragment>
@@ -2004,7 +1997,13 @@ export default function ChatWindow({
                                     }, 100);
                                 }}
                                 onBlur={() => setInputFocused(false)}
-                                onKeyPress={e => e.key === 'Enter' && sendMessage()}
+                                onKeyDown={(e) => {
+                                    if (e.key !== 'Enter') return;
+                                    if (e.repeat) return;
+                                    if ((e.nativeEvent as KeyboardEvent & { isComposing?: boolean }).isComposing) return;
+                                    e.preventDefault();
+                                    void sendMessage();
+                                }}
                             />
                         )}
                     </div>

@@ -768,3 +768,41 @@ body::before {
   border-radius: 0.75rem !important;
   box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
 }
+
+/* Chat MessageBubble — matn va media bir xil vertikal oqim */
+.message-row {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 0.25rem;
+}
+
+.message-bubble {
+  max-width: 100%;
+  min-width: 0;
+}
+
+.message-bubble-body {
+  min-width: 0;
+}
+
+.message-bubble .image-wrapper,
+.message-bubble .video-wrapper {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 0.5rem;
+}
+
+.message-bubble .image-wrapper img,
+.message-bubble .video-wrapper video {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: min(400px, 70vh);
+  object-fit: cover;
+  border-radius: inherit;
+}

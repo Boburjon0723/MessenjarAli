@@ -1,7 +1,8 @@
 /**
- * Vaqtinchalik chat lifecycle loglari. O‘chirish: `CHAT_DEBUG = false`.
+ * Vaqtinchalik chat lifecycle loglari. Production buildda o‘chiq (NEXT bundler NODE_ENV ni qo‘yadi).
  */
-export const CHAT_DEBUG = true;
+export const CHAT_DEBUG =
+    typeof process !== 'undefined' && process.env.NODE_ENV === 'development';
 
 export function chatDebug(label: string, payload?: Record<string, unknown>): void {
     if (!CHAT_DEBUG) return;

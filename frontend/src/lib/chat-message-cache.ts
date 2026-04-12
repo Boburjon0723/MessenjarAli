@@ -2,7 +2,8 @@ import { apiFetch } from '@/lib/api';
 import { getUser } from '@/lib/auth-storage';
 import { getMessageChatId } from '@/lib/message-alert';
 import { chatDebug } from '@/lib/chat-debug';
-import type { ChatMessage, ChatSender } from '@/types/chat-message';
+import { maliDB } from '@/lib/indexeddb';
+import type { ChatMessage, ChatMessageMetadata, ChatSender } from '@/types/chat-message';
 
 export const CHAT_MESSAGE_CACHE_LIMIT = 100;
 
@@ -36,7 +37,21 @@ export function parseCreatedToMs(raw: unknown): number | null {
     return null;
 }
 
+/**
+ * Kanonik `created_at` qatori (UI sort / ko‘rsatish).
+ * API allaqachon ISO yuborsa — o‘zgartirmaymiz; `Date` — `toISOString()`; raqam/unix — `parseCreatedToMs` + ISO.
+ * Mavjud ISO qatorni `parseCreatedToMs` → `new Date(ms).toISOString()` qilib aylantirmaslik (backend bilan bir xil).
+ */
 export function normalizeCreatedAtIso(raw: unknown): string {
+    if (raw == null || raw === '') return '';
+    if (typeof raw === 'string') {
+        const t = raw.trim();
+        return t; // ISO yoki driver matni — bir marta parse UI da (`parseCreatedToMs`)
+    }
+    if (raw instanceof Date) {
+        const t = raw.getTime();
+        return Number.isNaN(t) ? '' : raw.toISOString();
+    }
     const ms = parseCreatedToMs(raw);
     if (ms != null) return new Date(ms).toISOString();
     return '';
@@ -52,23 +67,24 @@ export function formatChatTimeLabel(ms: number, locale = 'uz-UZ'): string {
     });
 }
 
-/** MessageBubble: vaqt — created_at asosida; eski HH:mm cache uchun soniyalar qo‘shiladi */
+/** MessageBubble: vaqt — avvalo `created_at`; faqat u bo‘lmasa `time` (legacy). */
 export function getDisplayTimeForMessage(
     m: Pick<ChatMessage, 'time' | 'created_at' | 'createdAt'>,
     locale = 'uz-UZ'
 ): string {
     const ms = parseCreatedToMs(m.created_at ?? m.createdAt);
     const rawTime = m.time?.trim() ?? '';
-    /** Faqat soat:daqiqa (legacy) — bir xil daqiqada chalkashmasin, soniyani ISO dan olamiz */
+    /** Faqat soat:daqiqa (legacy) — soniyani ISO dan olamiz */
     const legacyShort =
         rawTime &&
         rawTime !== '--:--' &&
         rawTime !== 'Invalid Date' &&
         /^\d{1,2}:\d{2}$/.test(rawTime);
     if (legacyShort && ms != null) return formatChatTimeLabel(ms, locale);
-    if (rawTime && rawTime !== '--:--' && rawTime !== 'Invalid Date' && !legacyShort) return m.time;
-    if (ms == null) return '--:--';
-    return formatChatTimeLabel(ms, locale);
+    /** `m.time` ni HH:mm:ss bilan DB vaqtidan ustun qo‘ymaslik — keshda barcha xabar bir xil vaqt bo‘lib qolardi */
+    if (ms != null) return formatChatTimeLabel(ms, locale);
+    if (rawTime && rawTime !== '--:--' && rawTime !== 'Invalid Date') return m.time;
+    return '--:--';
 }
 
 function deriveSenderFromRaw(raw: Record<string, unknown>): ChatSender {
@@ -82,16 +98,83 @@ function deriveSenderFromRaw(raw: Record<string, unknown>): ChatSender {
 }
 
 /**
+ * Migratsiya / eski yozuvlar: `img`, `photo` → UI `image` (MessageBubble faqat `image` ni media sifatida ko‘radi).
+ *
+ * **PART 4 — shakl farqi (vakillik misollar, haqiqiy DB dan emas):**
+ *
+ * Eski: `{ "type": "img", "content": "/u/x.jpg", "metadata": "{\"caption\":\"a\"}" }`
+ * Yangi: `{ "type": "image", "content": "https://host/u/x.jpg", "metadata": { "caption": "a" } }`
+ */
+export function normalizeMessageType(raw: unknown): string {
+    if (raw == null) return 'text';
+    const s = String(raw).trim();
+    if (!s) return 'text';
+    const lower = s.toLowerCase();
+    const aliases: Record<string, string> = {
+        img: 'image',
+        photo: 'image',
+        picture: 'image',
+        pic: 'image',
+    };
+    return aliases[lower] ?? lower;
+}
+
+/** JSONB ba'zan string sifatida keladi (legacy import) — object ga keltiramiz. */
+export function normalizeMessageMetadata(raw: unknown): ChatMessageMetadata {
+    if (raw == null) return {};
+    if (typeof raw === 'string') {
+        const t = raw.trim();
+        if (!t) return {};
+        try {
+            const parsed = JSON.parse(t) as unknown;
+            if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+                return parsed as ChatMessageMetadata;
+            }
+        } catch {
+            /* ignore */
+        }
+        return {};
+    }
+    if (typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+        return raw as ChatMessageMetadata;
+    }
+    return {};
+}
+
+/** Media uchun URL ba'zan faqat `metadata.url` da — `content` bo‘sh qolgan migratsiya qatorlari. */
+function deriveMediaUrlIfTextEmpty(text: string, type: string, meta: ChatMessageMetadata): string {
+    const trimmed = text.trim();
+    if (trimmed) return trimmed;
+    const media = new Set(['image', 'video', 'file', 'voice']);
+    if (!media.has(type)) return trimmed;
+    const o = meta as Record<string, unknown>;
+    for (const k of ['url', 'fileUrl', 'src', 'path', 'file_url', 'href', 'link'] as const) {
+        const v = o[k];
+        if (typeof v === 'string' && v.trim()) return v.trim();
+    }
+    return trimmed;
+}
+
+/**
  * Barcha manbalardan (API, socket, cache, optimistic) kelgan obyektni yagona ChatMessage ga keltiradi.
  */
 export function normalizeChatMessage(input: Record<string, unknown>): ChatMessage {
     const sender = deriveSenderFromRaw(input);
-    const createdRaw = input.created_at ?? input.createdAt ?? input.timestamp ?? input.sent_at ?? input.sentAt;
+    const createdRaw =
+        input.created_at ??
+        input.createdAt ??
+        (input as { CreatedAt?: unknown }).CreatedAt ??
+        input.timestamp ??
+        input.sent_at ??
+        input.sentAt;
     let createdIso = normalizeCreatedAtIso(createdRaw);
     if (!createdIso) {
         const ms = parseCreatedToMs(createdRaw);
         if (ms != null) createdIso = new Date(ms).toISOString();
-        else createdIso = new Date().toISOString();
+        else {
+            /** `new Date().toISOString()` — map() ichida bir vaqtda chaqirilsa barcha xabar bir xil vaqt bo‘ladi */
+            createdIso = '';
+        }
     }
 
     const time =
@@ -110,15 +193,20 @@ export function normalizeChatMessage(input: Record<string, unknown>): ChatMessag
 
     const pid = input.parent_id ?? input.parentId;
 
+    const meta = normalizeMessageMetadata(input.metadata);
+    const type = normalizeMessageType(input.type);
+    let text = readMessageText(input);
+    text = deriveMediaUrlIfTextEmpty(text, type, meta);
+
     return {
         id,
-        text: readMessageText(input),
+        text,
         sender,
         sender_id: sid,
         created_at: createdIso,
         time,
-        type: readMessageType(input),
-        metadata: input.metadata as ChatMessage['metadata'],
+        type,
+        metadata: meta,
         is_read: Boolean(input.is_read),
         senderName: (input.senderName as string | undefined) ?? (input.sender_name as string | undefined),
         senderAvatar: (input.senderAvatar as string | undefined) ?? (input.sender_avatar as string | undefined),
@@ -150,9 +238,11 @@ export function readChatMessageCache(chatId: string | number | undefined): ChatM
         if (!raw) return [];
         const cached = JSON.parse(raw) as unknown;
         if (!Array.isArray(cached) || !cached.length) return [];
-        return cached
+        const mapped = cached
             .filter((x): x is Record<string, unknown> => x !== null && typeof x === 'object')
             .map((x) => normalizeChatMessage(x));
+        /** localStorage tartibi buzulishi mumkin — har doim vaqt bo‘yicha */
+        return sortChatMessagesLocal(mapped);
     } catch {
         return [];
     }
@@ -161,10 +251,39 @@ export function readChatMessageCache(chatId: string | number | undefined): ChatM
 export function writeChatMessageCache(chatId: string | number, messages: ChatMessage[]): void {
     if (typeof window === 'undefined' || chatId == null) return;
     try {
-        const slice = messages.slice(-CHAT_MESSAGE_CACHE_LIMIT);
+        const ordered = sortChatMessagesLocal(messages);
+        const slice = ordered.slice(-CHAT_MESSAGE_CACHE_LIMIT);
         localStorage.setItem(`chat_cache_${chatId}`, JSON.stringify(slice));
     } catch {
         /* ignore */
+    }
+}
+
+/** `chat_cache_*` kalitlari — barcha chatlar uchun mahalliy xabar keshi */
+export function clearAllChatMessageCaches(): void {
+    if (typeof window === 'undefined') return;
+    try {
+        const toRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith('chat_cache_')) toRemove.push(k);
+        }
+        for (const k of toRemove) localStorage.removeItem(k);
+    } catch {
+        /* ignore */
+    }
+}
+
+/**
+ * Brauzerdagi chat bilan bog‘liq mahalliy ma’lumotlarni tozalash (API/DB ga tegmaydi).
+ * Keyin sahifani qayta yuklash yoki chat ro‘yxatini qayta olish tavsiya etiladi.
+ */
+export async function resetAllLocalChatData(): Promise<void> {
+    clearAllChatMessageCaches();
+    try {
+        await maliDB.clearAllOfflineMessages();
+    } catch (e) {
+        console.error('[resetAllLocalChatData] IndexedDB clear:', e);
     }
 }
 
@@ -180,8 +299,7 @@ function readMessageText(m: Record<string, unknown>): string {
 }
 
 function readMessageType(m: Record<string, unknown>): string {
-    const raw = m.type;
-    return typeof raw === 'string' && raw ? raw : 'text';
+    return normalizeMessageType(m.type);
 }
 
 function readMessageSenderId(m: Record<string, unknown>): string {
@@ -190,7 +308,16 @@ function readMessageSenderId(m: Record<string, unknown>): string {
 }
 
 function readMessageCreatedRaw(m: Record<string, unknown>): unknown {
-    return m.created_at ?? m.createdAt ?? m.timestamp ?? m.sent_at ?? m.sentAt ?? m.date;
+    const o = m as Record<string, unknown> & { CreatedAt?: unknown };
+    return (
+        o.created_at ??
+        o.createdAt ??
+        o.CreatedAt ??
+        o.timestamp ??
+        o.sent_at ??
+        o.sentAt ??
+        o.date
+    );
 }
 
 function normalizeCompareText(value: string): string {
@@ -228,8 +355,30 @@ type SortableChatRow = {
 };
 
 /**
- * Tartib: faqat `created_at` (yoki legacy `createdAt`) parse qilingan millisoniyalar.
- * Bir xil vaqt — barqarorlik uchun `id` qatorida (UUID) lexik taqqoslash.
+ * Bir xil `created_at` (bir xil ms) bo‘lganda tartib: bir nechta rasm/fayl yuborilganda
+ * `temp_<batchMs>_<i>` bo‘yicha indeks `i` ketma-katlikni saqlaydi; UUID lexik tartibi esa tasodifiy.
+ */
+export function compareMessageIdsForStableOrder(aId: unknown, bId: unknown): number {
+    const as = String(aId ?? '');
+    const bs = String(bId ?? '');
+    const tempA = /^temp_(\d+)_(\d+)$/.exec(as);
+    const tempB = /^temp_(\d+)_(\d+)$/.exec(bs);
+    if (tempA && tempB) {
+        const dBatch = parseInt(tempA[1], 10) - parseInt(tempB[1], 10);
+        if (dBatch !== 0) return dBatch;
+        return parseInt(tempA[2], 10) - parseInt(tempB[2], 10);
+    }
+    const voiceA = /^voice_(\d+)/.exec(as);
+    const voiceB = /^voice_(\d+)/.exec(bs);
+    if (voiceA && voiceB) {
+        return parseInt(voiceA[1], 10) - parseInt(voiceB[1], 10);
+    }
+    return as.localeCompare(bs);
+}
+
+/**
+ * Tartib: avvalo `created_at` millisoniyalari; bir xil vaqt — `compareMessageIdsForStableOrder`
+ * (optimistik temp_/voice_ indeksi, keyin id qatori).
  */
 export function sortChatMessagesLocal<T extends SortableChatRow>(arr: T[]): T[] {
     return [...arr].sort((a, b) => {
@@ -238,17 +387,34 @@ export function sortChatMessagesLocal<T extends SortableChatRow>(arr: T[]): T[] 
         const ta = ma ?? Number.MAX_SAFE_INTEGER;
         const tb = mb ?? Number.MAX_SAFE_INTEGER;
         if (ta !== tb) return ta - tb;
-        return String((a as { id?: unknown }).id ?? '').localeCompare(String((b as { id?: unknown }).id ?? ''));
+        return compareMessageIdsForStableOrder(
+            (a as { id?: unknown }).id,
+            (b as { id?: unknown }).id
+        );
     });
 }
 
 export function mapApiMessagesToLocal(history: unknown[]): ChatMessage[] {
     const user = (getUser() || {}) as { id?: string };
+    const n = history.length;
     const mapped = history.map((raw, index) => {
         const m = raw as Record<string, unknown>;
         const senderIdRaw = m.sender_id ?? m.senderId ?? (m.sender as { id?: unknown } | undefined)?.id;
-        const createdRaw = readMessageCreatedRaw(m);
-        const created = normalizeCreatedAtIso(createdRaw);
+        let createdRaw = readMessageCreatedRaw(m);
+        let created = normalizeCreatedAtIso(createdRaw);
+        /** API `created_at` yo‘q/noto‘g‘ri — `normalizeChatMessage` dagi `new Date()` o‘rniga ketma-ket farq */
+        if (!created && parseCreatedToMs(createdRaw) == null) {
+            const staggeredMs = Date.now() - (n - 1 - index) * 1000;
+            createdRaw = new Date(staggeredMs).toISOString();
+            created = normalizeCreatedAtIso(createdRaw);
+            if (process.env.NODE_ENV === 'development') {
+                chatDebug('mapApiMessagesToLocal: missing created_at, staggered fallback', {
+                    id: m.id,
+                    index,
+                    staggeredMs,
+                });
+            }
+        }
         const fallbackId = `fallback_${String(senderIdRaw ?? '')}_${String(parseCreatedToMs(createdRaw) ?? 'na')}_${index}`;
         const resolvedId = m.id ?? m._id ?? m.messageId ?? m.clientSideId ?? fallbackId;
         const text = readMessageText(m);
@@ -269,7 +435,7 @@ export function mapApiMessagesToLocal(history: unknown[]): ChatMessage[] {
                 ...p,
                 id: pid,
                 text: p.text ?? p.content ?? '',
-                type: typeof p.type === 'string' ? p.type : 'text',
+                type: normalizeMessageType(p.type ?? 'text'),
                 sender: typeof p.sender === 'string' ? p.sender : side,
                 senderName: p.senderName ?? p.sender_name,
             };
@@ -341,7 +507,7 @@ export function mergeIncomingSocketMessage(
         incomingCreatedAt: incoming.created_at ?? incoming.createdAt,
     });
     const incomingText = normalizeMatchText(incoming.content ?? incoming.text ?? incoming.message);
-    const incomingType = String(incoming.type || 'text');
+    const incomingType = normalizeMessageType(incoming.type ?? 'text');
 
     const optimisticByClientSideId = incoming.clientSideId
         ? prev.findIndex((m) => String(m.id) === String(incoming.clientSideId))
@@ -354,7 +520,7 @@ export function mergeIncomingSocketMessage(
                   if (!/^temp_\d+/.test(id) && !/^voice_\d+/.test(id)) return false;
                   const mSender = String(m.sender_id ?? '');
                   if (String(senderId ?? '') && mSender && mSender !== String(senderId)) return false;
-                  if (String(m.type || 'text') !== incomingType) return false;
+                  if (normalizeMessageType(m.type) !== incomingType) return false;
                   const localText = normalizeMatchText(m.text);
                   if (!incomingText || !localText || incomingText !== localText) return false;
                   const localMs = parseCreatedToMs(m.created_at ?? m.createdAt);
@@ -371,6 +537,11 @@ export function mergeIncomingSocketMessage(
     let createdIso = normalizeCreatedAtIso(
         incoming.created_at ?? incoming.createdAt ?? incoming.timestamp
     );
+    if (!createdIso && optimisticMessage) {
+        createdIso = normalizeCreatedAtIso(
+            optimisticMessage.created_at ?? optimisticMessage.createdAt
+        );
+    }
     if (!createdIso) {
         createdIso = new Date().toISOString();
     }
@@ -383,7 +554,7 @@ export function mergeIncomingSocketMessage(
         sender_id: senderId,
         created_at: createdIso,
         time: safeTime,
-        type: incoming.type || 'text',
+        type: incoming.type ?? 'text',
         clientSideId: incoming.clientSideId,
         metadata: incoming.metadata ?? optimisticMessage?.metadata,
         is_read: Boolean(incoming.is_read),

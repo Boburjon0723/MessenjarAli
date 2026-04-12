@@ -99,6 +99,7 @@ export default function ChatCarouselPanel({
                         onBack={noop}
                         onMarkAsRead={onMarkAsRead}
                         suppressRootFade
+                        subscribeSocket={false}
                     />
                 </div>
             ) : null}

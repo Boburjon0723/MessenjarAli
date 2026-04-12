@@ -54,11 +54,11 @@ import {
 import { apiFetch } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import { TranslationKeys } from "@/lib/translations";
-import { parseCreatedToMs, prefetchChatMessagesCache } from "@/lib/chat-message-cache";
+import { parseCreatedToMs, prefetchChatMessagesCache, resetAllLocalChatData } from "@/lib/chat-message-cache";
 import { getPrivateChatPeerUserId } from "@/lib/private-chat-peer";
 import { getExpertPanelMode, parseStudentSessionStyle, type ExpertPanelMode } from "@/lib/expert-roles";
 import { getToken, getUser, clearAuth, setUser, AUTH_USER_UPDATED_EVENT } from "@/lib/auth-storage";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
 import { alertIncomingChatMessage, getMessageChatId, promptMobileNotificationPermissionEarly } from "@/lib/message-alert";
 
@@ -99,6 +99,7 @@ function MessagesPageContent() {
     /** SSR / birinchi kadr: doim false — keyin useLayoutEffect */
     const [isMobile, setIsMobile] = useState(false);
     const searchParams = useSearchParams();
+    const pathname = usePathname();
     const roomParam = searchParams.get('room');
     /** Guruhga qo'shilgandan keyin chatni ochish (?room= emas — RoomAccessGate ishlamasin) */
     const openChatParam = searchParams.get('openChat');
@@ -144,6 +145,29 @@ function MessagesPageContent() {
     const fetchChatsSeqRef = useRef(0);
     /** Ro‘yxatda chat topilmasa — cache bust bilan qayta yuklash (bir nechta xabar uchun bitta) */
     const chatListResyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const localChatResetPromptedRef = useRef(false);
+
+    /** Mahalliy chat keshi + oflayn navbatni nol qilish: /messages?resetLocalChat=1 */
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        if (searchParams.get('resetLocalChat') !== '1') return;
+        if (localChatResetPromptedRef.current) return;
+        localChatResetPromptedRef.current = true;
+        const sp = new URLSearchParams(searchParams.toString());
+        sp.delete('resetLocalChat');
+        const qs = sp.toString();
+        void router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+        const ok = window.confirm(
+            "Barcha mahalliy chat keshlari va oflayn yuborish navbati o‘chirilsinmi? (Serverdagi xabarlar o‘zgarmaydi.)"
+        );
+        if (!ok) return;
+        void (async () => {
+            await resetAllLocalChatData();
+            setSelectedChat(null);
+            showSuccess("Mahalliy chat ma’lumotlari tozalandi. Sahifa yangilanmoqda…");
+            window.location.reload();
+        })();
+    }, [searchParams, pathname, router, showSuccess]);
 
     useEffect(() => {
         const savedBlur = localStorage.getItem('app-bg-blur');

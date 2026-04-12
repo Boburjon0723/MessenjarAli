@@ -106,6 +106,18 @@ class MaliDB {
             request.onerror = () => reject(request.error);
         });
     }
+
+    /** Barcha oflayn navbatdagi xabarlarni o‘chirish (chatni mahalliy jihatdan «nol» qilish) */
+    async clearAllOfflineMessages(): Promise<void> {
+        const db = await this.ensureDB();
+        return new Promise((resolve, reject) => {
+            const transaction = db.transaction([STORE_NAME], 'readwrite');
+            const store = transaction.objectStore(STORE_NAME);
+            const request = store.clear();
+            request.onsuccess = () => resolve();
+            request.onerror = () => reject(request.error);
+        });
+    }
 }
 
 export const maliDB = new MaliDB();
