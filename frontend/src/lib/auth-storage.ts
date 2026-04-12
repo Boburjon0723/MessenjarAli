@@ -10,10 +10,15 @@ const REMEMBER_ME_KEY = 'remember_me';
 /** Telefon / planshet brauzeri — sessiyani saqlash uchun localStorage afzal */
 export function isMobileWebClient(): boolean {
     if (typeof navigator === 'undefined') return false;
-    return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const ua = navigator.userAgent;
+    if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(ua)) return true;
+    /** iPadOS 13+ (Safari “desktop” rejimi): UA da Macintosh, lekin sensor — sessionStorage tez yo‘qoladi */
+    const maxTouch = navigator.maxTouchPoints ?? 0;
+    if (maxTouch > 1 && /Macintosh/.test(ua)) return true;
+    return false;
 }
 
-/** Mobil webda token yo'qolmasligi uchun joriy tanlovni localStorage bilan kuchaytirish */
+/** Mobil / sensor planshet: doimiy saqlash; aks holda “faqat seans” desktopda sessionStorage */
 function effectiveRemember(remember: boolean): boolean {
     return remember || isMobileWebClient();
 }
@@ -47,6 +52,12 @@ export function getUser(): Record<string, unknown> | null {
 /**
  * @param remember - true = localStorage (eslab qolish), false = sessionStorage (faqat shu sessiya).
  */
+function writeAuthTriple(target: Storage, token: string, refreshToken: string, userJson: string): void {
+  target.setItem('token', token);
+  target.setItem('refreshToken', refreshToken);
+  target.setItem('user', userJson);
+}
+
 export function setAuth(
   token: string,
   refreshToken: string,
@@ -55,16 +66,34 @@ export function setAuth(
 ): void {
   if (typeof window === 'undefined') return;
   const persist = effectiveRemember(remember);
-  const storage = persist ? localStorage : sessionStorage;
-  const other = persist ? sessionStorage : localStorage;
-  storage.setItem('token', token);
-  storage.setItem('refreshToken', refreshToken);
-  storage.setItem('user', JSON.stringify(user));
-  /** Mobil uchun ham doimiy saqlash — UI tanlovi bilan birga */
-  localStorage.setItem(REMEMBER_ME_KEY, String(persist));
-  other.removeItem('token');
-  other.removeItem('refreshToken');
-  other.removeItem('user');
+  const primary = persist ? localStorage : sessionStorage;
+  const userJson = JSON.stringify(user);
+  let wroteTo: Storage | null = null;
+  try {
+    writeAuthTriple(primary, token, refreshToken, userJson);
+    wroteTo = primary;
+  } catch {
+    /** localStorage ba’zan maxfiy rejimda — butun uchlikni boshqa joyga */
+    try {
+      const fallback = primary === localStorage ? sessionStorage : localStorage;
+      writeAuthTriple(fallback, token, refreshToken, userJson);
+      wroteTo = fallback;
+    } catch {
+      /* ikkalasi ham — keyingi o‘qishda login */
+    }
+  }
+  if (!wroteTo) {
+    return;
+  }
+  try {
+    localStorage.setItem(REMEMBER_ME_KEY, String(wroteTo === localStorage));
+  } catch {
+    /* ignore */
+  }
+  const clearOther = wroteTo === localStorage ? sessionStorage : localStorage;
+  clearOther.removeItem('token');
+  clearOther.removeItem('refreshToken');
+  clearOther.removeItem('user');
   notifyUserUpdated(user);
 }
 
@@ -73,6 +102,7 @@ export function clearAuth(): void {
   localStorage.removeItem('token');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
+  localStorage.removeItem(REMEMBER_ME_KEY);
   sessionStorage.removeItem('token');
   sessionStorage.removeItem('refreshToken');
   sessionStorage.removeItem('user');

@@ -46,10 +46,15 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
                         'Authorization': `Bearer ${data.accessToken}`,
                     },
                 });
-            } else {
+            }
+            const st = refreshResponse.status;
+            /** 5xx / tarmoq: sessiyani saqlab qolamiz — vaqtincha server xatosi uchun logout emas */
+            if (st === 401 || st === 403) {
                 console.error('Refresh token invalid or expired, logging out...');
                 clearAuth();
                 window.location.href = '/login';
+            } else {
+                console.warn('Token refresh failed (temporary?), status:', st);
             }
         }
     }

@@ -54,9 +54,18 @@ export default function AuthSessionRefresh() {
         };
 
         const onVisibility = () => void refresh();
+        /** PWA / mobil: bfcache dan qaytishda access token yangilash */
+        const onPageShow = (e: PageTransitionEvent) => {
+            if (e.persisted) lastRun.current = 0;
+            void refresh();
+        };
         document.addEventListener("visibilitychange", onVisibility);
+        window.addEventListener("pageshow", onPageShow as (ev: Event) => void);
         void refresh();
-        return () => document.removeEventListener("visibilitychange", onVisibility);
+        return () => {
+            document.removeEventListener("visibilitychange", onVisibility);
+            window.removeEventListener("pageshow", onPageShow as (ev: Event) => void);
+        };
     }, []);
 
     return null;
