@@ -49,6 +49,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         }
         return md;
     }, [message.metadata]);
+    /** Vaqt: avvalo `created_at` / `createdAt` (getDisplayTimeForMessage), keyin legacy `time` */
     const displayTime = useMemo(() => {
         const loc = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
         return getDisplayTimeForMessage(message, loc);

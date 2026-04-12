@@ -31,7 +31,26 @@ import {
     createOptimisticChatMessage,
 } from '@/lib/chat-message-cache';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
+import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage } from '@/types/chat-message';
+
+/** Vaqtinchalik: `send_message` emit — merge loglari bilan birga lifecycle */
+function logChatEmitSend(payload: {
+    roomId?: unknown;
+    clientSideId?: unknown;
+    type?: unknown;
+    content?: unknown;
+}) {
+    const c = payload.content;
+    const contentPreview =
+        typeof c === 'string' ? (c.length > 100 ? `${c.slice(0, 100)}…` : c) : String(c ?? '');
+    chatDebug('emit send_message', {
+        roomId: payload.roomId,
+        clientSideId: payload.clientSideId ?? '(none)',
+        type: payload.type ?? 'text',
+        contentPreview,
+    });
+}
 import type {
     ChatRoom,
     ContactListItem,
@@ -276,13 +295,15 @@ export default function ChatWindow({
                     if (pendingMsgs.length > 0) {
                         for (const msg of pendingMsgs) {
                             if (msg.type === 'text') {
-                                socket.emit('send_message', {
+                                const offlinePayload = {
                                     roomId: msg.chatId,
                                     content: msg.text,
-                                    type: 'text',
+                                    type: 'text' as const,
                                     clientSideId: msg.id,
                                     parentId: msg.parentId
-                                });
+                                };
+                                logChatEmitSend(offlinePayload);
+                                socket.emit('send_message', offlinePayload);
                             }
                             // Media specific sync logic would go here if needed
                             await maliDB.deleteMessage(msg.id);
@@ -329,12 +350,14 @@ export default function ChatWindow({
         const url = (type !== 'text' && content && !content.startsWith('http'))
             ? `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${content.startsWith('/') ? '' : '/'}${content}`
             : content;
-        socket.emit('send_message', {
+        const forwardPayload = {
             roomId: targetChat.id,
             content: type === 'text' ? content : url,
             type,
             metadata: forwardMessage.metadata,
-        });
+        };
+        logChatEmitSend(forwardPayload);
+        socket.emit('send_message', forwardPayload);
         setForwardMessage(null);
     };
 
@@ -961,6 +984,19 @@ export default function ChatWindow({
         }
     }, [messages, chat?.id]);
 
+    useEffect(() => {
+        if (!messages.length) return;
+        chatDebug('state last10 (after sort)', {
+            items: messages.slice(-10).map((m) => ({
+                id: m.id,
+                clientSideId: m.clientSideId,
+                created_at: m.created_at,
+                sender: m.sender,
+                text: (m.text || '').length > 40 ? `${(m.text || '').slice(0, 40)}…` : (m.text || ''),
+            })),
+        });
+    }, [messages]);
+
     const toggleMute = () => {
         setIsMuted(prev => {
             const next = !prev;
@@ -1074,6 +1110,13 @@ export default function ChatWindow({
 
         const handleReceiveMessage = (message: Record<string, unknown>) => {
             if (!socketMessageTargetsChat(message, String(chat.id))) return;
+            chatDebug('receive_message raw', {
+                incomingId: message.id,
+                incomingClientSideId: message.clientSideId,
+                incomingCreatedAt: message.created_at ?? message.createdAt,
+                sender_id: message.sender_id ?? message.senderId,
+                textPreview: String(message.content ?? message.text ?? '').slice(0, 60),
+            });
             const user = (getUser() || {});
             const senderId = message.sender_id ?? message.senderId;
             setMessages((prev) => mergeIncomingSocketMessage(prev, message, user.id != null ? String(user.id) : undefined));
@@ -1134,13 +1177,15 @@ export default function ChatWindow({
         });
 
         if (isNetworkOnline && isConnected && socket) {
-            socket.emit('send_message', {
+            const sendPayload = {
                 roomId: chat.id,
                 content: inputContent,
-                type: 'text',
+                type: 'text' as const,
                 clientSideId,
                 parentId: currentReplyTo?.id
-            });
+            };
+            logChatEmitSend(sendPayload);
+            socket.emit('send_message', sendPayload);
         } else {
             // Offline - Save to IndexedDB
             const offlineMsg: OfflineMessage = {
@@ -1220,10 +1265,10 @@ export default function ChatWindow({
                     const uploadedFile = data.files[0];
                     if (socket) {
                         const mimetype = uploadedFile.mimetype || uploadedFile.type || '';
-                        socket.emit('send_message', {
+                        const mediaPayload = {
                             roomId: chat.id,
                             content: uploadedFile.url,
-                            type: mimetype.startsWith('image/') ? 'image' : (mimetype.startsWith('video/') ? 'video' : (mimetype.startsWith('audio/') ? 'voice' : 'file')),
+                            type: mimetype.startsWith('image/') ? 'image' : (mimetype.startsWith('video/') ? 'video' : (mimetype.startsWith('audio/') ? 'voice' : 'file')) as string,
                             clientSideId: tempId,
                             caption: i === 0 ? caption : undefined,
                             metadata: {
@@ -1233,7 +1278,9 @@ export default function ChatWindow({
                                 mimetype: mimetype
                             },
                             parentId: currentReplyTo?.id
-                        });
+                        };
+                        logChatEmitSend(mediaPayload);
+                        socket.emit('send_message', mediaPayload);
                     }
                     // Update state to remove progress and mark as uploaded
                     setUploadProgresses(prev => {
@@ -1303,7 +1350,9 @@ export default function ChatWindow({
 
                     const clientSideId = `voice_${Date.now()}`;
                     if (socket) {
-                        socket.emit('send_message', { roomId, content: fileUrl, type: 'voice', clientSideId });
+                        const voicePayload = { roomId, content: fileUrl, type: 'voice' as const, clientSideId };
+                        logChatEmitSend(voicePayload);
+                        socket.emit('send_message', voicePayload);
                     }
                     const vUid = (getUser() as { id?: string } | null)?.id;
                     const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';

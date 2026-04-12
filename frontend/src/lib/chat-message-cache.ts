@@ -1,6 +1,7 @@
 import { apiFetch } from '@/lib/api';
 import { getUser } from '@/lib/auth-storage';
 import { getMessageChatId } from '@/lib/message-alert';
+import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage, ChatSender } from '@/types/chat-message';
 
 export const CHAT_MESSAGE_CACHE_LIMIT = 100;
@@ -325,6 +326,7 @@ function normalizeMatchText(value: unknown): string {
 /**
  * `receive_message`: server `created_at` saqlanadi; sun’iy vaqt siljitish yo‘q (history bilan mos).
  * Vaqt bo‘lmasa — `new Date().toISOString()`.
+ * `id` uchun `clientSideId` ishlatilmaydi — aks holda temp id bilan `exists` chalkashadi va almashtirish o‘tmay qoladi.
  */
 export function mergeIncomingSocketMessage(
     prev: ChatMessage[],
@@ -332,6 +334,12 @@ export function mergeIncomingSocketMessage(
     myUserId: string | undefined
 ): ChatMessage[] {
     const senderId = incoming.sender_id ?? incoming.senderId;
+    chatDebug("mergeIncomingSocketMessage start", {
+        prevCount: prev.length,
+        incomingId: incoming.id,
+        incomingClientSideId: incoming.clientSideId,
+        incomingCreatedAt: incoming.created_at ?? incoming.createdAt,
+    });
     const incomingText = normalizeMatchText(incoming.content ?? incoming.text ?? incoming.message);
     const incomingType = String(incoming.type || 'text');
 
@@ -369,12 +377,7 @@ export function mergeIncomingSocketMessage(
     const tMs = parseCreatedToMs(createdIso) ?? Date.now();
     const safeTime = formatChatTimeLabel(tMs, 'uz-UZ');
     const newMessage = normalizeChatMessage({
-        id:
-            incoming.id ??
-            incoming._id ??
-            incoming.messageId ??
-            incoming.clientSideId ??
-            `srv_${tMs}_${String(senderId ?? 'u')}`,
+        id: incoming.id ?? incoming._id ?? incoming.messageId ?? `srv_${tMs}_${String(senderId ?? 'u')}`,
         text: incoming.content ?? incoming.text ?? '',
         sender: String(senderId) === String(myUserId) ? 'me' : 'them',
         sender_id: senderId,
@@ -395,16 +398,49 @@ export function mergeIncomingSocketMessage(
     } as Record<string, unknown>);
 
     const exists = prev.some((m) => String(m.id) === String(newMessage.id));
-    if (exists) return sortChatMessagesLocal(prev);
+
+    const logMergeOut = (action: string, out: ChatMessage[]) => {
+        const orderSnap = out.slice(-20).map((m) => ({
+            id: m.id,
+            created_at: m.created_at,
+            clientSideId: m.clientSideId,
+        }));
+        chatDebug("mergeIncomingSocketMessage", {
+            prevCount: prev.length,
+            matchIdxByClientSideId: optimisticByClientSideId,
+            matchIdxHeuristic: optimisticByHeuristic,
+            finalOptimisticIdx: optimisticIndex,
+            existsByServerId: exists,
+            action,
+            normalizedId: newMessage.id,
+            normalizedCreatedAt: newMessage.created_at,
+            resultLen: out.length,
+            orderSnap,
+        });
+    };
+
+    if (exists) {
+        const out = sortChatMessagesLocal(prev);
+        logMergeOut("skip-duplicate-same-server-id", out);
+        return out;
+    }
     if (optimisticIndex !== -1) {
         const newMsgs = [...prev];
         newMsgs[optimisticIndex] = newMessage;
-        return sortChatMessagesLocal(newMsgs);
+        const out = sortChatMessagesLocal(newMsgs);
+        logMergeOut("replace-optimistic", out);
+        return out;
     }
-    return sortChatMessagesLocal([...prev, newMessage]);
+    const out = sortChatMessagesLocal([...prev, newMessage]);
+    logMergeOut("append-new", out);
+    return out;
 }
 
-/** Optimistik xabar — server shape bilan bir xil normalizeChatMessage orqali */
+/**
+ * Optimistik xabar (faqat server javobigacha UI).
+ * `created_at` uchun `max(now, oxirgi xabar+1ms)` — tartibda pastda turishi uchun; server `receive_message`
+ * kelganda real `created_at` bilan almashtiriladi (timestamp bump yo‘q).
+ */
 export function createOptimisticChatMessage(params: {
     id: string;
     text: string;
@@ -420,7 +456,7 @@ export function createOptimisticChatMessage(params: {
 }): ChatMessage {
     const optimisticCreated = new Date(Math.max(Date.now(), maxCreatedAtMs(params.prevMessages) + 1)).toISOString();
     const loc = params.locale ?? 'uz-UZ';
-    return normalizeChatMessage({
+    const msg = normalizeChatMessage({
         id: params.id,
         text: params.text,
         sender: 'me',
@@ -435,6 +471,15 @@ export function createOptimisticChatMessage(params: {
         isUploading: params.isUploading,
         error: params.error,
     } as Record<string, unknown>);
+    chatDebug("createOptimisticChatMessage", {
+        tempId: params.id,
+        clientSideId: params.id,
+        text: params.text.length > 80 ? `${params.text.slice(0, 80)}…` : params.text,
+        created_at: msg.created_at,
+        sender: msg.sender,
+        type: msg.type,
+    });
+    return msg;
 }
 
 /** Ro'yxatdan chat tanlashda — animatsiya boshlanishidan oldin cache issiq bo'lishi uchun */
