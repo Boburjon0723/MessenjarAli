@@ -31,16 +31,20 @@ export interface ChatMessage {
     text: string;
     sender: ChatSender;
     sender_id?: string;
-    /** ISO yoki parse qilinadigan qiymat */
+    /**
+     * Kanonik vaqt: ISO 8601. Sort va merge faqat shu maydonga (yoki parse qilinadigan bir xil qiymatga) tayanadi.
+     * @deprecated createdAt — faqat eski localStorage cache bilan moslik; yangi kod yozmaydi.
+     */
     created_at: string;
-    createdAt: string;
-    /** UI vaqti (odatda soat:daqiqa:soniya — legacy HH:mm ham bo‘lishi mumkin) */
+    createdAt?: string;
+    /** UI vaqti; renderda asosan `created_at` dan derive qilinadi (getDisplayTimeForMessage) */
     time: string;
     type: string;
     metadata?: ChatMessageMetadata | string;
     is_read?: boolean;
     senderName?: string;
     senderAvatar?: string;
+    /** Legacy / API snake_case — normalize qatlamida senderAvatar ga birlashtiriladi */
     sender_avatar?: string;
     avatar?: string;
     parentId?: string | null;
@@ -51,9 +55,4 @@ export interface ChatMessage {
     error?: string;
     clientSideId?: string;
     reactions?: Record<string, { emoji: string; users: string[] }>;
-    /**
-     * API dan kelgan tarix tartibi (0..n). Bir xil created_at da UUID lexik tartib o‘rniga ishlatiladi —
-     * refreshdan keyin ham xabarlar joylashuvi barqaror bo‘ladi.
-     */
-    sortOrder?: number;
 }

@@ -1,5 +1,6 @@
 import { apiFetch } from '@/lib/api';
 import { getUser } from '@/lib/auth-storage';
+import { getMessageChatId } from '@/lib/message-alert';
 import type { ChatMessage, ChatSender } from '@/types/chat-message';
 
 export const CHAT_MESSAGE_CACHE_LIMIT = 100;
@@ -114,7 +115,6 @@ export function normalizeChatMessage(input: Record<string, unknown>): ChatMessag
         sender,
         sender_id: sid,
         created_at: createdIso,
-        createdAt: createdIso,
         time,
         type: readMessageType(input),
         metadata: input.metadata as ChatMessage['metadata'],
@@ -130,7 +130,6 @@ export function normalizeChatMessage(input: Record<string, unknown>): ChatMessag
         error: input.error as string | undefined,
         clientSideId: input.clientSideId as string | undefined,
         reactions: input.reactions as ChatMessage['reactions'],
-        sortOrder: typeof input.sortOrder === 'number' && Number.isFinite(input.sortOrder) ? input.sortOrder : undefined,
     };
 }
 
@@ -227,33 +226,17 @@ type SortableChatRow = {
     createdAt?: unknown;
 };
 
-/** API indeksi: bir xil vaqt (yoki bir xil ms) bo‘lsa UUID tartibi o‘rniga */
-function getSortOrder(m: unknown): number | null {
-    const o = (m as { sortOrder?: unknown }).sortOrder;
-    return typeof o === 'number' && Number.isFinite(o) ? o : null;
-}
-
-/** Vaqt bir xil bo‘lsa ham tartib barqaror bo‘lishi uchun */
+/**
+ * Tartib: faqat `created_at` (yoki legacy `createdAt`) parse qilingan millisoniyalar.
+ * Bir xil vaqt — barqarorlik uchun `id` qatorida (UUID) lexik taqqoslash.
+ */
 export function sortChatMessagesLocal<T extends SortableChatRow>(arr: T[]): T[] {
-    const getT = (m: T): number => {
-        const raw = m.created_at ?? m.createdAt;
-        const ms = parseCreatedToMs(raw);
-        if (ms != null) return ms;
-        const id = String((m as { id?: unknown }).id ?? '');
-        const temp = id.match(/^temp_(\d+)/);
-        if (temp) return parseInt(temp[1], 10);
-        const voice = id.match(/^voice_(\d+)/);
-        if (voice) return parseInt(voice[1], 10);
-        /** 0 = 1970 yil — virtualizatsiya «oxirgi N xabar»da yo‘qoladi; noma’lum vaqtni oxirga */
-        return Number.MAX_SAFE_INTEGER;
-    };
     return [...arr].sort((a, b) => {
-        const ta = getT(a);
-        const tb = getT(b);
+        const ma = parseCreatedToMs(a.created_at ?? a.createdAt);
+        const mb = parseCreatedToMs(b.created_at ?? b.createdAt);
+        const ta = ma ?? Number.MAX_SAFE_INTEGER;
+        const tb = mb ?? Number.MAX_SAFE_INTEGER;
         if (ta !== tb) return ta - tb;
-        const oa = getSortOrder(a);
-        const ob = getSortOrder(b);
-        if (oa !== null && ob !== null && oa !== ob) return oa - ob;
         return String((a as { id?: unknown }).id ?? '').localeCompare(String((b as { id?: unknown }).id ?? ''));
     });
 }
@@ -294,9 +277,7 @@ export function mapApiMessagesToLocal(history: unknown[]): ChatMessage[] {
             id: resolvedId,
             text,
             sender: isOwnMessage ? 'me' : 'them',
-            sortOrder: index,
             created_at: created || createdRaw,
-            createdAt: created || createdRaw,
             sender_id: senderIdRaw,
             sender_name: (m.sender_name as string | undefined) ?? (m.senderName as string | undefined),
             senderName: (m.sender_name as string | undefined) ?? (m.senderName as string | undefined),
@@ -327,6 +308,133 @@ export function mergeFetchedChatMessages(prev: ChatMessage[], fetched: ChatMessa
     });
     const merged = [...fetched, ...extra];
     return sortChatMessagesLocal(merged);
+}
+
+/** Socket payload qaysi chat uchun ekanini bir xil kalitlar bilan tekshirish */
+export function socketMessageTargetsChat(incoming: Record<string, unknown>, chatId: string): boolean {
+    return String(getMessageChatId(incoming)) === String(chatId);
+}
+
+function normalizeMatchText(value: unknown): string {
+    return String(value ?? '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase();
+}
+
+/**
+ * `receive_message`: server `created_at` saqlanadi; sun’iy vaqt siljitish yo‘q (history bilan mos).
+ * Vaqt bo‘lmasa — `new Date().toISOString()`.
+ */
+export function mergeIncomingSocketMessage(
+    prev: ChatMessage[],
+    incoming: Record<string, unknown>,
+    myUserId: string | undefined
+): ChatMessage[] {
+    const senderId = incoming.sender_id ?? incoming.senderId;
+    const incomingText = normalizeMatchText(incoming.content ?? incoming.text ?? incoming.message);
+    const incomingType = String(incoming.type || 'text');
+
+    const optimisticByClientSideId = incoming.clientSideId
+        ? prev.findIndex((m) => String(m.id) === String(incoming.clientSideId))
+        : -1;
+    const optimisticByHeuristic =
+        optimisticByClientSideId !== -1
+            ? -1
+            : prev.findIndex((m) => {
+                  const id = String(m.id ?? '');
+                  if (!/^temp_\d+/.test(id) && !/^voice_\d+/.test(id)) return false;
+                  const mSender = String(m.sender_id ?? '');
+                  if (String(senderId ?? '') && mSender && mSender !== String(senderId)) return false;
+                  if (String(m.type || 'text') !== incomingType) return false;
+                  const localText = normalizeMatchText(m.text);
+                  if (!incomingText || !localText || incomingText !== localText) return false;
+                  const localMs = parseCreatedToMs(m.created_at ?? m.createdAt);
+                  const incomingMs = parseCreatedToMs(
+                      incoming.created_at ?? incoming.createdAt ?? incoming.timestamp
+                  );
+                  if (localMs == null || incomingMs == null) return true;
+                  return Math.abs(localMs - incomingMs) <= 2 * 60 * 1000;
+              });
+    const optimisticIndex =
+        optimisticByClientSideId !== -1 ? optimisticByClientSideId : optimisticByHeuristic;
+    const optimisticMessage = optimisticIndex !== -1 ? prev[optimisticIndex] : null;
+
+    let createdIso = normalizeCreatedAtIso(
+        incoming.created_at ?? incoming.createdAt ?? incoming.timestamp
+    );
+    if (!createdIso) {
+        createdIso = new Date().toISOString();
+    }
+    const tMs = parseCreatedToMs(createdIso) ?? Date.now();
+    const safeTime = formatChatTimeLabel(tMs, 'uz-UZ');
+    const newMessage = normalizeChatMessage({
+        id:
+            incoming.id ??
+            incoming._id ??
+            incoming.messageId ??
+            incoming.clientSideId ??
+            `srv_${tMs}_${String(senderId ?? 'u')}`,
+        text: incoming.content ?? incoming.text ?? '',
+        sender: String(senderId) === String(myUserId) ? 'me' : 'them',
+        sender_id: senderId,
+        created_at: createdIso,
+        time: safeTime,
+        type: incoming.type || 'text',
+        clientSideId: incoming.clientSideId,
+        metadata: incoming.metadata ?? optimisticMessage?.metadata,
+        is_read: Boolean(incoming.is_read),
+        sender_name: incoming.sender_name ?? optimisticMessage?.senderName ?? 'User',
+        senderName: incoming.sender_name ?? optimisticMessage?.senderName ?? 'User',
+        sender_avatar: incoming.sender_avatar ?? incoming.avatar,
+        senderAvatar: incoming.sender_avatar ?? incoming.avatar,
+        parentId: incoming.parentId ?? incoming.parent_id ?? optimisticMessage?.parentId,
+        parent_id: incoming.parentId ?? incoming.parent_id ?? optimisticMessage?.parent_id,
+        parentMessage: incoming.parentMessage ?? optimisticMessage?.parentMessage,
+        isPending: false,
+    } as Record<string, unknown>);
+
+    const exists = prev.some((m) => String(m.id) === String(newMessage.id));
+    if (exists) return sortChatMessagesLocal(prev);
+    if (optimisticIndex !== -1) {
+        const newMsgs = [...prev];
+        newMsgs[optimisticIndex] = newMessage;
+        return sortChatMessagesLocal(newMsgs);
+    }
+    return sortChatMessagesLocal([...prev, newMessage]);
+}
+
+/** Optimistik xabar — server shape bilan bir xil normalizeChatMessage orqali */
+export function createOptimisticChatMessage(params: {
+    id: string;
+    text: string;
+    senderId: string | undefined;
+    prevMessages: ChatMessage[];
+    type?: string;
+    parentId?: string | null;
+    parentMessage?: ChatMessage | null;
+    isPending?: boolean;
+    isUploading?: boolean;
+    error?: string;
+    locale?: string;
+}): ChatMessage {
+    const optimisticCreated = new Date(Math.max(Date.now(), maxCreatedAtMs(params.prevMessages) + 1)).toISOString();
+    const loc = params.locale ?? 'uz-UZ';
+    return normalizeChatMessage({
+        id: params.id,
+        text: params.text,
+        sender: 'me',
+        sender_id: params.senderId,
+        created_at: optimisticCreated,
+        time: formatChatTimeLabel(new Date(optimisticCreated).getTime(), loc),
+        type: params.type ?? 'text',
+        parentId: params.parentId,
+        parent_id: params.parentId,
+        parentMessage: params.parentMessage ?? undefined,
+        isPending: params.isPending,
+        isUploading: params.isUploading,
+        error: params.error,
+    } as Record<string, unknown>);
 }
 
 /** Ro'yxatdan chat tanlashda — animatsiya boshlanishidan oldin cache issiq bo'lishi uchun */

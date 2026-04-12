@@ -9,7 +9,9 @@ import LiveKitRoomWrapper from './LiveKitRoomWrapper';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
+import { useLanguage } from '@/context/LanguageContext';
 import { apiFetch } from '@/lib/api';
+import { TranslationKeys } from '@/lib/translations';
 import { getUser } from '@/lib/auth-storage';
 import { getExpertPanelMode } from '@/lib/expert-roles';
 import { getExpertComplianceNotice } from '@/lib/expert-compliance-copy';
@@ -23,13 +25,12 @@ import {
     sortChatMessagesLocal,
     mergeFetchedChatMessages,
     parseCreatedToMs,
-    maxCreatedAtMs,
-    normalizeCreatedAtIso,
     normalizeChatMessage,
-    formatChatTimeLabel,
+    mergeIncomingSocketMessage,
+    socketMessageTargetsChat,
+    createOptimisticChatMessage,
 } from '@/lib/chat-message-cache';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
-import { getMessageChatId } from '@/lib/message-alert';
 import type { ChatMessage } from '@/types/chat-message';
 import type {
     ChatRoom,
@@ -60,9 +61,6 @@ interface ChatWindowProps {
     /** ChatCarouselPanel: karusel siljishi bilan ildiz fade ustma-ust tushmasin */
     suppressRootFade?: boolean;
 }
-
-import { useLanguage } from '@/context/LanguageContext';
-import { TranslationKeys } from '@/lib/translations';
 
 export default function ChatWindow({
     chat,
@@ -1075,96 +1073,13 @@ export default function ChatWindow({
         joinCurrentRoom();
 
         const handleReceiveMessage = (message: Record<string, unknown>) => {
-            const msgRoomId = getMessageChatId(message);
-            if (String(msgRoomId) === String(chat.id)) {
-                const user = (getUser() || {});
-                const senderId = message.sender_id || message.senderId;
-                setMessages((prev) => {
-                    const normalizeForMatch = (value: unknown): string =>
-                        String(value ?? '')
-                            .trim()
-                            .replace(/\s+/g, ' ')
-                            .toLowerCase();
-                    const incomingText = normalizeForMatch(message.content ?? message.text ?? message.message);
-                    const incomingType = String(message.type || 'text');
-
-                    const optimisticByClientSideId = message.clientSideId
-                        ? prev.findIndex((m) => String(m.id) === String(message.clientSideId))
-                        : -1;
-                    const optimisticByHeuristic =
-                        optimisticByClientSideId !== -1
-                            ? -1
-                            : prev.findIndex((m) => {
-                                  const id = String(m.id ?? '');
-                                  if (!/^temp_\d+/.test(id) && !/^voice_\d+/.test(id)) return false;
-                                  const mSender = String(m.sender_id ?? '');
-                                  if (String(senderId ?? '') && mSender && mSender !== String(senderId)) return false;
-                                  if (String(m.type || 'text') !== incomingType) return false;
-                                  const localText = normalizeForMatch(m.text);
-                                  if (!incomingText || !localText || incomingText !== localText) return false;
-                                  const localMs = parseCreatedToMs(m.created_at ?? m.createdAt);
-                                  const incomingMs = parseCreatedToMs(
-                                      message.created_at ?? message.createdAt ?? message.timestamp
-                                  );
-                                  if (localMs == null || incomingMs == null) return true;
-                                  return Math.abs(localMs - incomingMs) <= 2 * 60 * 1000;
-                              });
-                    const optimisticIndex =
-                        optimisticByClientSideId !== -1 ? optimisticByClientSideId : optimisticByHeuristic;
-                    const optimisticMessage = optimisticIndex !== -1 ? prev[optimisticIndex] : null;
-
-                    let createdIso = normalizeCreatedAtIso(
-                        message.created_at ?? message.createdAt ?? message.timestamp,
-                    );
-                    if (!createdIso && optimisticMessage) {
-                        createdIso = normalizeCreatedAtIso(optimisticMessage.created_at ?? optimisticMessage.createdAt);
-                    }
-                    let tMs = parseCreatedToMs(createdIso);
-                    if (tMs == null) {
-                        tMs = Math.max(Date.now(), maxCreatedAtMs(prev) + 1);
-                        createdIso = new Date(tMs).toISOString();
-                    }
-                    const prevMax = maxCreatedAtMs(prev);
-                    if (tMs <= prevMax) {
-                        tMs = prevMax + 1;
-                        createdIso = new Date(tMs).toISOString();
-                    }
-
-                    const safeTime = formatChatTimeLabel(tMs, 'uz-UZ');
-                    const newMessage = normalizeChatMessage({
-                        id: message.id ?? message._id ?? message.messageId ?? message.clientSideId ?? `srv_${tMs}_${String(senderId ?? 'u')}`,
-                        text: message.content ?? message.text ?? '',
-                        sender: String(senderId) === String(user.id) ? 'me' : 'them',
-                        sender_id: senderId,
-                        created_at: createdIso,
-                        createdAt: createdIso,
-                        time: safeTime,
-                        type: message.type || 'text',
-                        clientSideId: message.clientSideId,
-                        metadata: message.metadata ?? optimisticMessage?.metadata,
-                        is_read: message.is_read || false,
-                        sender_name: message.sender_name || optimisticMessage?.senderName || 'User',
-                        senderName: message.sender_name || optimisticMessage?.senderName || 'User',
-                        sender_avatar: message.sender_avatar || message.avatar,
-                        senderAvatar: message.sender_avatar || message.avatar,
-                        parentId: message.parentId ?? message.parent_id ?? optimisticMessage?.parentId,
-                        parent_id: message.parentId ?? message.parent_id ?? optimisticMessage?.parent_id,
-                        parentMessage: message.parentMessage ?? optimisticMessage?.parentMessage,
-                        isPending: false,
-                    } as Record<string, unknown>);
-                    const exists = prev.some((m) => String(m.id) === String(newMessage.id));
-                    if (exists) return sortChatMessagesLocal(prev);
-                    if (optimisticIndex !== -1) {
-                        const newMsgs = [...prev];
-                        newMsgs[optimisticIndex] = newMessage;
-                        return sortChatMessagesLocal(newMsgs);
-                    }
-                    return sortChatMessagesLocal([...prev, newMessage]);
-                });
-                if (String(senderId) !== String(user.id)) {
-                    if (audioRef.current) audioRef.current.play().catch(() => { });
-                    markAsRead(); // Mark as read when new message arrives in active chat
-                }
+            if (!socketMessageTargetsChat(message, String(chat.id))) return;
+            const user = (getUser() || {});
+            const senderId = message.sender_id ?? message.senderId;
+            setMessages((prev) => mergeIncomingSocketMessage(prev, message, user.id != null ? String(user.id) : undefined));
+            if (String(senderId) !== String(user.id)) {
+                if (audioRef.current) audioRef.current.play().catch(() => { });
+                markAsRead();
             }
         };
         socket.on('receive_message', handleReceiveMessage);
@@ -1201,24 +1116,20 @@ export default function ChatWindow({
         setInputValue("");
         setReplyTo(null);
 
-        // Optimistic UI Update
         const meId = (getUser() as { id?: string } | null)?.id;
-        setMessages(prev => {
-            const optimisticCreated = new Date(Math.max(Date.now(), maxCreatedAtMs(prev) + 1)).toISOString();
-            const optimistic = normalizeChatMessage({
+        const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
+        setMessages((prev) => {
+            const optimistic = createOptimisticChatMessage({
                 id: clientSideId,
                 text: inputContent,
-                sender: 'me',
-                sender_id: meId,
-                created_at: optimisticCreated,
-                createdAt: optimisticCreated,
-                time: formatChatTimeLabel(new Date(optimisticCreated).getTime(), 'uz-UZ'),
+                senderId: meId,
+                prevMessages: prev,
                 type: 'text',
                 parentId: currentReplyTo?.id,
-                parent_id: currentReplyTo?.id,
                 parentMessage: currentReplyTo ?? undefined,
                 isPending: !isNetworkOnline || !isConnected,
-            } as Record<string, unknown>);
+                locale: chatTimeLocale,
+            });
             return sortChatMessagesLocal([...prev, optimistic]);
         });
 
@@ -1281,22 +1192,19 @@ export default function ChatWindow({
             const initialType = file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : (file.type.startsWith('audio/') ? 'voice' : 'file'));
 
             const uid = (getUser() as { id?: string } | null)?.id;
-            setMessages(prev => {
-                const uploadCreated = new Date(Math.max(Date.now(), maxCreatedAtMs(prev) + 1)).toISOString();
-                const row = normalizeChatMessage({
+            const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
+            setMessages((prev) => {
+                const row = createOptimisticChatMessage({
                     id: tempId,
                     text: file.name,
-                    sender: 'me',
-                    sender_id: uid,
-                    created_at: uploadCreated,
-                    createdAt: uploadCreated,
-                    time: formatChatTimeLabel(new Date(uploadCreated).getTime(), 'uz-UZ'),
+                    senderId: uid,
+                    prevMessages: prev,
                     type: initialType,
-                    isUploading: true,
                     parentId: currentReplyTo?.id,
-                    parent_id: currentReplyTo?.id,
                     parentMessage: currentReplyTo ?? undefined,
-                } as Record<string, unknown>);
+                    isUploading: true,
+                    locale: chatTimeLocale,
+                });
                 return sortChatMessagesLocal([...prev, row]);
             });
 
@@ -1398,18 +1306,16 @@ export default function ChatWindow({
                         socket.emit('send_message', { roomId, content: fileUrl, type: 'voice', clientSideId });
                     }
                     const vUid = (getUser() as { id?: string } | null)?.id;
-                    setMessages(prev => {
-                        const vCreated = new Date(Math.max(Date.now(), maxCreatedAtMs(prev) + 1)).toISOString();
-                        const row = normalizeChatMessage({
+                    const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
+                    setMessages((prev) => {
+                        const row = createOptimisticChatMessage({
                             id: clientSideId,
                             text: fileUrl,
-                            sender: 'me',
-                            sender_id: vUid,
-                            created_at: vCreated,
-                            createdAt: vCreated,
-                            time: formatChatTimeLabel(new Date(vCreated).getTime(), 'uz-UZ'),
+                            senderId: vUid,
+                            prevMessages: prev,
                             type: 'voice',
-                        } as Record<string, unknown>);
+                            locale: chatTimeLocale,
+                        });
                         return sortChatMessagesLocal([...prev, row]);
                     });
                 } catch (err) { console.error("Voice upload error:", err); }
