@@ -542,8 +542,10 @@ export function mergeIncomingSocketMessage(
             optimisticMessage.created_at ?? optimisticMessage.createdAt
         );
     }
+    /** Server vaqtsiz payload: bitta `Date.now()` — barcha xabarlarga bir xil ms berardi (sakrash / tartib buzilish) */
     if (!createdIso) {
-        createdIso = new Date().toISOString();
+        const prevMax = maxCreatedAtMs(prev);
+        createdIso = new Date(Math.max(Date.now(), prevMax + 1)).toISOString();
     }
     const tMs = parseCreatedToMs(createdIso) ?? Date.now();
     const safeTime = formatChatTimeLabel(tMs, 'uz-UZ');

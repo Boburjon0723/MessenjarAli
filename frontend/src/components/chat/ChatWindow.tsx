@@ -1412,14 +1412,16 @@ export default function ChatWindow({
             if (searchType === 'media' && !['image', 'video', 'voice'].includes(nt)) return false;
             if (searchType === 'files' && nt !== 'file') return false;
 
-            // Date filter
-            const created = parseMessageDate(m) ?? new Date();
+            // Date filter — vaqt parse bo‘lmasa, san oralig‘ida xabarni yo‘qotmaymiz
+            const created = parseMessageDate(m);
             if (searchDateFrom) {
+                if (!created) return true;
                 const from = new Date(searchDateFrom);
                 from.setHours(0, 0, 0, 0);
                 if (created < from) return false;
             }
             if (searchDateTo) {
+                if (!created) return true;
                 const to = new Date(searchDateTo);
                 to.setHours(23, 59, 59, 999);
                 if (created > to) return false;
