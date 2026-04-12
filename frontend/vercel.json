@@ -1,0 +1,3 @@
+{
+  "ignoreCommand": "node -e \"const m=process.env.VERCEL_GIT_COMMIT_MESSAGE||'';process.exit(m.includes('[skip deploy]')?0:1)\""
+}

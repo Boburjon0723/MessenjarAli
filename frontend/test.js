@@ -1,0 +1,1 @@
+const fs = require('fs'); const file = 'c:/Users/hp/Desktop/mali-platform/mali-platform/frontend/src/components/chat/ProfileViewer.tsx'; let content = fs.readFileSync(file, 'utf-8'); let lines = content.split('\n'); lines[699] = '                className=\'test-class\''; fs.writeFileSync(file + '.temp.tsx', lines.join('\n')); console.log('Replaced line 700');

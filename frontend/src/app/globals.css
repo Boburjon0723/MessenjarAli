@@ -1,0 +1,770 @@
+@import "tailwindcss";
+
+/* MALI Platform - iOS-inspired Glassmorphism Design System */
+:root {
+  /* Primary Brand Colors */
+  /* Primary Brand Colors - Colder Theme */
+  --color-primary-deep: #0f172a;
+  /* Slate 900 */
+  --color-primary-light: #334155;
+  /* Slate 700 */
+  --accent-purple-start: #3b82f6;
+  /* Blue 500 (shifted from purple) */
+  --accent-purple-end: #0ea5e9;
+  /* Sky 500 */
+
+  /* Text Colors */
+  --text-primary: #f8fafc;
+  /* Slate 50 */
+  --text-secondary: rgba(248, 250, 252, 0.7);
+  --text-tertiary: rgba(248, 250, 252, 0.5);
+
+  /* Glass Layers - Colder & Blurrier */
+  --glass-bg: rgba(53, 57, 64, 0.5);
+  /* Darker, bluer base */
+  --glass-border: rgba(148, 163, 184, 0.1);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  /* RGB for Tailwind arbitrary rgba(var(--glass-rgb), a) — GlassPharm-style panels */
+  --glass-rgb: 30, 41, 59;
+
+  /* Background gradients */
+  --bg-gradient-start: #0f172a;
+  --bg-gradient-end: #1e293b;
+}
+
+/* Fonts */
+:root {
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* User provided reset/initialization */
+*,
+:after,
+:before {
+  --tw-border-spacing-x: 0;
+  --tw-border-spacing-y: 0;
+  --tw-translate-x: 0;
+  --tw-translate-y: 0;
+  --tw-rotate: 0;
+  --tw-skew-x: 0;
+  --tw-skew-y: 0;
+  --tw-scale-x: 1;
+  --tw-scale-y: 1;
+  --tw-pan-x: ;
+  --tw-pan-y: ;
+  --tw-pinch-zoom: ;
+  --tw-scroll-snap-strictness: proximity;
+  --tw-gradient-from-position: ;
+  --tw-gradient-via-position: ;
+  --tw-gradient-to-position: ;
+  --tw-ordinal: ;
+  --tw-slashed-zero: ;
+  --tw-numeric-figure: ;
+  --tw-numeric-spacing: ;
+  --tw-numeric-fraction: ;
+  --tw-ring-inset: ;
+  --tw-ring-offset-width: 0px;
+  --tw-ring-offset-color: #fff;
+  --tw-ring-color: #3b82f680;
+  --tw-ring-offset-shadow: 0 0 #0000;
+  --tw-ring-shadow: 0 0 #0000;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --tw-blur: ;
+  --tw-brightness: ;
+  --tw-contrast: ;
+  --tw-grayscale: ;
+  --tw-hue-rotate: ;
+  --tw-invert: ;
+  --tw-saturate: ;
+  --tw-sepia: ;
+  --tw-drop-shadow: ;
+  --tw-backdrop-blur: ;
+  --tw-backdrop-brightness: ;
+  --tw-backdrop-contrast: ;
+  --tw-backdrop-grayscale: ;
+  --tw-backdrop-hue-rotate: ;
+  --tw-backdrop-invert: ;
+  --tw-backdrop-opacity: ;
+  --tw-backdrop-saturate: ;
+  --tw-backdrop-sepia: ;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  /* Mobil status bar / overscroll: och rasmdan oldin qorong‘i qatlam (oq “yo‘nalish” bo‘lmaydi) */
+  background-color: #0f172a;
+  /* Default fon: faqat manzara (local PNG skrinshot bo‘lsa chat fonida “takrorlanadi”) */
+  background-image: url("https://images.unsplash.com/photo-1454496522488-7a8e488e8606?q=80&w=2676&auto=format&fit=crop");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+  position: relative;
+  width: 100%;
+}
+
+/* Overlay for better text readability but keeping background clear */
+/* Blur and Cold Overlay */
+body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.4);
+  /* Dark blue overlay */
+  backdrop-filter: blur(8px);
+  /* Blur effect requested */
+  -webkit-backdrop-filter: blur(8px);
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* Glassmorphism Utilities */
+@layer utilities {
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-hover {
+    transition-property: transform;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+    transition-duration: 300ms;
+
+    &:hover {
+      background: rgba(255, 255, 255, 0.15);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    }
+  }
+
+  .glass-premium {
+    background: linear-gradient(rgba(120, 130, 150, 0.3), rgba(80, 90, 110, 0.4));
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  }
+
+  .glass-blue-premium {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(80px) saturate(120%) brightness(1.05);
+    -webkit-backdrop-filter: blur(80px) saturate(120%) brightness(1.05);
+    border: 1px solid rgba(255, 255, 255, 1);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1), inset 0 0 2px 2px rgba(255, 255, 255, 0.5);
+  }
+
+  /* Mentor / live session — shaffof oyna, orqa fon ko‘rinadi */
+  .mentor-glass-surface {
+    background: linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.07) 0%,
+      rgba(255, 255, 255, 0.03) 50%,
+      rgba(15, 23, 42, 0.15) 100%
+    );
+    backdrop-filter: blur(28px) saturate(165%);
+    -webkit-backdrop-filter: blur(28px) saturate(165%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.18),
+      inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  }
+
+  .mentor-glass-bar {
+    background: rgba(255, 255, 255, 0.06);
+    backdrop-filter: blur(24px) saturate(160%);
+    -webkit-backdrop-filter: blur(24px) saturate(160%);
+    border-color: rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+@keyframes notification-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes pulse-soft {
+  0% {
+    transform: scale(1);
+  }
+
+  50% {
+    transform: scale(1.05);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-notification {
+  animation: notification-slide-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.pulse-notification {
+  animation: pulse-soft 2s infinite ease-in-out;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Scrollbar styling - iOS inspired */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Animations */
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Hide scrollbar for Chrome, Safari and Opera */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Hide scrollbar for IE, Edge and Firefox */
+/* Hide scrollbar for IE, Edge and Firefox */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  /* IE and Edge */
+  scrollbar-width: none;
+  /* Firefox */
+}
+
+/* Kategoriya navigatsiyasi: gorizontal scroll + ingichka scrollbar (kompyuter) */
+.nav-scroll-x {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.28) transparent;
+}
+
+.nav-scroll-x::-webkit-scrollbar {
+  height: 6px;
+}
+
+.nav-scroll-x::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+  border-radius: 9999px;
+}
+
+.nav-scroll-x::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Messages: kategoriya pager — brauzer snap ishlamasa ham o‘rtada qolmasin */
+.messages-category-pager {
+  display: flex;
+  flex-flow: row nowrap;
+  flex: 1 1 0%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x pan-y;
+}
+
+.messages-category-pager > .messages-category-pager-slide {
+  box-sizing: border-box;
+  flex: 0 0 100%;
+  width: 100%;
+  min-width: 100%;
+  max-width: 100%;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-5px);
+  }
+
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.5s cubic-bezier(.36, .07, .19, .97) both;
+}
+
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
+}
+
+/* Modal & Menu Animations */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-up {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Modallar: ochilish / yopilish (AnimatedModal) */
+@keyframes modal-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes modal-backdrop-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94) translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes modal-panel-out {
+  from {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.94) translateY(8px);
+  }
+}
+
+.animate-modal-backdrop-in {
+  animation: modal-backdrop-in 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modal-backdrop-out {
+  animation: modal-backdrop-out 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.animate-modal-panel-in {
+  animation: modal-panel-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modal-panel-out {
+  animation: modal-panel-out 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes slide-drawer-from-left {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-drawer-from-right {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scale-up {
+  animation: scale-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-drawer-left {
+  animation: slide-drawer-from-left 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-drawer-right {
+  animation: slide-drawer-from-right 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Messages: o'rta panel — chat almashganda karusel siljishi */
+@keyframes chat-carousel-exit-left {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.88;
+    transform: translateX(-100%);
+  }
+}
+
+@keyframes chat-carousel-enter-right {
+  from {
+    opacity: 0.92;
+    transform: translateX(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.chat-carousel-panel-exit {
+  animation: chat-carousel-exit-left 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+.chat-carousel-panel-enter {
+  animation: chat-carousel-enter-right 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+/** Guruh/kanal/shaxs info paneli — o‘ngdan kirish (chat karusel bilan bir xil ritm) */
+.chat-info-panel-enter {
+  animation: chat-carousel-enter-right 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation-fill-mode: both;
+  will-change: transform, opacity;
+}
+
+@media (prefers-reduced-motion: reduce) {
+
+  .chat-carousel-panel-exit,
+  .chat-carousel-panel-enter,
+  .chat-info-panel-enter,
+  .chat-list-category-transition-next,
+  .chat-list-category-transition-prev {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
+/** ChatList: yuqori kategoriya (yoki ro‘yxatda swipe) almashganda kontent oqimi */
+@keyframes chat-list-category-from-right {
+  from {
+    opacity: 0.82;
+    transform: translateX(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes chat-list-category-from-left {
+  from {
+    opacity: 0.82;
+    transform: translateX(-18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.chat-list-category-transition-next {
+  animation: chat-list-category-from-right 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+  will-change: transform, opacity;
+}
+
+.chat-list-category-transition-prev {
+  animation: chat-list-category-from-left 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+  will-change: transform, opacity;
+}
+
+@keyframes highlight-pulse {
+  0% {
+    background-color: rgba(59, 130, 246, 0.4);
+  }
+
+  100% {
+    background-color: transparent;
+  }
+}
+
+.highlight-message {
+  animation: highlight-pulse 2s ease-out;
+}
+
+/* Auth (Login / Register) – form enter animations */
+@keyframes auth-enter-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes auth-enter-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-auth-enter-left {
+  animation: auth-enter-from-left 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-auth-enter-right {
+  animation: auth-enter-from-right 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Modal va menyu animatsiyalari */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scale-up {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes slide-drawer-from-left {
+  from {
+    opacity: 1;
+    transform: translateX(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slide-popover-from-top {
+  from {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes slide-popover-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-scale-up {
+  animation: scale-up 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-drawer-left {
+  animation: slide-drawer-from-left 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-popover {
+  animation: slide-popover-from-top 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-popover-right {
+  animation: slide-popover-from-right 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Video call (LiveKit): chat va Leave olib tashlangan; pastdagi tugmalar kichikroq va teparoq */
+.lk-video-conference .lk-chat-toggle,
+.mali-video-call-container .lk-chat-toggle {
+  display: none !important;
+}
+.lk-video-conference .lk-chat,
+.mali-video-call-container .lk-chat {
+  display: none !important;
+}
+.lk-video-conference .lk-control-bar .lk-disconnect-button,
+.mali-video-call-container .lk-control-bar .lk-disconnect-button {
+  display: none !important;
+}
+.lk-video-conference .lk-control-bar,
+.mali-video-call-container .lk-control-bar {
+  bottom: 0.5rem !important;
+  padding: 0.4rem 0.6rem !important;
+  gap: 0.4rem !important;
+  transform: scale(0.78);
+  transform-origin: center bottom;
+  max-width: 95%;
+}
+.lk-video-conference .lk-control-bar .lk-button,
+.lk-video-conference .lk-control-bar .lk-button-group .lk-button,
+.mali-video-call-container .lk-control-bar .lk-button,
+.mali-video-call-container .lk-control-bar .lk-button-group .lk-button {
+  padding: 0.35rem 0.5rem !important;
+  font-size: 0.7rem !important;
+  min-height: auto !important;
+}
+.lk-video-conference .lk-control-bar .lk-button svg,
+.lk-video-conference .lk-control-bar .lk-button-group .lk-button svg,
+.mali-video-call-container .lk-control-bar .lk-button svg,
+.mali-video-call-container .lk-control-bar .lk-button-group .lk-button svg {
+  width: 0.9rem !important;
+  height: 0.9rem !important;
+}
+
+/* Foydalanuvchi (o'z) videosini kichikroq qilish — burchakda kichik oyna */
+.mali-video-call-container .lk-participant-tile[data-lk-local-participant="true"],
+.mali-video-call-container [data-lk-local-participant="true"].lk-participant-tile {
+  max-width: 32% !important;
+  max-height: 28% !important;
+  width: auto !important;
+  height: auto !important;
+  aspect-ratio: 16/10;
+  align-self: flex-end !important;
+  justify-self: flex-end !important;
+  margin: 0.5rem !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+}
+/* Focus layoutda local katta ko‘rinadigan qatorda ham cheklash */
+.mali-video-call-container .lk-focused-participant:has([data-lk-local-participant="true"]) .lk-participant-tile {
+  max-width:  min(320px, 36vw) !important;
+  max-height: min(200px, 28vh) !important;
+  width: auto !important;
+  height: auto !important;
+  aspect-ratio: 16/10;
+  margin-left: auto !important;
+  margin-right: 0.5rem !important;
+  margin-top: 0.5rem !important;
+  align-self: flex-end !important;
+  justify-self: flex-end !important;
+  border-radius: 0.75rem !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
+}

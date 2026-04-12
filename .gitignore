@@ -1,0 +1,36 @@
+# Monorepo root
+node_modules/
+**/node_modules/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Builds
+**/.next/
+**/out/
+**/dist/
+**/build/
+
+# Logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+
+# Vercel / deploy
+.vercel
+
+# Misc
+*.pem
+**/uploads/
+**/serviceAccountKey.json
+
+# Android / Gradle (local machine)
+**/local.properties
+mobile-android/.gradle/
+mobile-android/**/build/
