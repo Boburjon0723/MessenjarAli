@@ -28,8 +28,6 @@ export const SendTokenModal: React.FC<SendTokenModalProps> = ({
 
     const handleSend = (e: React.FormEvent) => {
         e.preventDefault();
-        // Handle send logic
-        console.log({ recipient, amount, note, fee, total });
         onClose();
     };
 

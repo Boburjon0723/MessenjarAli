@@ -54,7 +54,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         }
 
         const socketURL = getPublicWsUrl();
-        console.log(`[SocketContext] Connecting to ${socketURL}...`);
 
         const socketInstance = io(socketURL, {
             transports: ['websocket'],
@@ -69,7 +68,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         setSocket(socketInstance);
 
         socketInstance.on('connect', () => {
-            console.log('[SocketContext] Connected:', socketInstance.id);
             setIsConnected(true);
         });
 
@@ -78,8 +76,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
             window.dispatchEvent(new CustomEvent('socket_reconnected'));
         });
 
-        socketInstance.on('disconnect', (reason) => {
-            console.log('[SocketContext] Disconnected:', reason);
+        socketInstance.on('disconnect', () => {
             setIsConnected(false);
         });
 
@@ -94,7 +91,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
         const onStorageChange = (e: StorageEvent) => {
             if (e.key === 'token') {
-                console.log('[SocketContext] Token changed, reconnecting...');
                 connect();
             }
         };

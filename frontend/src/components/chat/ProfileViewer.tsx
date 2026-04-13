@@ -303,7 +303,6 @@ export default function ProfileViewer({
         socket.on('expert_status_updated', (data: { userId: string, status: string }) => {
             const oldUser = getUser() || {};
             if (oldUser.id === data.userId) {
-                console.log('[ProfileViewer] Status updated from socket:', data.status);
                 let nextIsExpert = !!oldUser.is_expert;
                 if (data.status === 'pending') {
                     nextIsExpert = true;
@@ -608,7 +607,6 @@ export default function ProfileViewer({
             const grp = updatedGroups[i];
             if (!grp.chatId) {
                 try {
-                    console.log(`[ProfileViewer] Creating chat group for: ${grp.name}`);
                     const res = await fetch(`${apiUrl}/api/chats`, {
                         method: 'POST',
                         headers: {
@@ -619,7 +617,6 @@ export default function ProfileViewer({
                     });
                     if (res.ok) {
                         const newChat = await res.json();
-                        console.log(`[ProfileViewer] Created chat:`, newChat);
                         updatedGroups[i].chatId = newChat.id || newChat._id;
                         createdAny = true;
                     } else {

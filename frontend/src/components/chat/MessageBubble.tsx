@@ -103,6 +103,46 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     };
 
+    const fileName = useMemo(() => {
+        return (
+            (typeof fileMeta.name === 'string' && fileMeta.name) ||
+            (typeof fileMeta.file_name === 'string' && fileMeta.file_name) ||
+            (mediaSrc && mediaSrc.split('/').pop()) ||
+            (messageType === 'voice' ? t('voice_message') : t('file'))
+        );
+    }, [fileMeta.name, fileMeta.file_name, mediaSrc, messageType, t]);
+
+    const fileKind = useMemo(() => {
+        const mime = String(fileMeta.mimetype || '').toLowerCase();
+        const ext = (fileName.split('.').pop() || '').toLowerCase();
+        if (mime.startsWith('audio/') || /^(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(ext)) return 'AUDIO';
+        if (mime.startsWith('video/') || /^(mp4|mov|webm|mkv|avi|m4v)$/.test(ext)) return 'VIDEO';
+        if (mime.startsWith('image/') || /^(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(ext)) return 'IMAGE';
+        if (mime.includes('pdf') || ext === 'pdf') return 'PDF';
+        if (/word|officedocument|msword/.test(mime) || /^(doc|docx|rtf)$/.test(ext)) return 'DOC';
+        if (/sheet|excel|spreadsheet/.test(mime) || /^(xls|xlsx|csv)$/.test(ext)) return 'SHEET';
+        if (/zip|rar|7z|tar|gzip/.test(mime) || /^(zip|rar|7z|tar|gz)$/.test(ext)) return 'ARCHIVE';
+        return ext ? ext.toUpperCase() : 'FILE';
+    }, [fileMeta.mimetype, fileName]);
+
+    const handleDownload = async () => {
+        if (!mediaSrc) return;
+        try {
+            const res = await fetch(mediaSrc);
+            const blob = await res.blob();
+            const u = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = u;
+            a.download = fileName || 'file';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(u);
+        } catch {
+            window.open(mediaSrc, '_blank');
+        }
+    };
+
     useEffect(() => {
         const audio = audioRef.current;
         if (!audio) return;
@@ -355,10 +395,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 <div className="flex-1 min-w-0 flex flex-col justify-center">
                                     <div className="flex items-center justify-between gap-2 mb-1">
                                         <p className="text-[13px] font-bold text-white truncate min-w-0">
-                                            {(typeof fileMeta.name === 'string' && fileMeta.name) ||
-                                                (typeof fileMeta.file_name === 'string' && fileMeta.file_name) ||
-                                                (mediaSrc && mediaSrc.split('/').pop()) ||
-                                                (messageType === 'voice' ? t('voice_message') : 'Audio')}
+                                            {fileName}
                                         </p>
                                         <span className="text-[11px] font-bold text-white/60 tabular-nums flex-shrink-0">
                                             {formatDuration(isPlaying ? currentTime : duration)}
@@ -371,9 +408,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     </div>
                                     <div className="flex items-center justify-between mt-0.5">
                                         <span className="text-[10px] font-bold text-white/50">{formatDuration(isPlaying ? currentTime : duration)}</span>
-                                        <span className="text-[9px] font-bold text-white/30 uppercase">
-                                            {messageType === 'voice' ? t('active') : formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
-                                        </span>
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[9px] font-bold text-white/30 uppercase">
+                                                {messageType === 'voice' ? t('active') : formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    void handleDownload();
+                                                }}
+                                                className="text-[9px] font-bold uppercase text-blue-300 hover:text-blue-200"
+                                            >
+                                                {t('download')}
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 <audio preload="metadata" ref={audioRef} src={mediaSrc || undefined} className="hidden" />
@@ -395,20 +444,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     )}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <p className="text-[13px] font-bold text-white truncate mb-0.5 group-hover/file:text-blue-400 transition-colors">
-                                        {(typeof fileMeta.name === 'string' && fileMeta.name) ||
-                                            (typeof fileMeta.file_name === 'string' && fileMeta.file_name) ||
-                                            (message.text || '').split('/').pop()}
-                                    </p>
+                                    <p className="text-[13px] font-bold text-white truncate mb-0.5 group-hover/file:text-blue-400 transition-colors">{fileName}</p>
                                     <div className="flex items-center gap-2">
-                                        <p className="text-[10px] font-bold text-white/40 uppercase bg-black/20 px-1.5 py-0.5 rounded-md">
-                                            {(typeof fileMeta.name === 'string' ? fileMeta.name.split('.').pop() : undefined) ||
-                                                message.text?.split('.').pop() ||
-                                                t('file')}
-                                        </p>
+                                        <p className="text-[10px] font-bold text-white/40 uppercase bg-black/20 px-1.5 py-0.5 rounded-md">{fileKind}</p>
                                         <p className="text-[10px] font-bold text-white/40 uppercase">
                                             {formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
                                         </p>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                void handleDownload();
+                                            }}
+                                            className="text-[10px] font-bold uppercase text-blue-300 hover:text-blue-200"
+                                        >
+                                            {t('download')}
+                                        </button>
                                     </div>
                                 </div>
                             </div>

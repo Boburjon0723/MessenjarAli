@@ -26,7 +26,6 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, ser
 
     const handleBook = (e: React.FormEvent) => {
         e.preventDefault();
-        console.log({ date, time, duration, notes, totalPrice });
         onClose();
     };
 

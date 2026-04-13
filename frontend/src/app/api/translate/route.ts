@@ -21,7 +21,6 @@ export async function POST(request: Request) {
             : defaultMirrors;
 
         for (const url of urlsToTry) {
-            console.log(`Translation proxy trying mirror: ${url}`);
             try {
                 const response = await fetch(url, {
                     method: 'POST',

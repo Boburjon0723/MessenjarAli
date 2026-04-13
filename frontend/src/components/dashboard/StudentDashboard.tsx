@@ -416,7 +416,6 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
         socket.on('hand_lowered', handleHandLoweredBroadcast);
 
         const handleReconnect = () => {
-            console.log("[StudentDashboard] Reconnected, syncing resources...");
             loadSessionResources();
         };
         window.addEventListener('socket_reconnected', handleReconnect);

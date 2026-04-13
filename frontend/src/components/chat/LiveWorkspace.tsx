@@ -162,13 +162,11 @@ export default function LiveWorkspace({
         };
 
         const handleBreakoutAssigned = (data: { subRoomId: string, mainRoomId: string }) => {
-            console.log("Assigned to breakout:", data.subRoomId);
             setCurrentRoomId(data.subRoomId);
             setIsBreakoutActive(true);
         };
 
         const handleBreakoutRoomsCreated = (data: { assignments: Record<string, string[]> }) => {
-            console.log("Breakout rooms created:", Object.keys(data.assignments));
             setBreakoutRooms(data.assignments);
             setIsBreakoutActive(true);
         };
@@ -176,14 +174,12 @@ export default function LiveWorkspace({
         const handleBreakoutActive = () => setIsBreakoutActive(true);
 
         const handleBreakoutEnded = () => {
-            console.log("Breakout ended, returning to main room");
             setCurrentRoomId(chat?.id || 'demo-room');
             setIsBreakoutActive(false);
             setBreakoutRooms({});
         };
 
         const handleWhiteboardToggle = (isOpen: boolean) => {
-            console.log("Whiteboard toggle received:", isOpen);
             setShowWhiteboard(isOpen);
         };
 

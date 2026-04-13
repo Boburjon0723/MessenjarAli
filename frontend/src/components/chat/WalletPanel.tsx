@@ -514,8 +514,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
             fetchAds();
             fetchMyAds();
         };
-        const handleP2pTradeInitiated = (data: any) => {
-            console.log('Trade initiated:', data);
+        const handleP2pTradeInitiated = () => {
             fetchMyTrades();
         };
         const handleP2pTradeUpdated = () => {
@@ -529,7 +528,6 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         socket.on('p2p_trade_updated', handleP2pTradeUpdated);
         
         const handleReconnect = () => {
-            console.log("[WalletPanel] Reconnected, syncing balance...");
             fetchBalance();
             fetchTransactions();
         };

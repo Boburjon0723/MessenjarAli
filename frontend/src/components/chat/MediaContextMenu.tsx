@@ -16,6 +16,22 @@ function parseMessageMetadata(raw: ChatMessage['metadata']): ChatMessageMetadata
     return raw;
 }
 
+function guessExtFromContentType(contentType?: string | null): string {
+    const ct = String(contentType || '').toLowerCase();
+    if (ct.includes('jpeg')) return '.jpg';
+    if (ct.includes('png')) return '.png';
+    if (ct.includes('webp')) return '.webp';
+    if (ct.includes('gif')) return '.gif';
+    if (ct.includes('mp4')) return '.mp4';
+    if (ct.includes('webm')) return '.webm';
+    if (ct.includes('mpeg') || ct.includes('mp3')) return '.mp3';
+    if (ct.includes('wav')) return '.wav';
+    if (ct.includes('ogg')) return '.ogg';
+    if (ct.includes('pdf')) return '.pdf';
+    if (ct.includes('zip')) return '.zip';
+    return '';
+}
+
 interface MediaContextMenuProps {
     x: number;
     y: number;
@@ -77,11 +93,16 @@ export default function MediaContextMenu({
             a.href = blobUrl;
             // Use metadata file name if available, otherwise fallback to URL filename
             const meta = parseMessageMetadata(message.metadata);
-            a.download =
+            let downloadName =
                 (typeof meta.file_name === 'string' && meta.file_name) ||
                 (typeof meta.name === 'string' && meta.name) ||
                 message.text.split('/').pop() ||
                 'media';
+            const ext = guessExtFromContentType(contentType);
+            if (ext && !/\.[a-z0-9]{2,5}$/i.test(downloadName)) {
+                downloadName += ext;
+            }
+            a.download = downloadName;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

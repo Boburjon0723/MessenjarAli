@@ -8,7 +8,7 @@ import { X, Smile, Plus, Trash2, Maximize2, MoreVertical, Check } from 'lucide-r
 interface MediaFile {
     file: File;
     preview: string;
-    type: 'image' | 'video' | 'file';
+    type: 'image' | 'video' | 'voice' | 'file';
 }
 
 interface MediaUploadModalProps {
@@ -25,12 +25,20 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
     const [compress, setCompress] = useState(true);
 
     useEffect(() => {
+        const detectType = (file: File): MediaFile['type'] => {
+            const mime = String(file.type || '').toLowerCase();
+            const name = String(file.name || '').toLowerCase();
+            if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(name)) return 'image';
+            if (mime.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v)$/.test(name)) return 'video';
+            if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(name)) return 'voice';
+            return 'file';
+        };
         const loadPreviews = async () => {
             const list: MediaFile[] = await Promise.all(
                 initialFiles.map(async (file) => ({
                     file,
                     preview: URL.createObjectURL(file),
-                    type: file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : 'file')
+                    type: detectType(file)
                 }))
             );
             setMediaList(list);
@@ -61,7 +69,13 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4">
                     <h2 className="text-white font-bold text-lg">
-                        {activeMedia.type === 'image' ? 'Rasm yuborish' : (activeMedia.type === 'video' ? 'Video yuborish' : 'Fayl yuborish')}
+                        {activeMedia.type === 'image'
+                            ? 'Rasm yuborish'
+                            : activeMedia.type === 'video'
+                              ? 'Video yuborish'
+                              : activeMedia.type === 'voice'
+                                ? 'Audio yuborish'
+                                : 'Fayl yuborish'}
                     </h2>
                     <button className="p-1 text-white/40 hover:text-white transition-colors">
                         <MoreVertical className="h-5 w-5" />
@@ -75,6 +89,14 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
                             <img src={activeMedia.preview} className="w-full h-full object-contain" />
                         ) : activeMedia.type === 'video' ? (
                             <video src={activeMedia.preview} className="w-full h-full object-contain" controls />
+                        ) : activeMedia.type === 'voice' ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-4">
+                                <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                                    <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v11m0 0a3 3 0 003-3V7a3 3 0 10-6 0v2a3 3 0 003 3zm6 0a6 6 0 01-12 0m12 0v3a6 6 0 01-12 0v-3m6 9v2m-4 0h8" /></svg>
+                                </div>
+                                <audio src={activeMedia.preview} controls className="w-full max-w-xs" />
+                                <span className="text-white text-sm font-medium truncate max-w-full">{activeMedia.file.name}</span>
+                            </div>
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center gap-3">
                                 <div className="w-16 h-16 rounded-2xl bg-blue-500/20 flex items-center justify-center text-blue-400">

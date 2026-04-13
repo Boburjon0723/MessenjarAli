@@ -279,7 +279,7 @@ export default function AdminPanel() {
                     });
                 }
             } catch {
-                console.log('Settings fetch failed, using defaults');
+                /* defaults */
             }
 
             // Fetch desktop app download info (public endpoint)
@@ -294,11 +294,11 @@ export default function AdminPanel() {
                     setDesktopVersion(version || null);
                 }
             } catch {
-                console.log('Desktop info endpoint not available yet');
+                /* desktop URL ixtiyoriy */
             }
 
             // Optional: Fetch settings if endpoint exists
-        } catch { console.log("Settings endpoint not found, using defaults"); }
+        } catch { /* defaults */ }
     };
 
     const handleApproveTopUp = async (requestId: string) => {

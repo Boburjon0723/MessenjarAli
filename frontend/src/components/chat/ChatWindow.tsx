@@ -4,7 +4,6 @@ import { MessageBubble } from './MessageBubble';
 import SendCoinModal from './SendCoinModal';
 import MediaUploadModal from './MediaUploadModal';
 import MediaViewerOverlay from './MediaViewerOverlay';
-import LiveWorkspace from './LiveWorkspace';
 import LiveKitRoomWrapper from './LiveKitRoomWrapper';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
@@ -66,6 +65,21 @@ const INITIAL_MESSAGES: ChatMessage[] = [];
 
 /** Pastga avtomatik scroll: foydalanuvchi shu px dan yaqinroqda bo‘lsa */
 const CHAT_NEAR_BOTTOM_PX = 72;
+/** Chat ichidagi calllar o‘chiq: faqat xizmat paneli orqali. */
+const CHAT_CALLS_ALLOWED = false;
+
+function inferMessageTypeFromFile(name?: string, mime?: string): 'image' | 'video' | 'voice' | 'file' {
+    const m = String(mime || '').toLowerCase();
+    if (m.startsWith('image/')) return 'image';
+    if (m.startsWith('video/')) return 'video';
+    if (m.startsWith('audio/')) return 'voice';
+
+    const n = String(name || '').toLowerCase();
+    if (/\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(n)) return 'image';
+    if (/\.(mp4|mov|webm|mkv|avi|m4v)$/.test(n)) return 'video';
+    if (/\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(n)) return 'voice';
+    return 'file';
+}
 
 function parseMessageDate(msg: { created_at?: unknown; createdAt?: unknown }): Date | null {
     const ms = parseCreatedToMs(msg?.created_at ?? msg?.createdAt);
@@ -560,6 +574,10 @@ export default function ChatWindow({
             socket.on('service_session_updated', handleSessionUpdate);
 
             socket.on('incoming_call', (data: CallSignalPayload) => {
+                if (!CHAT_CALLS_ALLOWED) {
+                    if (data?.from) socket.emit('reject_call', { to: String(data.from) });
+                    return;
+                }
                 setCallData(data);
                 if (data.callType === 'video' || data.callType === 'audio') {
                     setCallType(data.callType);
@@ -588,6 +606,7 @@ export default function ChatWindow({
             });
 
             socket.on('call_accepted', async (data: CallSignalPayload) => {
+                if (!CHAT_CALLS_ALLOWED) return;
                 stopCallRing();
                 setIsCalling(true);
                 startCallTimer();
@@ -612,6 +631,7 @@ export default function ChatWindow({
             });
 
             socket.on('call_rejected', () => {
+                if (!CHAT_CALLS_ALLOWED) return;
                 stopCallRing();
                 setIsCalling(false);
                 setCallData(null);
@@ -619,11 +639,13 @@ export default function ChatWindow({
             });
 
             socket.on('call_ended', () => {
+                if (!CHAT_CALLS_ALLOWED) return;
                 stopCallRing();
                 endCallUI();
             });
 
             socket.on('call_signal', async (data: CallSignalPayload) => {
+                if (!CHAT_CALLS_ALLOWED) return;
                 if (!pcRef.current || !data?.signal || typeof data.signal !== 'object') return;
                 const sig = data.signal as Record<string, unknown> & {
                     candidate?: unknown;
@@ -701,7 +723,6 @@ export default function ChatWindow({
 
         pc.onicecandidate = (event) => {
             if (event.candidate && socket) {
-                console.log("[WebRTC] Sending ICE candidate to", targetUserId);
                 socket.emit('call_signal', { to: targetUserId, signal: event.candidate });
             }
         };
@@ -750,6 +771,10 @@ export default function ChatWindow({
     };
 
     const handleCall = async (typeOverride?: 'audio' | 'video') => {
+        if (!CHAT_CALLS_ALLOWED) {
+            showError("Chat call o'chirilgan. Faqat xizmat panelidan foydalaning.");
+            return;
+        }
         if (!socket || !chat) return;
         const targetUserId = String(chat.otherUser?.id || chat.userId || chat.id);
         const myName = (getUser() || {}).name || "User";
@@ -789,6 +814,12 @@ export default function ChatWindow({
     };
 
     const handleAcceptCall = async () => {
+        if (!CHAT_CALLS_ALLOWED) {
+            if (socket && callData?.from) socket.emit('reject_call', { to: String(callData.from) });
+            setIsIncomingCall(false);
+            setCallData(null);
+            return;
+        }
         if (!socket || !callData) return;
         const remotePeerId =
             callData.from != null && String(callData.from) !== ''
@@ -1124,7 +1155,6 @@ export default function ChatWindow({
         socket.on('error', handleSocketError);
 
         const handleReconnect = () => {
-            console.log("[ChatWindow] Reconnected, syncing history...");
             joinCurrentRoom();
             fetchHistory();
         };
@@ -1239,7 +1269,7 @@ export default function ChatWindow({
             const tempId = `temp_${uploadBatchMs}_${i}`;
 
             // Optimistic UI for each file
-            const initialType = file.type.startsWith('image/') ? 'image' : (file.type.startsWith('video/') ? 'video' : (file.type.startsWith('audio/') ? 'voice' : 'file'));
+            const initialType = inferMessageTypeFromFile(file.name, file.type);
 
             const uid = (getUser() as { id?: string } | null)?.id;
             const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
@@ -1270,10 +1300,14 @@ export default function ChatWindow({
                     const uploadedFile = data.files[0];
                     if (socket) {
                         const mimetype = uploadedFile.mimetype || uploadedFile.type || '';
+                        const detectedType = inferMessageTypeFromFile(
+                            uploadedFile.originalname || uploadedFile.name || file.name,
+                            mimetype
+                        );
                         const mediaPayload = {
                             roomId: chat.id,
                             content: uploadedFile.url,
-                            type: mimetype.startsWith('image/') ? 'image' : (mimetype.startsWith('video/') ? 'video' : (mimetype.startsWith('audio/') ? 'voice' : 'file')) as string,
+                            type: detectedType,
                             clientSideId: tempId,
                             caption: i === 0 ? caption : undefined,
                             metadata: {
@@ -1623,7 +1657,7 @@ export default function ChatWindow({
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                             </button>
-                            {!isTrade && (
+                            {!isTrade && CHAT_CALLS_ALLOWED && (
                                 <div className="flex items-center gap-1">
                                     <button
                                         onClick={() => {
@@ -1645,6 +1679,11 @@ export default function ChatWindow({
                                     >
                                         <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
                                     </button>
+                                </div>
+                            )}
+                            {!isTrade && !CHAT_CALLS_ALLOWED && (
+                                <div className="hidden sm:flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
+                                    {t('service_session')}
                                 </div>
                             )}
                             <div className="relative">
@@ -2035,17 +2074,7 @@ export default function ChatWindow({
             </div>
 
             {/* Premium Call Interface */}
-            {(isIncomingCall || isCalling) && (
-                currentUser?.is_expert && callType === 'video' && !isIncomingCall ? (
-                    <LiveWorkspace
-                        chat={chat}
-                        user={currentUser}
-                        localStream={localStream}
-                        remoteStream={remoteStream}
-                        onEndCall={handleEndCall}
-                        callType={callType}
-                    />
-                ) : (
+            {CHAT_CALLS_ALLOWED && (isIncomingCall || isCalling) && (
                     <div className="absolute inset-0 z-[100] bg-[#0d0d0f]/90 backdrop-blur-2xl flex flex-col items-center justify-between py-4 sm:py-6 md:py-8 animate-fade-in shadow-2xl overflow-hidden min-h-0">
                         {/* Remote audio — ovozli chaqiruvda sherik ovozini ijro qilish (ref doim overlayda) */}
                         <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none" aria-hidden />
@@ -2176,7 +2205,6 @@ export default function ChatWindow({
                             )}
                         </div>
                     </div>
-                )
             )}
 
             <MediaUploadModal
@@ -2187,7 +2215,7 @@ export default function ChatWindow({
             />
 
             {/* Pre-call modal */}
-            {showPreCallModal && (
+            {CHAT_CALLS_ALLOWED && showPreCallModal && (
                 <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
                     <div className="w-full max-w-md glass-premium border border-white/10 rounded-3xl p-6 space-y-4">
                         <div className="flex items-center justify-between">

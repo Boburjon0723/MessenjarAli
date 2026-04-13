@@ -25,7 +25,6 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
     if ((response.status === 401 || response.status === 403) && typeof window !== 'undefined') {
         const refreshToken = getRefreshToken();
         if (refreshToken) {
-            console.log('Access token expired, attempting refresh...');
             const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

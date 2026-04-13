@@ -303,21 +303,17 @@ function MessagesPageContent() {
     const fetchChats = useCallback(async (refresh = false) => {
         const token = getToken();
         if (!token) {
-            console.warn("[MessagesPage] No token found, redirecting to login");
             setLoading(false);
             window.location.href = '/login';
             return;
         }
         const seq = ++fetchChatsSeqRef.current;
-        console.log("[MessagesPage] fetchChats starting...");
         try {
             const url = refresh ? `/api/chats?refresh=1` : `/api/chats`;
             const res = await apiFetch(url);
-            console.log("[MessagesPage] fetchChats status:", res.status);
             if (res.ok) {
                 const data = await res.json();
                 if (seq !== fetchChatsSeqRef.current) return;
-                console.log("[MessagesPage] fetchChats count:", data.length);
                 const mappedChats = data.map((chat: any) => {
                     const chatId = chat.id || chat._id;
                     return {
@@ -351,13 +347,10 @@ function MessagesPageContent() {
     const fetchContacts = useCallback(async () => {
         const token = getToken();
         if (!token) return;
-        console.log("[MessagesPage] fetchContacts starting...");
         try {
             const res = await apiFetch(`/api/users/contacts`);
-            console.log("[MessagesPage] fetchContacts status:", res.status);
             if (res.ok) {
                 const users = await res.json();
-                console.log("[MessagesPage] fetchContacts count:", users.length);
                 if (Array.isArray(users)) {
                     const mappedContacts = users.map((u: any) => ({
                         ...u,
@@ -437,10 +430,6 @@ function MessagesPageContent() {
                 const id = newChat.id || newChat._id;
                 const avatar = newChat.avatar_url ?? avatarUrl ?? null;
                 if (id) {
-                    const checkRes = await apiFetch(`/api/chats/${id}`);
-                    if (!checkRes.ok) {
-                        console.warn("[handleCreateGroup] Guruh yaratildi lekin GET tekshiruv 404 – ehtimol cache yoki boshqa backend. chatId:", id);
-                    }
                     const mappedNew = {
                         ...newChat,
                         id,
@@ -614,7 +603,6 @@ function MessagesPageContent() {
             if (parsed) {
                 setCurrentUser(parsed);
                 if (roomParam) {
-                    console.log("[MessagesPage] Room parameter detected:", roomParam);
                     setIsExpertMode(false);
                     setShowRightPanel(false);
                     setSelectedChat(lessonGroupPlaceholder(String(roomParam)));
@@ -777,7 +765,6 @@ function MessagesPageContent() {
         socket.on('chat_updated', handleChatUpdated);
 
         const handleReconnect = () => {
-            console.log("[MessagesPage] Reconnected, syncing all data...");
             fetchChats(true);
             fetchContacts();
         };
