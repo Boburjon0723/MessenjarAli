@@ -420,7 +420,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                                 }}
                                                 className="text-[9px] font-bold uppercase text-blue-300 hover:text-blue-200"
                                             >
-                                                {t('download')}
+                                                {t('save')}
                                             </button>
                                         </div>
                                     </div>
@@ -458,7 +458,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                             }}
                                             className="text-[10px] font-bold uppercase text-blue-300 hover:text-blue-200"
                                         >
-                                            {t('download')}
+                                            {t('save')}
                                         </button>
                                     </div>
                                 </div>
