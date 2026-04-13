@@ -67,6 +67,7 @@ import {
 import { isExpertListingChat } from '@/lib/listing-chat';
 import { getExpertComplianceNotice } from '@/lib/expert-compliance-copy';
 import { getPublicApiUrl } from '@/lib/public-origin';
+import { getToken } from '@/lib/auth-storage';
 import { useLanguage } from '@/context/LanguageContext';
 import type { Language } from '@/lib/translations';
 
@@ -747,7 +748,11 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         formData.append('material', file);
 
         try {
-            const token = localStorage.getItem('token');
+            const token = getToken();
+            if (!token) {
+                showError(t('error_invalid_credentials'));
+                return;
+            }
             const res = await fetch(`${getPublicApiUrl()}/api/sessions/${selectedGroupId}/materials`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` },
@@ -765,7 +770,12 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                 setMaterials(prev => [newMaterial, ...prev]);
                 showSuccess(t('material_uploaded_success'));
             } else {
-                showError(t('material_upload_failed'));
+                const err = await res.json().catch(() => ({} as { error?: string; message?: string }));
+                showError(
+                    (typeof err.error === 'string' && err.error) ||
+                    (typeof err.message === 'string' && err.message) ||
+                    (t('material_upload_failed') as string)
+                );
             }
         } catch (err) {
             console.error('Upload error:', err);

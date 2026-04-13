@@ -111,7 +111,7 @@ export function LiveVideoFrame({
     // Huquqshunos/consultant: markazda mijoz, pastda esa ekspert (lokal) bo'lsin
     const mainTrack = mainIsClient ? (sortedRemoteForMentor[0] ?? remoteVideoTracks[0] ?? null) : baseMainTrack;
     const gridTracks = mainIsClient
-        ? [...remoteVideoTracks, localVideoTrack].filter(Boolean)
+        ? [localVideoTrack].filter(Boolean)
         : baseGridTracks;
 
     const screenShareTrack = tracks.find(t => t.source === Track.Source.ScreenShare);
@@ -143,8 +143,8 @@ export function LiveVideoFrame({
 
             {(isWhiteboardOpen || screenShareTrack) ? (
                 // --- SCREEN SHARE / WHITEBOARD ACTIVE MODE ---
-                <div className="flex-1 flex flex-row overflow-hidden w-full h-full">
-                    <div className="flex-1 h-full bg-black relative flex items-center justify-center p-2">
+                <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full min-h-0">
+                    <div className="flex-1 min-h-0 bg-black relative flex items-center justify-center p-2">
                         {isWhiteboardOpen && socket && sessionId ? (
                             <LiveWhiteboard socket={socket} sessionId={sessionId} isMentor={isMentor} onClose={onCloseWhiteboard} />
                         ) : screenShareTrack ? (
@@ -154,17 +154,23 @@ export function LiveVideoFrame({
                         ) : null}
                     </div>
 
-                    <div className="w-64 shrink-0 h-full bg-[#11131a] border-l border-white/5 flex flex-col p-3 gap-3 overflow-y-auto custom-scrollbar">
-                        <div className="text-xs font-bold text-white/50 uppercase tracking-wide mb-1 px-1">Qatnashchilar</div>
+                    <div className="w-full md:w-64 shrink-0 h-[140px] md:h-full bg-[#11131a] border-t md:border-t-0 md:border-l border-white/5 flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden">
+                        <div className="text-[10px] md:text-xs font-bold text-white/50 uppercase tracking-wide mb-0.5 px-1">Qatnashchilar</div>
+                        <div className="flex-1 min-h-0 flex flex-row md:flex-col gap-2 md:gap-3 overflow-x-auto md:overflow-y-auto custom-scrollbar">
                         {mainTrack && (
-                            <div className="w-full aspect-video rounded-xl overflow-hidden relative bg-slate-800 shrink-0 ring-1 ring-white/10 shadow-lg">
+                            <div className="w-44 md:w-full aspect-video rounded-xl overflow-hidden relative bg-slate-800 shrink-0 ring-1 ring-white/10 shadow-lg">
                                 <ParticipantTile trackRef={mainTrack} className="w-full h-full [&>video]:object-cover" />
                                 <div className="absolute bottom-1.5 left-1.5 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-lg backdrop-blur-md border border-white/10">
                                     {mainIsClient ? 'Mijoz' : isMentor ? "Siz (Mentor)" : "Mentor"}
                                 </div>
                             </div>
                         )}
-                        {gridTracks.map((track, i) => participantThumb(track, i))}
+                        {gridTracks.map((track, i) => (
+                            <div key={track?.participant?.identity || `thumb-${i}`} className="w-44 md:w-full shrink-0">
+                                {participantThumb(track, i)}
+                            </div>
+                        ))}
+                        </div>
                     </div>
                 </div>
             ) : immersive ? (
@@ -289,6 +295,35 @@ export function LiveVideoFrame({
                             </div>
                         </div>
                     </div>
+            ) : mainIsClient ? (
+                // --- LEGAL/CONSULT: two equal tiles (client + expert), no duplicates ---
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-[#0d0f1a] min-h-0">
+                    <div className="relative rounded-2xl overflow-hidden bg-slate-900 ring-1 ring-white/10 min-h-[220px]">
+                        {mainTrack ? (
+                            <ParticipantTile trackRef={mainTrack} className="w-full h-full [&>video]:object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm font-semibold">
+                                Mijoz ulanmoqda...
+                            </div>
+                        )}
+                        <div className="absolute bottom-2 left-2 rounded-lg border border-white/10 bg-black/65 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white">
+                            Mijoz
+                        </div>
+                    </div>
+
+                    <div className="relative rounded-2xl overflow-hidden bg-slate-900 ring-1 ring-white/10 min-h-[220px]">
+                        {localVideoTrack ? (
+                            <ParticipantTile trackRef={localVideoTrack} className="w-full h-full [&>video]:object-cover" />
+                        ) : (
+                            <div className="w-full h-full flex items-center justify-center text-slate-500 text-sm font-semibold">
+                                Ekspert kamerasi o‘chiq
+                            </div>
+                        )}
+                        <div className="absolute bottom-2 left-2 rounded-lg border border-white/10 bg-black/65 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-white">
+                            Ekspert
+                        </div>
+                    </div>
+                </div>
             ) : (
                 // --- CLASSIC GRID (talaba yoki mentor konsultatsiya) ---
                 <>
