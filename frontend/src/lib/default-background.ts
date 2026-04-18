@@ -4,3 +4,4 @@
  */
 export const DEFAULT_PLATFORM_BACKGROUND = "/auth-bg.png";
 
+

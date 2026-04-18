@@ -72,3 +72,4 @@ export interface TradeDetails {
     [key: string]: unknown;
 }
 
+

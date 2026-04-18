@@ -353,3 +353,4 @@ export function LiveWhiteboard({ socket, sessionId, isMentor, onClose }: LiveWhi
     );
 }
 
+

@@ -233,3 +233,4 @@ function SettingsToggle({ label, leftIcon, badge, locked, defaultOn = false }: {
     );
 }
 
+

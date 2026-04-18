@@ -57,7 +57,7 @@ export default function LiveWorkspace({
     callType = 'video'
 }: LiveWorkspaceProps) {
     const { showSuccess } = useNotification();
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
     const getAvatarUrl = (path: string) => {
         if (!path) return null;
         if (path.startsWith('http') || path.startsWith('data:')) return path;
@@ -750,4 +750,5 @@ export default function LiveWorkspace({
         </div >
     );
 }
+
 

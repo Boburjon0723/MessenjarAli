@@ -149,7 +149,7 @@ export default function AdminPanel() {
     const { showSuccess, showError } = useNotification();
     const { confirm } = useConfirm();
 
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
 
     useEffect(() => {
         checkAdminAccess();
@@ -1554,5 +1554,6 @@ export default function AdminPanel() {
         </div>
     );
 }
+
 
 

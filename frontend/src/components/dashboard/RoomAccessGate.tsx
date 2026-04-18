@@ -6,7 +6,7 @@ import { apiFetch } from "@/lib/api";
 import StudentDashboard from "./StudentDashboard";
 import type { ExpertPanelMode } from "@/lib/expert-roles";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://backend-production-ad05.up.railway.app";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "https://backend-production-37a60.up.railway.app";
 const DEFAULT_MONTHLY_MALI = 100;
 
 export default function RoomAccessGate({
@@ -149,4 +149,5 @@ export default function RoomAccessGate({
         </div>
     );
 }
+
 

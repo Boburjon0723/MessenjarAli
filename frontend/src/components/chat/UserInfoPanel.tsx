@@ -114,7 +114,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         setImgError(false);
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
             const res = await fetch(`${API_URL}/api/users/${targetId}`, {
@@ -137,7 +137,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         if (!chat?.id || chat.type !== 'private') return;
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/users/chat-stats/${chat.id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -154,7 +154,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         setActionLoading('block');
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
             const res = await fetch(`${API_URL}/api/users/${isBlocked ? 'unblock' : 'block'}`, {
@@ -216,7 +216,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         setActionLoading('delete');
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
             const res = await fetch(`${API_URL}/api/users/contacts/${targetId}`, {
@@ -236,7 +236,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     const listingPitch = listingIntro ? getExpertListingPitch(user) : '';
     const rawAvatar = user.avatar || user.avatar_url;
     const avatarUrl = rawAvatar && rawAvatar !== 'null' && rawAvatar !== ''
-        ? (rawAvatar.startsWith('http') || rawAvatar.startsWith('data:') ? rawAvatar : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
+        ? (rawAvatar.startsWith('http') || rawAvatar.startsWith('data:') ? rawAvatar : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
         : null;
 
     const initials = user.name ? user.name.substring(0, 1).toUpperCase() : '?';
@@ -447,5 +447,6 @@ function MenuItem({ icon, label, onClick, className = "" }: { icon: React.ReactN
         </button>
     );
 }
+
 
 

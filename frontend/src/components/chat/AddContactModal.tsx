@@ -38,7 +38,7 @@ export default function AddContactModal({ open, onClose, onStartChat }: AddConta
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
 
             // 1. Search for user BY PHONE STRICTLY
             const searchRes = await fetch(`${API_URL}/api/users/search?phone=${encodeURIComponent(phoneNumber)}`, {
@@ -173,5 +173,6 @@ export default function AddContactModal({ open, onClose, onStartChat }: AddConta
         </AnimatedModal>
     );
 }
+
 
 

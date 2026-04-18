@@ -1057,7 +1057,7 @@ function MessagesPageContent() {
                                         <img
                                             src={(() => {
                                                 const path = currentUser.avatar || currentUser.avatar_url;
-                                                const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+                                                const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
                                                 if (path.startsWith('http') || path.startsWith('data:')) return path;
                                                 return `${API_URL}${path.startsWith('/') ? '' : '/'}${path}`;
                                             })()}
@@ -1560,4 +1560,5 @@ export default function MessagesPage() {
         </Suspense>
     );
 }
+
 

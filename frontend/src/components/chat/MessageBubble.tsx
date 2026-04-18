@@ -56,7 +56,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         const raw = (message.text || '').trim();
         if (!raw) return '';
         if (/^https?:\/\//i.test(raw)) return raw;
-        const base = (process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app').replace(/\/$/, '');
+        const base = (process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app').replace(/\/$/, '');
         return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
     }, [message.text]);
 
@@ -565,4 +565,5 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         </div>
     );
 };
+
 

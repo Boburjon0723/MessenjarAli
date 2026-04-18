@@ -61,3 +61,4 @@ export function computeMessageContinuation(
     return timeGapAllowsContinuation(prevMsg, currMsg);
 }
 
+

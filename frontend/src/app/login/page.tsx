@@ -9,7 +9,7 @@ import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
-  "https://backend-production-ad05.up.railway.app";
+  "https://backend-production-37a60.up.railway.app";
 
 const COUNTRY_CODES = [
   { code: "+998", country: "UZ", label: "Uzbekistan" },
@@ -524,5 +524,6 @@ export default function LoginPage() {
     </Suspense>
   );
 }
+
 
 

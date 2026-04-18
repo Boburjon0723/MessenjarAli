@@ -180,7 +180,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchAds = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const typeToFetch = marketTab === 'buy' ? 'sell' : 'buy';
             const res = await fetch(`${API_URL}/api/p2p?type=${typeToFetch}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -195,7 +195,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchMyAds = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/my-ads`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -221,7 +221,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         }
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -248,7 +248,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!editingAd) return;
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -284,7 +284,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/${adId}`, {
                 method: 'DELETE',
                 headers: { 'Authorization': `Bearer ${token}` }
@@ -303,7 +303,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchTransactions = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/transactions`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -318,7 +318,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         // ... (existing code kept same)
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/balance`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -338,7 +338,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchWalletConfig = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/config`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -356,7 +356,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchPendingRequests = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/topup`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -370,7 +370,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchMyTrades = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/trades`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -384,7 +384,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchContacts = async () => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/users/contacts`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -403,7 +403,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/trade`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -424,7 +424,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const handleTradeChat = async (tradeId: string) => {
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/trade-chat/${tradeId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -447,7 +447,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/trade/confirm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -475,7 +475,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/p2p/trade/cancel`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -547,7 +547,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (newPin !== confirmPin) { setPinError(t('pin_error_match')); return; }
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/setup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -572,7 +572,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             await fetch(`${API_URL}/api/token/recovery`, {
                 method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -598,7 +598,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setTopUpStatus('loading');
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/topup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -669,7 +669,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setSendError('');
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const res = await fetch(`${API_URL}/api/token/transfer`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -730,7 +730,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setWithdrawError('');
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
             const usersRes = await fetch(`${API_URL}/api/users`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
@@ -1607,5 +1607,6 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         </div>
     );
 }
+
 
 

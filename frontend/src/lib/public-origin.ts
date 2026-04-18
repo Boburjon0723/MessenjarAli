@@ -1,8 +1,8 @@
 /**
  * API/WebSocket: `.env` da localhost qolsa ham production (Railway) ishlatiladi.
  */
-const RAILWAY_API = 'https://backend-production-ad05.up.railway.app';
-const RAILWAY_WS = 'wss://backend-production-ad05.up.railway.app';
+const RAILWAY_API = 'https://backend-production-37a60.up.railway.app';
+const RAILWAY_WS = 'wss://backend-production-37a60.up.railway.app';
 
 function isLocalOrLoopback(url: string): boolean {
     try {
@@ -33,4 +33,5 @@ export function getPublicWsUrl(): string {
     if (isLocalOrLoopback(forCheck)) return RAILWAY_WS;
     return raw;
 }
+
 

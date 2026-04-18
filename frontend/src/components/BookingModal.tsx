@@ -164,3 +164,4 @@ export const BookingModal: React.FC<BookingModalProps> = ({ isOpen, onClose, ser
     );
 };
 
+

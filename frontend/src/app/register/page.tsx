@@ -14,7 +14,7 @@ const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development"
     ? "http://localhost:4000"
-    : "https://backend-production-ad05.up.railway.app");
+    : "https://backend-production-37a60.up.railway.app");
 
 /** Telegram bot username, @siz: masalan "ExpertLineBot" */
 const TELEGRAM_BOT_USER =
@@ -605,5 +605,6 @@ export default function RegisterPage() {
     </div>
   );
 }
+
 
 

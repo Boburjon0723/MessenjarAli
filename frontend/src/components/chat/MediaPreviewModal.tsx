@@ -126,3 +126,4 @@ export default function MediaPreviewModal({ file, onSend, onCancel }: MediaPrevi
     );
 }
 
+

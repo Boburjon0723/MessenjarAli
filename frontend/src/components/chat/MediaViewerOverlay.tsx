@@ -10,7 +10,7 @@ interface MediaViewerOverlayProps {
 }
 
 export default function MediaViewerOverlay({ url, type, onClose }: MediaViewerOverlayProps) {
-    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+    const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
     const fullUrl = url.startsWith('http') ? url : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
 
     return (
@@ -85,4 +85,5 @@ export default function MediaViewerOverlay({ url, type, onClose }: MediaViewerOv
         </div>
     );
 }
+
 

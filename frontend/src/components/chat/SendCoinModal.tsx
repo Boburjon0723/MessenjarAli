@@ -172,3 +172,4 @@ export default function SendCoinModal({ onClose, onSend, recipientName }: SendCo
     );
 }
 
+

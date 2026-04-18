@@ -22,3 +22,4 @@ export const translateText = async (text: string, targetLanguage: string = 'uz')
     }
 };
 
+

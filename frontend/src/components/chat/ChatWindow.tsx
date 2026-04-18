@@ -337,7 +337,7 @@ export default function ChatWindow({
         const content = forwardMessage.text || '';
         const type = forwardMessage.type || 'text';
         const url = (type !== 'text' && content && !content.startsWith('http'))
-            ? `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${content.startsWith('/') ? '' : '/'}${content}`
+            ? `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${content.startsWith('/') ? '' : '/'}${content}`
             : content;
         const forwardPayload = {
             roomId: targetChat.id,
@@ -1595,7 +1595,7 @@ export default function ChatWindow({
                                             if (avatar && avatar !== 'null' && avatar !== '' && !headerImageError) {
                                                 const src = avatar.startsWith('http') || avatar.startsWith('data:')
                                                     ? avatar
-                                                    : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
+                                                    : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
                                                 return <img src={src} className="w-full h-full object-cover" onError={() => setHeaderImageError(true)} alt="" />;
                                             }
                                             return displayName ? displayName[0].toUpperCase() : '?';
@@ -2127,7 +2127,7 @@ export default function ChatWindow({
                                                         ? avatar
                                                         : avatar.startsWith('data:')
                                                           ? avatar
-                                                          : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
+                                                          : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
                                                     return <img src={src} className="w-full h-full object-cover" />;
                                                 }
                                                 return String(displayName || callData?.fromName || '?')[0].toUpperCase();
@@ -2314,7 +2314,7 @@ export default function ChatWindow({
                                     const displayName = c.type === 'group' ? c.name : (c.otherUser ? `${c.otherUser.name || ''} ${c.otherUser.surname || ''}`.trim() || c.name : c.name) || 'Chat';
                                     const avatar = c.avatar || c.otherUser?.avatar || c.otherUser?.avatar_url;
                                     const avatarSrc = avatar && avatar !== 'null' && avatar !== '' && avatar !== 'use_initials'
-                                        ? (avatar.startsWith('http') || avatar.startsWith('data:') ? avatar : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`)
+                                        ? (avatar.startsWith('http') || avatar.startsWith('data:') ? avatar : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`)
                                         : null;
                                     return (
                                         <button
@@ -2364,5 +2364,6 @@ export default function ChatWindow({
         </div>
     );
 }
+
 
 

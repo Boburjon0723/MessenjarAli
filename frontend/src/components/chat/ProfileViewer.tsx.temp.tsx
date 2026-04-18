@@ -314,7 +314,7 @@ export default function ProfileViewer({
     const fetchWallet = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}/api/wallet/balance`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}/api/wallet/balance`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -336,7 +336,7 @@ export default function ProfileViewer({
         setIsSubscribing(true);
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app'}/api/wallet/subscribe`, {
+            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}/api/wallet/subscribe`, {
                 method: 'POST',
                 headers: { 'Authorization': `Bearer ${token}` }
             });
@@ -1033,5 +1033,6 @@ export default function ProfileViewer({
         </div>
     );
 }
+
 
 
