@@ -1,5 +1,13 @@
 import { apiFetch } from "../../lib/api";
+import { API_URL } from "../../lib/config";
 import { Chat, Message } from "./types";
+
+/** Rasm yo'lini to'liq URL'ga aylantiradi */
+export function getFullUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (path.startsWith("http") || path.startsWith("data:")) return path;
+  return `${API_URL}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 function mapApiMessageToMessage(msg: any): Message {
   const raw = msg.created_at ?? msg.createdAt;
@@ -22,23 +30,26 @@ export async function getChatsRequest(): Promise<Chat[]> {
   }
   const data = await response.json();
 
-  // Backend ma'lumotlarini bizning Chat tipimizga moslaymiz
-  return data.map((chat: any) => ({
-    id: String(chat.id || chat._id),
-    type: chat.type,
-    name:
-      chat.type === "group" || chat.type === "channel"
-        ? chat.name || "Chat"
-        : chat.otherUser?.name
-          ? `${chat.otherUser.name} ${chat.otherUser.surname || ""}`.trim()
-          : "Foydalanuvchi",
-    lastMessage: chat.lastMessage ?? "Xabarlar yo'q",
-    timestamp: chat.lastMessageAt
-      ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-      : "",
-    unreadCount: Number(chat.unread) || 0,
-    avatarUrl: chat.type === "group" || chat.type === "channel" ? chat.avatar_url ?? null : chat.otherUser?.avatar ?? null,
-  }));
+  return data.map((chat: any) => {
+    const isGroup = chat.type === "group" || chat.type === "channel";
+    const path = isGroup ? chat.avatar_url ?? chat.avatar : chat.otherUser?.avatar;
+
+    return {
+      id: String(chat.id || chat._id),
+      type: chat.type,
+      name: isGroup
+          ? chat.name || "Chat"
+          : chat.otherUser?.name
+            ? `${chat.otherUser.name} ${chat.otherUser.surname || ""}`.trim()
+            : "Foydalanuvchi",
+      lastMessage: chat.lastMessage ?? "Xabarlar yo'q",
+      timestamp: chat.lastMessageAt
+        ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+        : "",
+      unreadCount: Number(chat.unread) || 0,
+      avatarUrl: getFullUrl(path),
+    };
+  });
 }
 
 export async function getMessagesRequest(chatId: string): Promise<Message[]> {
@@ -76,3 +87,4 @@ export async function sendMessageRequest(chatId: string, text: string): Promise<
   const data = await response.json();
   return mapApiMessageToMessage(data);
 }
+

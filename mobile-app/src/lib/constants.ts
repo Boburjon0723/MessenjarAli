@@ -10,3 +10,4 @@ export const COLORS = {
   glassBg: "rgba(30, 41, 59, 0.6)",
   glassBorder: "rgba(148, 163, 184, 0.2)",
 };
+

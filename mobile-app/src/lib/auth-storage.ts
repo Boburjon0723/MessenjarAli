@@ -36,3 +36,4 @@ export async function clearAuth(): Promise<void> {
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
   await SecureStore.deleteItemAsync(USER_KEY);
 }
+

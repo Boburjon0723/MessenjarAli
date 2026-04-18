@@ -39,3 +39,4 @@ export function validateRegister(input: RegisterPayload): string | null {
   }
   return null;
 }
+

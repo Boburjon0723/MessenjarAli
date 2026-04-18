@@ -53,3 +53,4 @@ export async function registerRequest(payload: RegisterPayload): Promise<void> {
     throw new Error((data.message as string) || "Ro'yxatdan o'tish muvaffaqiyatsiz bo'ldi.");
   }
 }
+

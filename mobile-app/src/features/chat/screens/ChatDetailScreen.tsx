@@ -368,3 +368,4 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(59, 130, 246, 0.35)",
   },
 });
+

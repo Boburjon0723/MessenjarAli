@@ -17,3 +17,4 @@ export interface Message {
   timestamp: string;
   status: "sent" | "delivered" | "read";
 }
+

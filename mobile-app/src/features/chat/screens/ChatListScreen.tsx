@@ -357,3 +357,4 @@ const styles = StyleSheet.create({
   tabText: { color: "rgba(255,255,255,0.4)", fontSize: 10, marginTop: 4, fontWeight: "bold" },
   tabTextActive: { color: "#3b82f6" },
 });
+
