@@ -27,3 +27,5 @@ export const useAuthStore = create<AuthState>((set) => ({
 }));
 
 void useAuthStore.getState().hydrate();
+
+export { getToken };

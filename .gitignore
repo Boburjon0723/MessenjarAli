@@ -25,6 +25,9 @@ Thumbs.db
 # Vercel / deploy
 .vercel
 
+# Expo (local)
+mobile-app/.expo/
+
 # Misc
 *.pem
 **/uploads/

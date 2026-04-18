@@ -56,7 +56,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         const socketURL = getPublicWsUrl();
 
         const socketInstance = io(socketURL, {
-            transports: ['websocket'],
+            /** Faqat `websocket` ba’zi proxy / CDN da ulanishni sindiradi; server `polling` ni ham qo‘llab-quvvatlaydi */
+            transports: ['polling', 'websocket'],
             autoConnect: true,
             auth: { token },
             reconnection: true,

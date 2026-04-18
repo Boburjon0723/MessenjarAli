@@ -22,12 +22,9 @@ export async function loginRequest(payload: LoginPayload, rememberMe: boolean): 
 
   if (!response.ok) {
     if (response.status === 401) {
-      throw new Error("Telefon raqam yoki parol noto'g'ri. Qayta urinib ko'ring.");
+      throw new Error("Telefon raqam yoki parol noto'g'ri.");
     }
-    if (response.status === 403) {
-      throw new Error("Sizning akkauntingiz bloklangan yoki faollashtirilmagan.");
-    }
-    throw new Error((data.message as string) || "Kirishda xatolik yuz berdi. Birozdan so'ng qayta urinib ko'ring.");
+    throw new Error((data.message as string) || "Kirishda xatolik yuz berdi.");
   }
 
   const token = (data.token as string) || "";
@@ -39,7 +36,7 @@ export async function loginRequest(payload: LoginPayload, rememberMe: boolean): 
 
 export async function registerRequest(payload: RegisterPayload): Promise<void> {
   const fullPhone = toFullPhone(payload.countryCode, payload.phone);
-  const age = Number.parseInt(payload.age, 10);
+  const age = parseInt(payload.age, 10);
   const response = await fetch(`${API_URL}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

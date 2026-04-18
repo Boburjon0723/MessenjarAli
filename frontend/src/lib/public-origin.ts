@@ -1,8 +1,7 @@
-/**
- * API/WebSocket: `.env` da localhost qolsa ham production (Railway) ishlatiladi.
- */
-const RAILWAY_API = 'https://backend-production-37a60.up.railway.app';
-const RAILWAY_WS = 'wss://backend-production-37a60.up.railway.app';
+import { BACKEND_PUBLIC_ORIGIN } from './backend-origin';
+
+/** REST fallback — `backend-origin.ts` */
+const RAILWAY_API = BACKEND_PUBLIC_ORIGIN;
 
 function isLocalOrLoopback(url: string): boolean {
     try {
@@ -26,12 +25,13 @@ export function getPublicApiUrl(): string {
     return raw;
 }
 
+/**
+ * Socket.io ulanish URL — doim REST API bilan bir xil origin (`https://...`).
+ *
+ * Avvalgi `NEXT_PUBLIC_WS_URL` alohida hostga (masalan, eski Railway `...-ad05...`) ishora qilganda
+ * REST `NEXT_PUBLIC_API_URL` boshqacha deployment bo‘lishi mumkin edi: xabarlar kutish (socket yo‘q), API ishlaydi.
+ * Shuning uchun WS alohida env orqali emas, faqat API origin dan olinadi.
+ */
 export function getPublicWsUrl(): string {
-    const raw = (process.env.NEXT_PUBLIC_WS_URL || '').trim().replace(/\/$/, '');
-    if (!raw) return RAILWAY_WS;
-    const forCheck = raw.replace(/^wss:/i, 'https:').replace(/^ws:/i, 'http:');
-    if (isLocalOrLoopback(forCheck)) return RAILWAY_WS;
-    return raw;
+    return getPublicApiUrl();
 }
-
-

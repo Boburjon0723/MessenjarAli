@@ -4,7 +4,9 @@ export interface Chat {
   lastMessage: string;
   timestamp: string;
   unreadCount: number;
-  avatarUrl?: string;
+  /** API: private | group | channel */
+  type?: string;
+  avatarUrl?: string | null;
 }
 
 export interface Message {

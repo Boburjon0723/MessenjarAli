@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 import path from "path";
 import { fileURLToPath } from "url";
+import { BACKEND_PUBLIC_ORIGIN } from "./src/lib/backend-origin";
 
 /** Turbopack boshqa joydagi (masalan, user home) package-lock.json ni ildiz deb olmasin */
 const configDir = path.dirname(fileURLToPath(import.meta.url));
@@ -14,15 +15,14 @@ const nextConfig: NextConfig = {
   output: isProd ? 'export' : undefined,
   trailingSlash: true,
   env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app',
-    NEXT_PUBLIC_WS_URL: process.env.NEXT_PUBLIC_WS_URL || 'wss://backend-production-37a60.up.railway.app',
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || BACKEND_PUBLIC_ORIGIN,
   },
   images: {
     unoptimized: true,
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: 'backend-production-37a60.up.railway.app',
+        hostname: new URL(BACKEND_PUBLIC_ORIGIN).hostname,
         pathname: '/**',
       },
       {

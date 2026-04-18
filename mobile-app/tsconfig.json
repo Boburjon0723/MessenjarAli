@@ -7,11 +7,20 @@
     "strict": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
-    "types": ["vitest/globals"],
+    "types": [
+      "vitest/globals"
+    ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": [
+        "src/*"
+      ]
     }
   },
-  "include": ["App.tsx", "src", "__tests__"]
+  "include": [
+    "App.tsx",
+    "src",
+    "__tests__"
+  ],
+  "extends": "expo/tsconfig.base"
 }

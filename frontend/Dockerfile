@@ -9,9 +9,6 @@ RUN npm install
 ARG NEXT_PUBLIC_API_URL=https://backend-production-37a60.up.railway.app
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
-ARG NEXT_PUBLIC_WS_URL=wss://backend-production-37a60.up.railway.app
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-
 COPY . .
 
 RUN npm run build
