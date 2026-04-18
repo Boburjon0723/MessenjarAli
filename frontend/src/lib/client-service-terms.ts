@@ -30,3 +30,4 @@ export function getClientServiceTerms(
     consultLines: tLines('regular_consult_lines'),
   };
 }
+

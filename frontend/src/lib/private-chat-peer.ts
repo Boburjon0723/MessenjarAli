@@ -73,3 +73,4 @@ export function getPrivateChatPeerUserId(chat: {
 
   return null;
 }
+

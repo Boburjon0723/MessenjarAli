@@ -131,3 +131,4 @@ export function setUser(user: Record<string, unknown>): void {
   getStorage().setItem('user', JSON.stringify(user));
   notifyUserUpdated(user);
 }
+

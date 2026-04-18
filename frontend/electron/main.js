@@ -6,7 +6,7 @@ const os = require('os');
 const { spawn } = require('child_process');
 
 const isDev = !app.isPackaged;
-const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-ad05.up.railway.app';
+const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
 
 // Register 'app' as a standard and secure scheme
 protocol.registerSchemesAsPrivileged([

@@ -2345,3 +2345,4 @@ export const translations = {
 };
 
 export type TranslationKeys = keyof typeof translations.uz;
+

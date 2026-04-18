@@ -3,3 +3,4 @@
  * `public/auth-bg.png` — yashil tabiat (lokal).
  */
 export const DEFAULT_PLATFORM_BACKGROUND = "/auth-bg.png";
+

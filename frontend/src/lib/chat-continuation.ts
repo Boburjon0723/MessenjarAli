@@ -60,3 +60,4 @@ export function computeMessageContinuation(
     if (senderKeyForGrouping(prevMsg, opts) !== senderKeyForGrouping(currMsg, opts)) return false;
     return timeGapAllowsContinuation(prevMsg, currMsg);
 }
+

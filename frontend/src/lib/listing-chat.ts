@@ -19,3 +19,4 @@ export function isExpertListingChat(chat: any): boolean {
   if (chat?.otherUser?.listing_privacy === true) return true;
   return false;
 }
+

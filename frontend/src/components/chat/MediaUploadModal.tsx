@@ -168,3 +168,4 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
         </AnimatedModal>
     );
 }
+

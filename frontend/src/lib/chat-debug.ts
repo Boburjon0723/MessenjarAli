@@ -12,3 +12,4 @@ export function chatDebug(label: string, payload?: Record<string, unknown>): voi
         console.log("[CHAT_DEBUG]", label);
     }
 }
+

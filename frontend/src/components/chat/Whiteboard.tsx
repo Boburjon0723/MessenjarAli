@@ -247,3 +247,4 @@ export default function Whiteboard({ sessionId, className = "" }: WhiteboardProp
         </div>
     );
 }
+

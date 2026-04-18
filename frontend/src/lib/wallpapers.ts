@@ -30,3 +30,4 @@ export const CHAT_BACKGROUND_PRESETS: string[] = [
   u("photo-1518173946681-a67cbd1b531f"),
   u("photo-1542273917363-3b1817f69a2d"),
 ];
+

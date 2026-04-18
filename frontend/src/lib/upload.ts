@@ -51,3 +51,4 @@ export const uploadFileWithProgress = (
         xhr.send(formData);
     });
 };
+

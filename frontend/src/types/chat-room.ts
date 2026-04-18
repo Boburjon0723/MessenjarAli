@@ -71,3 +71,4 @@ export interface TradeDetails {
     seller_id?: string;
     [key: string]: unknown;
 }
+

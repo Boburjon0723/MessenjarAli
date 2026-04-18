@@ -156,3 +156,4 @@ export const SendTokenModal: React.FC<SendTokenModalProps> = ({
         </div>
     );
 };
+

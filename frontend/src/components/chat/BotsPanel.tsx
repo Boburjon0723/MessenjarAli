@@ -251,3 +251,4 @@ export default function BotsPanel({ onClose }: { onClose: () => void }) {
         </div>
     );
 }
+

@@ -1608,3 +1608,4 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     );
 }
 
+

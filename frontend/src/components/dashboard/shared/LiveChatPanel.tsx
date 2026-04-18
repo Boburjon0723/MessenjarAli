@@ -185,3 +185,4 @@ export function LiveChatPanel({ socket, sessionId, user, className = "" }: LiveC
         </GlassCard>
     );
 }
+

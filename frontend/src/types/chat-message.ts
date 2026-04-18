@@ -56,3 +56,4 @@ export interface ChatMessage {
     clientSideId?: string;
     reactions?: Record<string, { emoji: string; users: string[] }>;
 }
+

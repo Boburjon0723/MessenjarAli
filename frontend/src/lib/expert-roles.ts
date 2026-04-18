@@ -373,3 +373,4 @@ export function getStudentPanelExpertLabel(mode: ExpertPanelMode, t: any): strin
 export function getStudentSelfRoleLabel(mode: ExpertPanelMode, t: any): string {
   return mode === 'mentor' ? t('self_role_student') : t('self_role_client');
 }
+

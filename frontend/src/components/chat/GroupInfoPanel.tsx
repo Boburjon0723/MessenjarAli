@@ -480,3 +480,4 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
     );
 }
 
+

@@ -67,3 +67,4 @@ export function useConfirm() {
   if (!context) throw new Error('useConfirm must be used within a ConfirmProvider');
   return context;
 }
+

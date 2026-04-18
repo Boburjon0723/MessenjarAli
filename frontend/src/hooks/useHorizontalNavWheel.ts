@@ -30,3 +30,4 @@ export function useHorizontalNavWheel(
         return () => el.removeEventListener('wheel', onWheel);
     }, [attachWhen]);
 }
+
