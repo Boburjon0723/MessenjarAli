@@ -59,7 +59,7 @@ export function WalletView() {
   const myId = user?.id ? String(user.id) : "";
 
   const [balance, setBalance] = useState<TokenBalance | null>(null);
-npx expo start  const [txs, setTxs] = useState<TransactionRow[]>([]);
+  const [txs, setTxs] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);

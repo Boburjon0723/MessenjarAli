@@ -21,7 +21,13 @@ import { Chat } from "../types";
 import { ChatBackground } from "../../../components/ChatBackground";
 import { useAuthStore } from "../../auth/store";
 import { WalletView, ServicesView, ContactsView } from "./DashboardViews";
-import { CHAT_CATEGORY_ITEMS, HEADER_RIGHT_ACTIONS, getMenuIcon } from "../chat-shell-menu";
+import {
+  CHAT_CATEGORY_ITEMS,
+  HEADER_RIGHT_ACTIONS,
+  getMenuIcon,
+  getVisibleComposeMenuItems,
+  type ComposeActionId,
+} from "../chat-shell-menu";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { getSocket, chatMetadataMap } from "../../../lib/socket";
 import PagerView from "react-native-pager-view";
@@ -201,47 +207,69 @@ export function ChatListScreen({ navigation }: any) {
     };
   }, [pageIndex, useCategoryPager, scrollCategoryNavToIndex, categoryStripWidth, categoryContentWidth]);
 
-  const onHeaderAction = useCallback((id: string) => {
-    if (id === "compose") {
-      const options = [
-        t('menuNewContact'),
-        t('menuNewGroup'),
-        t('menuNewChannel'),
-        t('menuSelect'),
-        t('msgCancel')
-      ];
+  const onComposeAction = useCallback(
+    (actionId: ComposeActionId) => {
+      switch (actionId) {
+        case "new_contact":
+          setBottomTab("contacts");
+          return;
+        case "new_group":
+        case "new_channel":
+        case "bulk_select":
+          Alert.alert(t("composeChatTitle"), t("composeChatDesc"));
+          return;
+        default:
+          return;
+      }
+    },
+    [t]
+  );
 
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options,
-            cancelButtonIndex: 4,
-            title: t('composeChatTitle'),
-          },
-          (buttonIndex) => {
-             if (buttonIndex < 4) {
-               // Future implementation for each action
-               Alert.alert(options[buttonIndex], "Tez kunda... (Coming soon)");
-             }
-          }
-        );
-      } else {
+  const onHeaderAction = useCallback(
+    (id: string) => {
+      if (id === "compose") {
+        const items = getVisibleComposeMenuItems({ isExpert });
+        if (items.length === 0) return;
+
+        const cancelLabel = t("msgCancel");
+
+        if (Platform.OS === "ios") {
+          const options = [...items.map((item) => t(item.titleKey)), cancelLabel];
+          const cancelButtonIndex = options.length - 1;
+          ActionSheetIOS.showActionSheetWithOptions(
+            {
+              options,
+              cancelButtonIndex,
+              title: t("composeChatTitle"),
+            },
+            (buttonIndex) => {
+              if (buttonIndex === cancelButtonIndex || buttonIndex < 0) return;
+              const chosen = items[buttonIndex];
+              if (chosen) onComposeAction(chosen.id);
+            }
+          );
+          return;
+        }
+
         Alert.alert(
-          t('composeChatTitle'),
-          t('composeChatDesc'),
+          t("composeChatTitle"),
+          t("composeChatDesc"),
           [
-            { text: t('menuNewGroup'), onPress: () => Alert.alert(t('menuNewGroup'), "Coming soon") },
-            { text: t('menuNewChannel'), onPress: () => Alert.alert(t('menuNewChannel'), "Coming soon") },
-            { text: t('msgCancel'), style: "cancel" }
+            ...items.map((item) => ({
+              text: t(item.titleKey),
+              onPress: () => onComposeAction(item.id),
+            })),
+            { text: cancelLabel, style: "cancel" as const },
           ]
         );
+        return;
       }
-      return;
-    }
-    if (id === "expert_tools") {
-      Alert.alert(t('expertPanelTitle'), t('expertPanelDesc'));
-    }
-  }, [t]);
+      if (id === "expert_tools") {
+        Alert.alert(t("expertPanelTitle"), t("expertPanelDesc"));
+      }
+    },
+    [isExpert, onComposeAction, t]
+  );
 
   return (
     <View style={styles.container}>

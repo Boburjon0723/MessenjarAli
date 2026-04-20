@@ -16,6 +16,25 @@ export type BottomTabId = "chats" | "wallet" | "services" | "profile";
 
 export type HeaderActionId = "expert_tools" | "compose";
 
+/** PenSquare menyusi: kontakt / guruh / kanal / tanlash — tartib va ko‘rinish shu ro‘yxat orqali */
+export type ComposeActionId = "new_contact" | "new_group" | "new_channel" | "bulk_select";
+
+export const COMPOSE_MENU_ITEMS: {
+  id: ComposeActionId;
+  /** `useAuthLocale().t` kaliti */
+  titleKey: "menuNewContact" | "menuNewGroup" | "menuNewChannel" | "menuSelect";
+  visible?: (ctx: { isExpert: boolean }) => boolean;
+}[] = [
+  { id: "new_contact", titleKey: "menuNewContact" },
+  { id: "new_group", titleKey: "menuNewGroup" },
+  { id: "new_channel", titleKey: "menuNewChannel" },
+  { id: "bulk_select", titleKey: "menuSelect" },
+];
+
+export function getVisibleComposeMenuItems(ctx: { isExpert: boolean }) {
+  return COMPOSE_MENU_ITEMS.filter((item) => (item.visible ? item.visible(ctx) : true));
+}
+
 /** Menyu ikonlari — nom orqali komponent */
 export const MENU_ICONS = {
   Globe,
