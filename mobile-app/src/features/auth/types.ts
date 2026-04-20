@@ -3,6 +3,10 @@ export interface AuthUser {
   name?: string;
   surname?: string;
   phone?: string;
+  /** Login: `avatar` — backend `avatar_url` */
+  avatar?: string | null;
+  avatar_url?: string | null;
+  username?: string;
   [key: string]: unknown;
 }
 

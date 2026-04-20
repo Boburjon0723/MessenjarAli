@@ -61,4 +61,36 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
     return response;
 }
 
+/**
+ * Access tokenni yangilash (REST 401 dan tashqari — masalan Socket.IO `Invalid token` uchun).
+ * Muvaffaqiyatli bo‘lsa `true`.
+ */
+export async function tryRefreshAccessToken(): Promise<boolean> {
+    if (typeof window === 'undefined') return false;
+    const refreshToken = getRefreshToken();
+    if (!refreshToken) return false;
+    try {
+        const refreshResponse = await fetch(`${API_URL}/api/auth/refresh`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refreshToken }),
+        });
+        if (!refreshResponse.ok) return false;
+        const data = (await refreshResponse.json()) as { accessToken?: string; refreshToken?: string };
+        if (!data.accessToken) return false;
+        const user = getUser();
+        const storage = getStorageForAuth();
+        const remember = storage === localStorage;
+        setAuth(
+            data.accessToken,
+            data.refreshToken || refreshToken,
+            (user || {}) as Record<string, unknown>,
+            remember
+        );
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 

@@ -114,38 +114,35 @@ function MentorProfileHeader({
         try {
             const meta = JSON.parse(mentor.metadata);
             mentorAvatar = meta.avatar_url || meta.avatar;
-        } catch (_e) {
+        } catch {
             /* ignore */
         }
     }
-
     return (
         <div
-            className={`flex items-center gap-2 sm:gap-3 px-2.5 sm:px-4 py-1.5 bg-white/[0.07] backdrop-blur-xl rounded-2xl border border-white/10 shadow-lg ${className}`}
+            className={`flex items-center gap-2 sm:gap-4 px-3 sm:px-5 py-2 bg-black/40 backdrop-blur-2xl rounded-[1.25rem] border border-white/10 shadow-2xl transition-all hover:border-white/20 hover:bg-black/50 ring-1 ring-white/5 ${className}`}
         >
             <div className="flex flex-col items-end min-w-0">
-                <span className="text-[10px] text-white/40 font-black uppercase tracking-[0.2em]">{expertRoleLabel}</span>
-                <span className="text-xs font-bold text-white whitespace-nowrap truncate max-w-[120px] sm:max-w-[180px]">
-                    {mentor?.identity || t('waiting_dots')}
-                </span>
+                <span className="text-[9px] text-sky-400/80 font-black uppercase tracking-[0.25em]">{expertRoleLabel}</span>
             </div>
             <div
-                className="flex items-center gap-1 shrink-0 rounded-lg bg-black/35 border border-white/10 px-1.5 py-1"
+                className="flex items-center gap-1.5 shrink-0 rounded-xl bg-white/5 border border-white/10 px-2 py-1.5 shadow-inner"
                 title={t('expert_mic_cam_socket')}
             >
                 {mentorAudioOn ? (
-                    <Mic className="w-3.5 h-3.5 text-emerald-400" aria-hidden />
+                    <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
                 ) : (
-                    <MicOff className="w-3.5 h-3.5 text-red-400" aria-hidden />
+                    <MicOff className="w-3 h-3 text-red-400" aria-hidden />
                 )}
                 {mentorVideoOn ? (
-                    <Video className="w-3.5 h-3.5 text-emerald-400" aria-hidden />
+                    <Video className="w-3.5 h-3.5 text-sky-400" aria-hidden />
                 ) : (
                     <VideoOff className="w-3.5 h-3.5 text-red-400" aria-hidden />
                 )}
             </div>
-            <div className="relative shrink-0">
-                <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-white text-xs border border-white/20 shadow-xl shadow-indigo-500/20 overflow-hidden">
+            <div className="relative shrink-0 group">
+                <div className="absolute -inset-1 rounded-full bg-gradient-to-tr from-sky-500/40 to-indigo-500/40 blur-md opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center font-black text-white text-xs border border-white/20 shadow-xl overflow-hidden">
                     {mentorAvatar ? (
                         <img src={getAvatarUrl(mentorAvatar)!} alt={expertRoleLabel} className="w-full h-full object-cover" />
                     ) : mentor ? (
@@ -154,7 +151,11 @@ function MentorProfileHeader({
                         '?'
                     )}
                 </div>
-                {mentor && <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#11131a]" />}
+                {mentor && (
+                    <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-500 rounded-full border-2 border-[#0c0d12] shadow-sm shadow-emerald-500/40">
+                        <div className="absolute inset-0 rounded-full bg-emerald-400 animate-ping opacity-20" />
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -179,6 +180,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
     const [quizAnswers, setQuizAnswers] = useState<Record<string, Record<number, string>>>({});
     const [isWhiteboardOpen, setIsWhiteboardOpen] = useState(false);
     const [activePoll, setActivePoll] = useState<{ id: string; questions?: Array<{ text: string; options?: Array<{ id: string; text: string }> }> } | null>(null);
+    const [sidebarVisible, setSidebarVisible] = useState(true);
 
     const [showChat, setShowChat] = useState(false);
     /** Konsultatsiya (mijoz): doska paneli qo'lda ochiladi (avtomatik emas) */
@@ -333,7 +335,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
     }, [socket, sessionId, user?.id, isClassroomMentor]);
 
     useEffect(() => {
-        if (!socket || !sessionId) return;
+        if (!socket || !sessionId || sessionId === 'demo-session-id') return;
         socket.emit('session_join', { sessionId });
 
         const handleNewMaterial = (data: { sessionId: string, material: { id?: string, url: string, title: string, type?: string } }) => {
@@ -368,7 +370,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
         const handleWhiteboardToggle = (data: boolean | { isOpen: boolean, sessionId?: string }) => {
             // Handle both object and boolean formats
             const isOpen = typeof data === 'boolean' ? data : data?.isOpen;
-            if (typeof data === 'object' && data?.sessionId && data.sessionId !== sessionId) {
+            if (typeof data === 'object' && data?.sessionId != null && String(data.sessionId).trim().toLowerCase() !== String(sessionId).trim().toLowerCase()) {
                 return; // Ignore other sessions
             }
             setIsWhiteboardOpen(isOpen);
@@ -566,9 +568,13 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
     };
 
     return (
-        <div className="fixed inset-0 flex flex-col overflow-hidden font-sans text-white antialiased bg-[#05060c]">
+        <div className="fixed inset-0 flex flex-col overflow-hidden font-sans text-white antialiased bg-[#0f172a]">
             <div
-                className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-slate-950/50 via-transparent to-black/75"
+                className="pointer-events-none absolute inset-0 z-[1] bg-[radial-gradient(circle_at_50%_-20%,#1e293b,transparent)] opacity-40"
+                aria-hidden
+            />
+            <div
+                className="pointer-events-none absolute inset-0 z-[1] bg-gradient-to-b from-slate-950/20 via-transparent to-black/60"
                 aria-hidden
             />
             {/* Kamera yo'q PCda ham xona ochilishi uchun avval media yo'q ulanish; keyin mic/cam alohida yoqiladi */}
@@ -654,7 +660,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                     </div>
                 ) : null}
 
-                <header className="absolute top-0 inset-x-0 z-20 flex min-h-[4rem] lg:min-h-[5rem] items-center justify-between gap-2 px-3 sm:px-5 lg:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 bg-gradient-to-b from-black/85 via-black/40 to-transparent pointer-events-none">
+                <header className="absolute top-0 inset-x-0 z-20 flex min-h-[4rem] lg:min-h-[5rem] items-center justify-between gap-2 px-3 sm:px-5 lg:px-8 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 pointer-events-none">
                     <div className="flex min-w-0 items-center gap-2 sm:gap-4 pointer-events-auto">
                         <div className="relative shrink-0 group">
                             <div className="absolute -inset-0.5 rounded-full bg-gradient-to-r from-sky-500 to-indigo-600 opacity-80 blur-[6px] group-hover:opacity-100 transition-opacity" />
@@ -694,7 +700,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                 <button
                                     type="button"
                                     onClick={toggleHand}
-                                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-all ${handRaised ? 'bg-amber-500 text-white shadow-md' : 'bg-white/5 text-white/85 hover:bg-white/10'}`}
+                                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-all ${handRaised ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40 ring-1 ring-amber-400/50' : 'bg-white/5 text-white/85 hover:bg-white/10 border border-white/5'}`}
                                     title={handRaised ? t('hand_down_title') : t('hand_up_title')}
                                 >
                                     <Hand className="h-4 w-4" />
@@ -738,24 +744,15 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                         compact
                                     />
                                 </div>
-                            ) : (
-                                <ControlToggleButton
-                                    active={showWhiteboardPanel}
-                                    onClick={() => setShowWhiteboardPanel(!showWhiteboardPanel)}
-                                    icon={<PenTool className="h-4 w-4" />}
-                                    color="violet"
-                                    label={t('whiteboard_label_short')}
-                                    compact
-                                />
-                            )}
+                            ) : null}
                         </div>
 
                         <button
                             type="button"
                             onClick={onLeave}
-                            className="flex items-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] font-black uppercase tracking-wide text-red-200 transition-all hover:bg-red-500 hover:text-white sm:px-4 sm:py-2.5"
+                            className="group flex items-center gap-2 rounded-xl border border-red-500/35 bg-red-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-100 transition-all hover:bg-red-500 hover:text-white sm:px-4 sm:py-2.5 shadow-lg shadow-red-500/20"
                         >
-                            <LogOut className="h-3.5 w-3.5 shrink-0" />
+                            <LogOut className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:-translate-x-1" />
                             <span className="hidden sm:inline">{t('exit_btn')}</span>
                         </button>
                     </div>
@@ -813,12 +810,12 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
 
                     {/* O‘ng panel: darsda chat + test; mijozda doska */}
                     <div
-                        className={`fixed inset-0 z-[39] flex min-h-0 flex-col gap-3 p-3 pt-[max(4.25rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:absolute lg:inset-auto lg:bottom-24 lg:right-6 lg:top-[5rem] lg:z-30 lg:h-auto lg:max-h-[min(80vh,calc(100%-7rem))] lg:w-96 lg:max-w-[26rem] lg:flex-col lg:gap-4 lg:bg-transparent lg:p-0 lg:pt-0 ${
-                            (isClassroomMentor && (showChat || showQuizzes)) || (!isClassroomMentor && showWhiteboardPanel)
-                                ? 'pointer-events-auto animate-in fade-in duration-200 opacity-100 lg:slide-in-from-right'
-                                : 'pointer-events-none invisible opacity-0'
+                        className={`fixed inset-0 z-[39] flex min-h-0 flex-col gap-3 p-3 pt-[max(4.25rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:absolute lg:inset-auto lg:bottom-24 lg:right-6 lg:top-[5rem] lg:z-30 lg:h-auto lg:max-h-[min(80vh,calc(100%-7rem))] lg:w-96 lg:max-w-[26rem] lg:flex-col lg:gap-4 lg:bg-transparent lg:p-0 lg:pt-0 transition-all duration-500 ${
+                            sidebarVisible && ((isClassroomMentor && (showChat || showQuizzes)) || (!isClassroomMentor && showWhiteboardPanel))
+                                ? 'pointer-events-auto animate-in fade-in duration-300 opacity-100 translate-x-0'
+                                : 'pointer-events-none invisible opacity-0 translate-x-12'
                         }`}
-                        aria-hidden={!((isClassroomMentor && (showChat || showQuizzes)) || (!isClassroomMentor && showWhiteboardPanel))}
+                        aria-hidden={!sidebarVisible || !((isClassroomMentor && (showChat || showQuizzes)) || (!isClassroomMentor && showWhiteboardPanel))}
                     >
                             <div className="flex h-full min-h-0 flex-col gap-3 lg:gap-4">
                                 {isClassroomMentor && showQuizzes && (
@@ -948,10 +945,23 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                 )}
                             </div>
                     </div>
+
+                    {/* Sidebar Toggle Button (Desktop) */}
+                    <div className="hidden lg:flex absolute right-6 top-1/2 -translate-y-1/2 z-[40] pointer-events-none">
+                        <button
+                            onClick={() => setSidebarVisible(!sidebarVisible)}
+                            className={`pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/50 backdrop-blur-xl transition-all hover:bg-black/60 hover:text-white ${!sidebarVisible ? 'rotate-180' : ''}`}
+                            title={sidebarVisible ? "Panelni yashirish" : "Panelni ko'rsatish"}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
 
                 {/* 4. Mobil: pastki action bar (desktopda boshqaruvlar headerda) */}
-                <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black via-black/90 to-transparent pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-10 lg:hidden">
+                <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-10 lg:hidden">
                     <div className="pointer-events-auto mx-auto flex max-w-lg flex-wrap items-center justify-center gap-2 px-2">
                         <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c0f1a]/90 px-2 py-2 shadow-xl backdrop-blur-xl">
                             <StudentMediaControls />
@@ -968,14 +978,16 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                 </span>
                             </button>
                         ) : null}
-                        <ControlToggleButton
-                            active={showMaterials}
-                            onClick={() => setShowMaterials(!showMaterials)}
-                            icon={<FileText className="h-5 w-5" />}
-                            color="blue"
-                            label={t('materials_label')}
-                            mobileDock
-                        />
+                        <div className="hidden lg:flex">
+                            <ControlToggleButton
+                                active={showMaterials}
+                                onClick={() => setShowMaterials(!showMaterials)}
+                                icon={<FileText className="h-5 w-5" />}
+                                color="blue"
+                                label={t('materials_label')}
+                                mobileDock
+                            />
+                        </div>
                         {isClassroomMentor ? (
                             <ControlToggleButton
                                 active={showQuizzes}
@@ -1007,16 +1019,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                     mobileDock
                                 />
                             </div>
-                        ) : (
-                            <ControlToggleButton
-                                active={showWhiteboardPanel}
-                                onClick={() => setShowWhiteboardPanel(!showWhiteboardPanel)}
-                                icon={<PenTool className="h-5 w-5" />}
-                                color="violet"
-                                label={t('whiteboard_label_short')}
-                                mobileDock
-                            />
-                        )}
+                        ) : null}
                     </div>
                 </div>
 
@@ -1034,15 +1037,15 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                             {t('quick_poll_label')}
                         </h2>
                         <div className="mb-6 text-base font-medium leading-relaxed text-white/85">
-                            <FormattedQuizText text={String(activePoll.questions?.[0]?.text ?? '')} />
+                            <FormattedQuizText text={String(activePoll && activePoll.questions && activePoll.questions[0] ? activePoll.questions[0].text : '')} />
                         </div>
 
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
-                            {(activePoll.questions?.[0]?.options || []).map((opt: any, oi: number) => (
+                            {(activePoll && activePoll.questions && activePoll.questions[0] && activePoll.questions[0].options ? activePoll.questions[0].options : []).map((opt: any, oi: number) => (
                                 <button
                                     type="button"
                                     key={opt.id ?? oi}
-                                    onClick={() => handleAnswerPoll(activePoll.id, 0, String(opt.id))}
+                                    onClick={() => activePoll && handleAnswerPoll(activePoll.id, 0, String(opt.id))}
                                     className="min-h-[3rem] rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3.5 text-left text-sm font-bold text-white transition-all hover:border-sky-400/50 hover:bg-sky-500/20 active:scale-[0.98] sm:py-4 sm:text-center"
                                 >
                                     <span className="mr-2 font-black text-sky-300">{String.fromCharCode(65 + oi)}.</span>
@@ -1119,7 +1122,7 @@ function StudentMediaControls() {
             <button
                 type="button"
                 onClick={toggleMic}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all lg:h-10 lg:w-10 ${!isMicEnabled ? 'bg-red-500 text-white shadow-lg shadow-red-500/25' : 'bg-white/12 text-white/80 hover:bg-white/20'}`}
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isMicEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/10 border-white/10 text-white/80 hover:bg-white/20 hover:border-white/20 hover:text-white shadow-xl shadow-black/20'}`}
                 title={isMicEnabled ? t('mic_off_title') : t('mic_on_title')}
             >
                 {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
@@ -1127,7 +1130,7 @@ function StudentMediaControls() {
             <button
                 type="button"
                 onClick={toggleCam}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition-all lg:h-10 lg:w-10 ${!isCamEnabled ? 'bg-red-500 text-white shadow-lg shadow-red-500/25' : 'bg-white/12 text-white/80 hover:bg-white/20'}`}
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isCamEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/10 border-white/10 text-white/80 hover:bg-white/20 hover:border-white/20 hover:text-white shadow-xl shadow-black/20'}`}
                 title={isCamEnabled ? t('cam_off_title') : t('cam_on_title')}
             >
                 {isCamEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
@@ -1161,24 +1164,24 @@ function ControlToggleButton({
 }: ControlButtonProps) {
     const colorClasses = {
         blue: active
-            ? 'bg-sky-500 text-white shadow-md shadow-sky-500/30'
-            : 'text-sky-300 hover:bg-sky-500/15',
+            ? 'bg-sky-500 text-white border-sky-400 shadow-lg shadow-sky-500/50 ring-1 ring-sky-400/50'
+            : 'text-sky-300 border-white/10 bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/30 hover:text-sky-200',
         pink: active
-            ? 'bg-fuchsia-600 text-white shadow-md shadow-fuchsia-500/30'
-            : 'text-fuchsia-300 hover:bg-fuchsia-500/15',
+            ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-500/50 ring-1 ring-fuchsia-400/50'
+            : 'text-fuchsia-300 border-white/10 bg-white/5 hover:bg-fuchsia-500/20 hover:border-fuchsia-500/30 hover:text-fuchsia-200',
         emerald: active
-            ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30'
-            : 'text-emerald-300 hover:bg-emerald-500/15',
+            ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-500/50 ring-1 ring-emerald-400/50'
+            : 'text-emerald-300 border-white/10 bg-white/5 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-200',
         violet: active
-            ? 'bg-violet-600 text-white shadow-md shadow-violet-500/30'
-            : 'text-violet-300 hover:bg-violet-500/15',
+            ? 'bg-violet-600 text-white border-violet-400 shadow-lg shadow-violet-500/50 ring-1 ring-violet-400/50'
+            : 'text-violet-300 border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/30 hover:text-violet-200',
     };
 
     const layout = mobileDock
-        ? 'min-h-[3rem] min-w-[3.25rem] flex-col gap-0.5 rounded-2xl border border-white/10 bg-[#0c0f1a]/90 px-2 py-2 text-[9px] backdrop-blur-xl'
+        ? 'min-h-[3.25rem] min-w-[3.5rem] flex-col gap-1 rounded-2xl border bg-[#0c0f1a]/95 px-2 py-2 text-[10px] backdrop-blur-2xl shadow-xl'
         : compact
-          ? 'gap-1.5 rounded-xl px-2.5 py-2 text-[10px]'
-          : 'gap-2.5 rounded-full px-4 py-2.5 text-xs';
+          ? 'gap-1.5 rounded-xl px-2.5 py-2 text-[10px] border shadow-md'
+          : 'gap-2.5 rounded-full px-5 py-3 text-xs border bg-black/40 backdrop-blur-xl shadow-xl';
 
     return (
         <button
@@ -1187,14 +1190,16 @@ function ControlToggleButton({
             aria-label={label}
             aria-pressed={active}
             onClick={onClick}
-            className={`group relative flex items-center justify-center font-bold uppercase tracking-wide transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${colorClasses[color]} ${layout} ${active && !mobileDock ? 'shadow-lg sm:scale-[1.02]' : ''} ${pulse ? 'ring-2 ring-amber-400/90 ring-offset-2 ring-offset-[#05060c] animate-pulse' : ''}`}
+            className={`group relative flex items-center justify-center font-black uppercase tracking-widest transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${colorClasses[color]} ${layout} ${active ? 'z-10 scale-[1.05]' : 'opacity-80 hover:opacity-100 hover:scale-105'} ${pulse ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-[#05060c] animate-pulse' : ''}`}
         >
-            <span className="transition-transform group-hover:scale-105">{icon}</span>
-            {mobileDock ? <span className="max-w-[4rem] text-center leading-none">{label}</span> : null}
+            <span className="transition-transform group-hover:scale-110">{icon}</span>
+            {mobileDock ? <span className="max-w-[4rem] text-center leading-none mt-1">{label}</span> : null}
             {compact && !mobileDock ? <span className="sr-only">{label}</span> : null}
-            {!compact && !mobileDock ? <span className="tracking-widest">{label}</span> : null}
+            {!compact && !mobileDock ? <span className="ml-1 tracking-[0.2em]">{label}</span> : null}
+            
+            {/* Glossy overlay */}
+            <div className="absolute inset-0 rounded-inherit bg-gradient-to-tr from-white/10 to-transparent pointer-events-none opacity-50" />
         </button>
     );
 }
-
 

@@ -1,9 +1,9 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
-  ImageBackground,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   StyleSheet,
@@ -11,62 +11,616 @@ import {
   TextInput,
   View,
   Dimensions,
+  Image,
+  Modal,
+  ActionSheetIOS,
+  TouchableWithoutFeedback,
 } from "react-native";
+import * as DocumentPicker from "expo-document-picker";
 import { useFocusEffect } from "@react-navigation/native";
-import { Send, ArrowLeft, MoreVertical, Paperclip, Smile } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { Send, ArrowLeft, MoreVertical, Paperclip, Smile, Phone, Video as VideoIcon, Play, Download, X, CloudDownload, Trash2, Forward, CheckCircle, Save, Mic, MicOff, VideoOff, CreditCard } from "lucide-react-native";
+import { useAuthLocale } from "../../auth/locale";
 import { Message } from "../types";
-import { DEFAULT_PLATFORM_BACKGROUND } from "../../../lib/constants";
-import { getMessagesRequest, markChatReadRequest, sendMessageRequest } from "../service";
+import { ChatBackground } from "../../../components/ChatBackground";
+import { Video, ResizeMode, Audio } from 'expo-av';
+import { NativeModules } from 'react-native';
+
+// Lazy load LiveKit to prevent crash in Expo Go
+let LiveKit: any = null;
+let LiveKitClient: any = null;
+if (NativeModules.WebRTCModule) {
+  try {
+    LiveKit = require('@livekit/react-native');
+    LiveKitClient = require('livekit-client');
+  } catch (e) {
+    console.warn("LiveKit could not be loaded:", e);
+  }
+}
+import {
+  getMessagesRequest,
+  markChatReadRequest,
+  messageTypeFromMime,
+  normalizeUserId,
+  sendMessageRequest,
+  uploadChatFileRequest,
+  getChatDetailsRequest,
+  ChatDetailsResponse,
+  getLiveKitTokenRequest,
+  mapApiMessageToMessage,
+  initiateSessionRequest,
+} from "../service";
+import { readMessagesFromCache, writeMessagesToCache } from "../../../lib/app-cache";
+import { downloadAndOpenWithSystemSheet } from "../../../lib/files";
 import { useAuthStore } from "../../auth/store";
+import { AvatarImage } from "../../../components/AvatarImage";
+import { setCurrentChatId, getSocket } from "../../../lib/socket";
+
+const VideoPlayerModal = ({ visible, uri, onClose }: { visible: boolean; uri: string | null; onClose: () => void }) => {
+  if (!uri) return null;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBg}>
+        <View style={styles.modalHeader}>
+           <Pressable onPress={onClose} style={styles.modalCloseBtn}>
+              <X color="#fff" size={28} />
+           </Pressable>
+        </View>
+        <Video
+          source={{ uri }}
+          style={styles.fullScreenVideo}
+          useNativeControls
+          resizeMode={ResizeMode.CONTAIN}
+          shouldPlay
+        />
+      </View>
+    </Modal>
+  );
+};
+
+const ImageViewerModal = ({ visible, uri, onClose }: { visible: boolean; uri: string | null; onClose: () => void }) => {
+  if (!uri) return null;
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={styles.modalBg}>
+        <View style={styles.modalHeader}>
+           <Pressable onPress={onClose} style={styles.modalCloseBtn}>
+              <X color="#fff" size={28} />
+           </Pressable>
+        </View>
+        <Image
+          source={{ uri }}
+          style={styles.fullScreenImage}
+          resizeMode="contain"
+        />
+      </View>
+    </Modal>
+  );
+};
+
+interface VideoViewProps {
+  name: string;
+  isCamOff: boolean;
+  isMicMuted: boolean;
+}
+
+const VideoView = ({ name, isCamOff, isMicMuted }: VideoViewProps) => {
+  const { t } = useAuthLocale();
+  if (!LiveKit || !LiveKitClient) {
+    return <View style={styles.remoteVideoPlaceholder}><Text style={{ color: '#fff' }}>Native modules missing</Text></View>;
+  }
+
+  // UseTracks returned items are TrackReferenceOrPlaceholder
+  const tracks = LiveKit.useTracks([
+    { source: LiveKitClient.Track.Source.Camera, withPlaceholder: true },
+  ]);
+
+  const remoteTrack = tracks.find((t: any) => !t.participant.isLocal && t.source === LiveKitClient.Track.Source.Camera);
+  const localTrack = tracks.find((t: any) => t.participant.isLocal && t.source === LiveKitClient.Track.Source.Camera);
+
+  return (
+    <View style={styles.videoGrid}>
+      <View style={styles.remoteVideoBox}>
+        {remoteTrack && remoteTrack.publication ? (
+          <LiveKit.VideoTrack trackRef={remoteTrack as any} style={styles.fullScreenVideo} />
+        ) : (
+          <View style={styles.remoteVideoPlaceholder}>
+             <View style={styles.avatarLargeBox}>
+                <AvatarImage name={name} size={120} />
+             </View>
+             <Text style={styles.remoteNameText}>{name}</Text>
+             <Text style={styles.callTimerText}>{t('callConnecting')}</Text>
+          </View>
+        )}
+      </View>
+
+      <View style={styles.localVideoPreview}>
+        {!isCamOff && localTrack && localTrack.publication ? (
+          <LiveKit.VideoTrack trackRef={localTrack as any} style={styles.fill} />
+        ) : (
+          <View style={styles.camOffPlaceholder}>
+            <VideoOff color="#fff" size={24} />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+};
+
+const CallModal = ({ 
+  visible, 
+  status,
+  name,
+  callType,
+  onAccept,
+  onReject,
+  onEnd,
+  lkToken,
+  lkWsUrl
+}: { 
+  visible: boolean; 
+  status: 'ringing' | 'incoming' | 'connected'; 
+  name: string;
+  callType: 'audio' | 'video';
+  onAccept: () => void; 
+  onReject: () => void;
+  onEnd: () => void;
+  lkToken?: string | null;
+  lkWsUrl?: string | null;
+}) => {
+  const { t } = useAuthLocale();
+  const [isMicMuted, setIsMicMuted] = useState(false);
+  const [isCamOff, setIsCamOff] = useState(false);
+
+  if (status === 'connected') {
+    return (
+      <Modal visible={visible} transparent animationType="fade">
+        <View style={styles.fullScreenCallContainer}>
+          {lkToken && LiveKit ? (
+            <View style={{ flex: 1 }}>
+              <LiveKit.LiveKitRoom
+                token={lkToken}
+                serverUrl={lkWsUrl || "wss://expertline-v36wshsh.livekit.cloud"} 
+                connect={true}
+                audio={true}
+                video={callType === 'video'}
+                onError={(e: any) => {
+                  console.error("LiveKit Error:", e);
+                  Alert.alert(t('loginErrorGeneric'), t('callError'));
+                }}
+              >
+                <VideoView name={name} isCamOff={isCamOff} isMicMuted={isMicMuted} />
+              </LiveKit.LiveKitRoom>
+            </View>
+          ) : (
+             <View style={styles.remoteVideoPlaceholder}>
+                <View style={styles.avatarLargeBox}>
+                   <AvatarImage name={name} size={120} />
+                </View>
+                <Text style={styles.remoteNameText}>{name}</Text>
+                <Text style={styles.callTimerText}>{t('callConnecting')}</Text>
+             </View>
+          )}
+
+           <View style={styles.callControlsContainer}>
+              <Pressable 
+                onPress={() => setIsMicMuted(!isMicMuted)} 
+                style={[styles.callControlBtn, isMicMuted && styles.controlBtnActive]}
+              >
+                 {isMicMuted ? <MicOff color="#fff" size={24} /> : <Mic color="#fff" size={24} />}
+              </Pressable>
+
+              <Pressable 
+                onPress={onEnd} 
+                style={[styles.callControlBtn, styles.endCallBtn]}
+              >
+                 <Phone color="#fff" size={28} style={{ transform: [{ rotate: '135deg' }] }} />
+              </Pressable>
+
+              <Pressable 
+                onPress={() => setIsCamOff(!isCamOff)} 
+                style={[styles.callControlBtn, isCamOff && styles.controlBtnActive]}
+              >
+                 {isCamOff ? <VideoOff color="#fff" size={24} /> : <VideoIcon color="#fff" size={24} />}
+              </Pressable>
+           </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={styles.callModalBg}>
+         <View style={styles.callInfoContainer}>
+            <View style={styles.avatarLargeBoxShadow}>
+              <AvatarImage name={name} size={110} />
+            </View>
+             <Text style={styles.callName}>{name}</Text>
+             <Text style={styles.callStatus}>
+               {status === 'ringing' ? t('callRinging') : status === 'incoming' ? t('callIncoming') : t('callConnected')}
+             </Text>
+         </View>
+         
+         <View style={styles.callActions}>
+            {status === 'incoming' ? (
+              <>
+                <Pressable onPress={onReject} style={[styles.callBtn, styles.rejectBtn]}>
+                   <Phone color="#fff" size={28} style={{ transform: [{ rotate: '135deg' }] }} />
+                </Pressable>
+                <Pressable onPress={onAccept} style={[styles.callBtn, styles.acceptBtn]}>
+                   <Phone color="#fff" size={28} />
+                </Pressable>
+              </>
+            ) : (
+              <Pressable onPress={onEnd} style={[styles.callBtn, styles.rejectBtn]}>
+                 <Phone color="#fff" size={28} style={{ transform: [{ rotate: '135deg' }] }} />
+              </Pressable>
+            )}
+         </View>
+      </View>
+    </Modal>
+  );
+};
+
+// Global Audio instance to prevent overlapping
+let globalSound: Audio.Sound | null = null;
+let globalPlayingUri: string | null = null;
+let globalSetPlaying: ((p: boolean) => void) | null = null;
+
+const AudioPlayer = ({ uri, fileName, senderName, isMe }: { uri: string; fileName: string; senderName: string; isMe: boolean }) => {
+  const [playing, setPlaying] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (globalPlayingUri === uri) {
+          globalSetPlaying = null;
+      }
+    };
+  }, [uri]);
+
+  const togglePlay = async () => {
+    try {
+      // 1. Agar boshqa narsa chalinayotgan bo'lsa uni to'xtatamiz
+      if (globalSound && globalPlayingUri !== uri) {
+          await globalSound.stopAsync();
+          await globalSound.unloadAsync();
+          if (globalSetPlaying) globalSetPlaying(false);
+          globalSound = null;
+          globalPlayingUri = null;
+      }
+
+      // 2. Play / Pause mantiqi
+      if (globalSound && globalPlayingUri === uri) {
+        if (playing) {
+          await globalSound.pauseAsync();
+          setPlaying(false);
+        } else {
+          await globalSound.playAsync();
+          setPlaying(true);
+        }
+      } else {
+        // Yangi qo'shiqni yuklash
+        const { sound } = await Audio.Sound.createAsync(
+            { uri },
+            { shouldPlay: true }
+        );
+        globalSound = sound;
+        globalPlayingUri = uri;
+        globalSetPlaying = setPlaying;
+        setPlaying(true);
+        
+        sound.setOnPlaybackStatusUpdate((status) => {
+           if (status.isLoaded && status.didJustFinish) {
+               setPlaying(false);
+               globalSound = null;
+               globalPlayingUri = null;
+           }
+        });
+      }
+    } catch (e) {
+      console.error("Audio error:", e);
+    }
+  };
+
+  return (
+    <View style={styles.audioPlayerContainer}>
+      <Pressable onPress={togglePlay} style={styles.audioPlayBtn}>
+         {playing ? <View style={styles.pauseIcon} /> : <Play color="#fff" size={18} fill="#fff" />}
+      </Pressable>
+      <View style={styles.audioInfo}>
+         <Text style={styles.audioFileName} numberOfLines={1}>{fileName}</Text>
+         <Text style={styles.audioSenderName}>{senderName}</Text>
+      </View>
+    </View>
+  );
+};
+import { useChatStore } from "../../../store/chatStore";
+import { CachedImage } from "../../../components/CachedImage";
 
 const { width } = Dimensions.get("window");
 
 type Props = {
-  route: { params?: { chatId?: string; name?: string } };
-  navigation: { goBack: () => void };
+  route: { params?: { chatId?: string; name?: string; avatarUrl?: string | null } };
+  navigation: {
+    goBack: () => void;
+    navigate: (name: string, params?: { chatId: string; name: string; avatarUrl?: string | null }) => void;
+  };
+};
+
+const MediaAttachment = ({ uri, isVideo, onPress, onSave }: { uri: string; isVideo: boolean; onPress: () => void; onSave: () => void }) => {
+  const [loading, setLoading] = useState(!isVideo);
+  const [isDownloaded, setIsDownloaded] = useState(!isVideo); // Rasmlar avto-download, videolar manual
+
+  const handlePress = () => {
+    if (isVideo && !isDownloaded) {
+        setIsDownloaded(true);
+        return;
+    }
+    onPress();
+  };
+
+  return (
+    <View style={styles.mediaWrapper}>
+      <Pressable onPress={handlePress} style={styles.mediaContainer}>
+        {!isVideo ? (
+          <>
+            <CachedImage
+              uri={uri}
+              style={styles.mediaImage}
+              resizeMode="cover"
+              onLoadStart={() => setLoading(true)}
+              onLoadEnd={() => setLoading(false)}
+            />
+            {loading && (
+              <View style={styles.mediaPlaceholder}>
+                <ActivityIndicator color="#38bdf8" />
+              </View>
+            )}
+          </>
+        ) : (
+          <>
+            {isDownloaded ? (
+              <Video
+                source={{ uri }}
+                style={styles.mediaImage}
+                resizeMode={ResizeMode.COVER}
+                shouldPlay
+                isMuted
+                isLooping
+                onLoadStart={() => setLoading(true)}
+                onLoad={() => setLoading(false)}
+              />
+            ) : (
+                <View style={[styles.mediaImage, { backgroundColor: '#1a1a1a' }]}>
+                    {/* Video preview / placeholder */}
+                    <View style={styles.playIconBoxSmall}>
+                        <Play color="#fff" size={24} fill="#fff" />
+                    </View>
+                </View>
+            )}
+            
+            {/* Cloud Download Badge (MB/Duration) */}
+            {!isDownloaded && (
+                <View style={styles.videoCloudBadge}>
+                    <CloudDownload color="#fff" size={20} />
+                    <View style={styles.videoMetaCol}>
+                        <Text style={styles.videoMetaText}>0:42</Text>
+                        <Text style={styles.videoMetaDetail}>3.2 MB</Text>
+                    </View>
+                </View>
+            )}
+          </>
+        )}
+      </Pressable>
+      
+      {/* Floating Save/Download Button */}
+      <Pressable style={styles.mediaSaveBtn} onPress={onSave}>
+         <Download color="#fff" size={18} />
+      </Pressable>
+      
+      {isVideo && isDownloaded && (
+        <View style={styles.videoDurationBadge}>
+           {loading ? <ActivityIndicator size="small" color="#fff" /> : <Play color="#fff" size={12} fill="#fff" />}
+        </View>
+      )}
+    </View>
+  );
 };
 
 export function ChatDetailScreen({ route, navigation }: Props) {
+  const { t } = useAuthLocale();
+  const insets = useSafeAreaInsets();
   const chatId = route.params?.chatId ? String(route.params.chatId) : "";
   const title = route.params?.name ? String(route.params.name) : "Chat";
-  const currentUserId = useAuthStore((s) => s.user?.id != null ? String(s.user.id) : "");
+  const peerAvatar = route.params?.avatarUrl ? String(route.params.avatarUrl) : "";
+  const currentUserId = useAuthStore((s) => {
+    const u = s.user as { id?: string; _id?: string } | null | undefined;
+    return normalizeUserId(u?.id ?? u?._id);
+  });
 
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Global Store integration
+  const { messages: allMessages, loadMessages: syncMessages, addMessageLocally, updateMessageLocally, isLoadingChats } = useChatStore();
+  const messages = allMessages[chatId] || [];
+
   const [inputText, setInputText] = useState("");
-  const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [playerVisible, setPlayerVisible] = useState(false);
+  const [imageVisible, setImageVisible] = useState(false);
+  const [activeMediaUri, setActiveMediaUri] = useState<string | null>(null);
+  
+  // Call State
+  const [callVisible, setCallVisible] = useState(false);
+  const [callStatus, setCallStatus] = useState<'ringing' | 'incoming' | 'connected'>('ringing');
+  const [callType, setCallType] = useState<'audio' | 'video'>('audio');
+  const [callerId, setCallerId] = useState<string | null>(null);
+
   const listRef = useRef<FlatList<Message>>(null);
 
-  const loadMessages = useCallback(async () => {
-    if (!chatId) {
-      setLoading(false);
-      setError("Chat tanlanmagan");
-      return;
-    }
-    setError(null);
-    try {
-      const list = await getMessagesRequest(chatId);
-      setMessages(list);
-      try {
-        await markChatReadRequest(chatId);
-      } catch {
-        /* o'qilgan deb belgilash ixtiyoriy */
-      }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Yuklashda xatolik");
-      setMessages([]);
-    } finally {
-      setLoading(false);
-    }
+  const [chatDetails, setChatDetails] = useState<ChatDetailsResponse | null>(null);
+  const peerInfo = useMemo(() => {
+    if (!chatDetails || !chatDetails.participants) return null;
+    return chatDetails.participants.find(p => normalizeUserId(p.id) !== currentUserId);
+  }, [chatDetails, currentUserId]);
+
+  const peerSpecialization = peerInfo?.specialization || (peerInfo as any)?.profession || "";
+
+  useEffect(() => {
+    getChatDetailsRequest(chatId)
+      .then(setChatDetails)
+      .catch(console.error);
   }, [chatId]);
+
+  useEffect(() => {
+    const showEv = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEv = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const show = Keyboard.addListener(showEv, (e) => {
+      setKeyboardHeight(e.endCoordinates?.height ?? 0);
+    });
+    const hide = Keyboard.addListener(hideEv, () => setKeyboardHeight(0));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      void loadMessages();
-    }, [loadMessages])
+      syncMessages(chatId);
+      markChatReadRequest(chatId).catch(() => {});
+      if (chatId) setCurrentChatId(chatId);
+
+      const socket = getSocket();
+      if (!socket) return () => { setCurrentChatId(null); };
+
+      socket.emit('join_room', chatId);
+      console.log(`[Socket] Joined room: ${chatId}`);
+
+      const handleMessagesRead = (data: { chatId: string, readerId: string, messageIds: string[] }) => {
+        if (String(data.chatId) === String(chatId)) {
+          data.messageIds.forEach(id => {
+              updateMessageLocally(chatId, id, { status: "read" });
+          });
+        }
+      };
+      
+      const handleMessageUpdate = (data: { chatId?: string; id?: string; messageId?: string; status?: "read" | "delivered" }) => {
+         if (String(data.chatId) === String(chatId)) {
+            updateMessageLocally(chatId, data.id || data.messageId || "", { status: data.status });
+         }
+      };
+
+      const handleReceive = (data: any) => {
+        const rawMsg = data.message || data;
+        const msg = mapApiMessageToMessage(rawMsg);
+        if (String(msg.chatId) === String(chatId)) {
+          addMessageLocally(chatId, msg);
+          markChatReadRequest(chatId).catch(() => {});
+        }
+      };
+
+      socket.on("receive_message", handleReceive);
+      socket.on("messages_read", handleMessagesRead);
+      socket.on("message_update", handleMessageUpdate);
+
+      socket.on('incoming_call', (data: { from: string; name: string; signal: any; callType: string }) => {
+          setCallType(data.callType === 'video' ? 'video' : 'audio');
+          setCallerId(data.from);
+          setCallStatus('incoming');
+          setCallVisible(true);
+      });
+      socket.on('call_accepted', () => setCallStatus('connected'));
+      socket.on('call_rejected', () => setCallVisible(false));
+      socket.on('call_ended', () => setCallVisible(false));
+      
+      socket.on('service_session_updated', (data: { id: string, status: string, chat_id?: string }) => {
+          if (data.status === 'initiated' || data.status === 'ongoing' || data.status === 'completed') {
+              const currentMessages = useChatStore.getState().messages[chatId] || [];
+              currentMessages.forEach(msg => {
+                  if (msg.metadata?.kind === 'payment_request') {
+                      updateMessageLocally(chatId, msg.id, { 
+                          metadata: { ...msg.metadata, kind: 'panel_open' } 
+                      });
+                  }
+              });
+          }
+      });
+
+      return () => {
+        setCurrentChatId(null);
+        socket.off("receive_message", handleReceive);
+        socket.off("messages_read", handleMessagesRead);
+        socket.off("message_update", handleMessageUpdate);
+        socket.off('incoming_call');
+        socket.off('call_accepted');
+        socket.off('call_rejected');
+        socket.off('call_ended');
+      };
+    }, [chatId, syncMessages])
   );
+
+  const [lkToken, setLkToken] = useState<string | null>(null);
+  const [lkWsUrl, setLkWsUrl] = useState<string | null>(null);
+
+  const startCall = (type: 'audio' | 'video') => {
+    const socket = getSocket();
+    if (!socket || !chatId) return;
+    setCallType(type);
+    setCallStatus('ringing');
+    setCallVisible(true);
+    const peerId = chatId.replace(currentUserId, '').replace('_', '');
+    socket.emit('call_user', { 
+        targetUserId: peerId, 
+        fromName: useAuthStore.getState().user?.name || 'User',
+        callType: type 
+    });
+  };
+
+  const endCall = () => {
+    const socket = getSocket();
+    if (socket && chatId) {
+        const peerId = chatId.replace(currentUserId, '').replace('_', '');
+        socket.emit('end_call', { to: peerId });
+    }
+    setLkToken(null);
+    setCallVisible(false);
+  };
+
+  const acceptCall = async () => {
+    const socket = getSocket();
+    const target = callerId || (peerInfo?.id ? String(peerInfo.id) : "");
+    if (socket && target) {
+        socket.emit('accept_call', { to: target });
+        setCallStatus('connected');
+        
+        try {
+           const username = useAuthStore.getState().user?.name || 'Mijoz';
+           const data = await getLiveKitTokenRequest(chatId, username);
+           if (data && data.token) {
+              setLkToken(data.token);
+              setLkWsUrl(data.wsUrl);
+              console.log("[LiveKit] Token received:", data.token, "WS:", data.wsUrl);
+           }
+        } catch (e) {
+           console.error("[LiveKit] Token fetch error:", e);
+           Alert.alert("Xatolik", "Sessiyaga ulanishda muammo yuz berdi");
+        }
+    }
+  };
+
+  const rejectCall = () => {
+    const socket = getSocket();
+    const target = callerId || (peerInfo?.id ? String(peerInfo.id) : "");
+    if (socket && target) {
+        socket.emit('reject_call', { to: target });
+    }
+    setCallVisible(false);
+    setCallerId(null);
+  };
 
   const scrollToEnd = useCallback(() => {
     requestAnimationFrame(() => {
@@ -74,43 +628,390 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     });
   }, []);
 
+  /**
+   * iOS: klaviatura balandligi = pastki bo‘shliq.
+   * Android + softwareKeyboardLayoutMode resize: oyna balandligi qisqaradi — qo‘shimcha keyboard padding kerak emas (yo‘q bo‘lsa pan/resize muammosi).
+   */
+  const keyboardBottomInset =
+    keyboardHeight <= 0
+      ? Math.max(insets.bottom, 8)
+      : Platform.OS === "android"
+        ? 0
+        : keyboardHeight;
+
+  useEffect(() => {
+    if (keyboardHeight > 0) {
+      const t = setTimeout(() => scrollToEnd(), 80);
+      return () => clearTimeout(t);
+    }
+  }, [keyboardHeight, scrollToEnd]);
+
   const sendMessage = async () => {
-    const t = inputText.trim();
-    if (!t || !chatId || sending) return;
+    const text = inputText.trim();
+    if (!text || !chatId || sending || uploadingFile) return;
 
     setSending(true);
     setError(null);
     try {
-      const saved = await sendMessageRequest(chatId, t);
+      const saved = await sendMessageRequest(chatId, text);
       setInputText("");
-      setMessages((prev) => {
-        const next = [...prev];
-        const idx = next.findIndex((m) => m.id === saved.id);
-        if (idx >= 0) {
-          next[idx] = saved;
-          return next;
-        }
-        return [...next, saved];
-      });
-      scrollToEnd();
+      addMessageLocally(chatId, saved);
+      setTimeout(scrollToEnd, 120);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Yuborilmadi");
+      setError(e instanceof Error ? e.message : t('loginErrorGeneric'));
     } finally {
       setSending(false);
     }
   };
 
-  const renderItem = ({ item }: { item: Message }) => {
-    const isMe = currentUserId !== "" && item.senderId === currentUserId;
-    return (
-      <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.otherMessageRow]}>
-        <View style={[styles.bubble, isMe ? styles.myBubble : styles.otherBubble]}>
-          <Text style={styles.messageText}>{item.text}</Text>
-          <Text style={styles.timestamp}>{item.timestamp}</Text>
+  const pickAndSendFile = useCallback(async () => {
+    if (!chatId || sending || uploadingFile) return;
+    try {
+      const res = await DocumentPicker.getDocumentAsync({
+        copyToCacheDirectory: true,
+        multiple: false,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      setUploadingFile(true);
+      setError(null);
+      const url = await uploadChatFileRequest(
+        asset.uri,
+        asset.name ?? "file",
+        asset.mimeType ?? "application/octet-stream"
+      );
+      const typ = messageTypeFromMime(asset.mimeType);
+      const saved = await sendMessageRequest(chatId, url, typ);
+      addMessageLocally(chatId, saved);
+      setTimeout(scrollToEnd, 120);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Fayl yuborilmadi");
+    } finally {
+      setUploadingFile(false);
+    }
+  }, [chatId, sending, uploadingFile, scrollToEnd]);
+
+  const openVideo = (uri: string) => {
+    setActiveMediaUri(uri);
+    setPlayerVisible(true);
+  };
+
+  const openImage = (uri: string) => {
+    setActiveMediaUri(uri);
+    setImageVisible(true);
+  };
+
+  const openAttachment = useCallback(async (item: Message) => {
+    const url = item.remoteFileUrl;
+    if (!url) return;
+    
+    // Media detection
+    const isVideo = item.messageType === 'video' || url.match(/\.(mp4|mov|avi|mkv)$/i);
+    const isImg = item.messageType === 'image' || url.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+
+    if (isVideo) {
+       openVideo(url);
+       return;
+    }
+    if (isImg) {
+       openImage(url);
+       return;
+    }
+
+    setOpeningFileId(item.id);
+    try {
+      await downloadAndOpenWithSystemSheet(url);
+    } catch (e) {
+      Alert.alert("Fayl", e instanceof Error ? e.message : "Ochib bo‘lmadi");
+    } finally {
+      setOpeningFileId(null);
+    }
+  }, []);
+
+  const messagesWithHeaders = useMemo(() => {
+    const result: any[] = [];
+    let lastDateText = "";
+
+    messages.forEach((m) => {
+      // Hozircha oddiy 'Bugun' simulyatsiyasi.
+      // Real loyihada timestamp dan haqiqiy sana olinadi.
+      const dateText = t('msgToday'); 
+      
+      if (dateText !== lastDateText) {
+        result.push({ isDateHeader: true, dateText, id: `header-${dateText}` });
+        lastDateText = dateText;
+      }
+      result.push(m);
+    });
+    return result;
+  }, [messages]);
+
+  const renderItem = ({ item, index }: { item: any; index: number }) => {
+    if (item.isDateHeader) {
+      return (
+        <View style={styles.dateHeaderContainer}>
+          <View style={styles.dateHeaderBg}>
+            <Text style={styles.dateHeaderText}>{item.dateText}</Text>
+          </View>
         </View>
+      );
+    }
+
+    const isMe = currentUserId.length > 0 && item.senderId === currentUserId;
+    const hasAttachment = Boolean(item.remoteFileUrl);
+    const opening = openingFileId === item.id;
+    
+    // Birlashish logikasi (Grouping)
+    const prevItem = index > 0 ? messagesWithHeaders[index - 1] : null;
+    const nextItem = index < messagesWithHeaders.length - 1 ? messagesWithHeaders[index + 1] : null;
+    
+    // Agar xabarlar o'rtasida 10 daqiqadan ko'p vaqt o'tsa yoki boshqa odam yozsa, guruh uziladi
+    const isConsecutivePrev = prevItem && !prevItem.isDateHeader && prevItem.senderId === item.senderId;
+    const isConsecutiveNext = nextItem && !nextItem.isDateHeader && nextItem.senderId === item.senderId;
+
+    const isImage = item.messageType === 'image' || item.remoteFileUrl?.match(/\.(jpg|jpeg|png|gif|webp)$/i);
+    const isVideo = item.messageType === 'video' || item.remoteFileUrl?.match(/\.(mp4|mov|avi|mkv)$/i);
+    const isAudio = item.messageType === 'audio' || item.remoteFileUrl?.match(/\.(mp3|wav|ogg|m4a)$/i);
+    const isMedia = isImage || isVideo;
+    
+    const hasRawUrlText = item.text && (item.text === item.remoteFileUrl || item.text.startsWith?.("http"));
+    const displayText = hasRawUrlText ? null : item.text;
+    const fileName = item.remoteFileUrl ? item.remoteFileUrl.split('/').pop()?.split('?')[0] || t('msgFile') : t('msgFile');
+
+    const bubbleBody = (
+      <>
+        {hasAttachment && isMedia ? (
+           <MediaAttachment 
+             uri={item.remoteFileUrl!} 
+             isVideo={Boolean(isVideo)} 
+             onPress={() => isImage ? openImage(item.remoteFileUrl!) : openVideo(item.remoteFileUrl!)} 
+             onSave={() => void openAttachment(item)}
+           />
+        ) : null}
+        
+        {hasAttachment && isAudio ? (
+           <AudioPlayer 
+              uri={item.remoteFileUrl!} 
+              fileName={fileName} 
+              senderName={isMe ? "Men" : title} 
+              isMe={isMe} 
+           />
+        ) : hasAttachment && !isMedia ? (
+          <Pressable onPress={() => void openAttachment(item)} style={styles.fileCard}>
+             <View style={styles.fileIconBox}>
+                <Paperclip color="#38bdf8" size={24} />
+             </View>
+             <View style={styles.fileInfo}>
+                <Text style={styles.fileName} numberOfLines={1} ellipsizeMode="middle">{fileName}</Text>
+                <View style={styles.fileMetaRow}>
+                   <View style={styles.fileTypeBadge}>
+                      <Text style={styles.fileTypeBadgeText}>FAYL</Text>
+                   </View>
+                   <Text style={[styles.actionText, opening && { opacity: 0.5 }]}>
+                      {opening ? t('msgLoading').toUpperCase() : t('msgSave').toUpperCase()}
+                   </Text>
+                </View>
+             </View>
+          </Pressable>
+        ) : null}
+
+        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && (
+           <Pressable 
+             style={styles.joinSessionBtn}
+             onPress={() => {
+                if (item.metadata?.kind === 'payment_request') {
+                   const amount = item.metadata?.serviceAmountMali || 0;
+                   Alert.alert(
+                     t('payConfirm'),
+                     `${amount} MALI ${t('payDesc')}`,
+                     [
+                       { text: t('payNo'), style: "cancel" },
+                       { 
+                         text: t('payYes'), 
+                         onPress: async () => {
+                           try {
+                              await initiateSessionRequest(item.senderId, amount, chatId);
+                              Alert.alert(t('paySuccess'), t('paySuccessSub'));
+                           } catch (e) {
+                              Alert.alert(t('loginErrorGeneric'), e instanceof Error ? e.message : t('payNo'));
+                           }
+                         }
+                       }
+                     ]
+                   );
+                } else {
+                   setCallType('video');
+                   setCallStatus('connected');
+                   setCallVisible(true);
+                   acceptCall();
+                }
+             }}
+           >
+             {item.metadata?.kind === 'payment_request' ? <CreditCard color="#fff" size={16} /> : <VideoIcon color="#fff" size={16} />}
+             <Text style={styles.joinSessionBtnText}>
+                {item.metadata?.kind === 'payment_request' ? t('paymentAction') : t('sessionJoin')}
+             </Text>
+           </Pressable>
+        )}
+
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: isMedia && !displayText ? 0 : 2 }}>
+           {displayText ? <Text style={[styles.messageText, (hasAttachment && !isMedia) && { marginTop: 8 }]}>{displayText}</Text> : null}
+           <View style={[styles.bubbleFooter, displayText ? { marginLeft: 8, marginBottom: 2 } : {}]}>
+             <Text style={[styles.timestamp, { color: isMe ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.5)" }]}>{item.timestamp}</Text>
+             {isMe && (
+               <Text
+                 style={[
+                   styles.readReceipt,
+                   item.status === 'read' ? { color: '#fff' } : { color: 'rgba(255,255,255,0.8)' }
+                 ]}
+               >
+                 {item.status === 'read' ? '✓✓' : '✓'}
+               </Text>
+             )}
+           </View>
+        </View>
+      </>
+    );
+
+    const dynamicBubbleStyle = isMe ? {
+      borderTopLeftRadius: 20,
+      borderBottomLeftRadius: 20,
+      borderTopRightRadius: isConsecutivePrev ? 6 : 20,
+      borderBottomRightRadius: isConsecutiveNext ? 6 : 4,
+    } : {
+      borderTopRightRadius: 20,
+      borderBottomRightRadius: 20,
+      borderTopLeftRadius: isConsecutivePrev ? 6 : 20,
+      borderBottomLeftRadius: isConsecutiveNext ? 6 : 4,
+    };
+
+    const openMessageMenu = (message: Message) => {
+        const options = [t('msgForward'), t('msgSave'), 'Select', t('msgDelete'), t('msgCancel')];
+        const destructiveButtonIndex = 3;
+        const cancelButtonIndex = 4;
+
+        if (Platform.OS === 'ios') {
+            ActionSheetIOS.showActionSheetWithOptions(
+              {
+                options,
+                cancelButtonIndex,
+                destructiveButtonIndex,
+                title: t('msgOptions'),
+              },
+              (buttonIndex) => {
+                handleMenuAction(buttonIndex, message);
+              }
+            );
+        } else {
+            // Android style simple alert for testing, ideally use a custom modal
+            Alert.alert(
+                "Message Options",
+                "Choose action",
+                [
+                    { text: "Forward", onPress: () => console.log("Forward") },
+                    { text: "Save to Gallery", onPress: () => void openAttachment(message) },
+                    { text: "Delete", style: "destructive", onPress: () => console.log("Delete") },
+                    { text: "Cancel", style: "cancel" }
+                ]
+            );
+        }
+    };
+
+    const handleMenuAction = (index: number, message: Message) => {
+        switch (index) {
+            case 0: // Forward
+                break;
+            case 1: // Save
+                void openAttachment(message);
+                break;
+            case 3: // Delete
+                break;
+        }
+    };
+
+    return (
+      <View style={[styles.messageRow, isMe ? styles.myMessageRow : styles.otherMessageRow, { marginBottom: isConsecutiveNext ? 2 : 12 }]}>
+        <Pressable 
+          onLongPress={() => openMessageMenu(item)}
+          style={[styles.bubble, isMe ? styles.myBubbleBase : styles.otherBubbleBase, dynamicBubbleStyle]}
+        >
+           {bubbleBody}
+           {opening && (
+             <View style={[styles.mediaPlaceholder, { borderRadius: 14 }]}>
+               <ActivityIndicator color="#fff" style={styles.attachmentLoading} />
+             </View>
+           )}
+        </Pressable>
       </View>
     );
   };
+
+  const busy = sending || uploadingFile;
+
+  const renderChatBody = () => (
+    <View style={[styles.chatBody, { paddingBottom: keyboardBottomInset }]}>
+      {isLoadingChats && messages.length === 0 ? (
+        <View style={styles.centerWrap}>
+          <ActivityIndicator size="large" color="#3b82f6" />
+          <Text style={styles.hint}>Xabarlar yuklanmoqda...</Text>
+        </View>
+      ) : (
+        <FlatList
+          ref={listRef}
+          data={messagesWithHeaders}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          style={styles.flex1}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onContentSizeChange={scrollToEnd}
+          onLayout={scrollToEnd}
+          ListEmptyComponent={
+            <Text style={styles.emptyList}>Hozircha xabar yo‘q — birinchi bo‘lib yozing</Text>
+          }
+        />
+      )}
+      <View style={styles.inputArea}>
+        <View style={styles.inputGlass}>
+          <Pressable style={styles.inputIcon} disabled={busy}>
+            <Smile color="rgba(255,255,255,0.55)" size={24} />
+          </Pressable>
+          <Pressable
+            style={styles.attachmentButton}
+            onPress={() => void pickAndSendFile()}
+            disabled={busy}
+            hitSlop={8}
+          >
+            {uploadingFile ? (
+              <ActivityIndicator color="rgba(255,255,255,0.7)" size="small" />
+            ) : (
+              <Paperclip color="rgba(255,255,255,0.7)" size={24} />
+            )}
+          </Pressable>
+          <View style={styles.inputContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Xabar yozing..."
+              placeholderTextColor="rgba(255,255,255,0.45)"
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              editable={!busy}
+            />
+          </View>
+          <Pressable
+            style={[styles.sendButton, (!inputText.trim() || busy) && styles.sendButtonDisabled]}
+            onPress={() => void sendMessage()}
+            disabled={!inputText.trim() || busy}
+          >
+            {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send color="#fff" size={20} />}
+          </Pressable>
+        </View>
+      </View>
+    </View>
+  );
 
   if (!chatId) {
     return (
@@ -128,22 +1029,50 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ImageBackground source={{ uri: DEFAULT_PLATFORM_BACKGROUND }} style={styles.backgroundImage}>
-        <View style={styles.overlay} />
-
-        <View style={styles.header}>
+      <ChatBackground>
+        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
           <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
             <ArrowLeft color="#fff" size={24} />
           </Pressable>
-          <View style={styles.headerTitleContainer}>
-            <Text style={styles.headerName} numberOfLines={1}>
-              {title}
-            </Text>
-            <Text style={styles.headerStatus}>online</Text>
-          </View>
-          <Pressable style={styles.iconButton}>
-            <MoreVertical color="#fff" size={20} />
+          <Pressable
+            style={({ pressed }) => [styles.headerTitleRow, pressed && { opacity: 0.88 }]}
+            onPress={() =>
+              navigation.navigate("ChatPeerInfo", {
+                chatId,
+                name: title,
+                avatarUrl: peerAvatar || null,
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel="Suhbatdosh haqida"
+          >
+            <AvatarImage uri={peerAvatar || null} name={title} size={40} />
+            <View style={styles.headerTitleContainer}>
+              <Text style={styles.headerName} numberOfLines={1}>
+                {title}
+              </Text>
+              <Text style={styles.headerStatus} numberOfLines={1}>
+                {peerSpecialization || "online"}
+              </Text>
+            </View>
           </Pressable>
+          <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            <Pressable 
+              style={styles.iconButton} 
+              onPress={() => startCall('audio')}
+            >
+              <Phone color="#fff" size={20} />
+            </Pressable>
+            <Pressable 
+              style={styles.iconButton}
+              onPress={() => startCall('video')}
+            >
+              <VideoIcon color="#fff" size={21} />
+            </Pressable>
+            <Pressable style={styles.iconButton}>
+              <MoreVertical color="#fff" size={20} />
+            </Pressable>
+          </View>
         </View>
 
         {error ? (
@@ -152,60 +1081,30 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           </View>
         ) : null}
 
-        <KeyboardAvoidingView
-          style={styles.flex1}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
-        >
-          {loading ? (
-            <View style={styles.centerWrap}>
-              <ActivityIndicator size="large" color="#3b82f6" />
-              <Text style={styles.hint}>Xabarlar yuklanmoqda...</Text>
-            </View>
-          ) : (
-            <FlatList
-              ref={listRef}
-              data={messages}
-              keyExtractor={(item) => item.id}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              onContentSizeChange={scrollToEnd}
-              onLayout={scrollToEnd}
-              ListEmptyComponent={
-                <Text style={styles.emptyList}>Hozircha xabar yo‘q — birinchi bo‘lib yozing</Text>
-              }
-            />
-          )}
+        <View style={styles.flex1}>{renderChatBody()}</View>
 
-          <View style={styles.inputArea}>
-            <View style={styles.inputContainer}>
-              <Pressable style={styles.inputIcon}>
-                <Smile color="rgba(255,255,255,0.4)" size={22} />
-              </Pressable>
-              <TextInput
-                style={styles.input}
-                placeholder="Xabar yozing..."
-                placeholderTextColor="rgba(255,255,255,0.4)"
-                value={inputText}
-                onChangeText={setInputText}
-                multiline
-                editable={!sending}
-              />
-              <Pressable style={styles.inputIcon}>
-                <Paperclip color="rgba(255,255,255,0.4)" size={20} />
-              </Pressable>
-            </View>
-            <Pressable
-              style={[styles.sendButton, (!inputText.trim() || sending) && styles.sendButtonDisabled]}
-              onPress={() => void sendMessage()}
-              disabled={!inputText.trim() || sending}
-            >
-              {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send color="#fff" size={20} />}
-            </Pressable>
-          </View>
-        </KeyboardAvoidingView>
-      </ImageBackground>
+        <VideoPlayerModal 
+           visible={playerVisible} 
+           uri={activeMediaUri} 
+           onClose={() => setPlayerVisible(false)} 
+        />
+        <ImageViewerModal
+           visible={imageVisible}
+           uri={activeMediaUri}
+           onClose={() => setImageVisible(false)}
+        />
+        <CallModal
+          visible={callVisible}
+          status={callStatus}
+          name={title}
+          callType={callType}
+          onAccept={acceptCall}
+          onReject={rejectCall}
+          onEnd={endCall}
+          lkToken={lkToken}
+          lkWsUrl={lkWsUrl}
+        />
+      </ChatBackground>
     </View>
   );
 }
@@ -213,32 +1112,34 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0f172a",
+    backgroundColor: "transparent",
   },
   flex1: { flex: 1 },
-  backgroundImage: {
+  chatBody: {
     flex: 1,
-    width: "100%",
-  },
-  overlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.7)",
+    minHeight: 0,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    paddingTop: Platform.OS === "ios" ? 56 : 40,
-    paddingHorizontal: 16,
-    paddingBottom: 15,
-    backgroundColor: "rgba(15, 23, 42, 0.88)",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(255,255,255,0.05)",
+    paddingHorizontal: 14,
+    paddingBottom: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.14)",
+  },
+  headerTitleRow: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginLeft: 8,
+    minWidth: 0,
+    maxWidth: width - 100,
   },
   headerTitleContainer: {
     flex: 1,
-    marginLeft: 15,
+    marginLeft: 10,
     minWidth: 0,
-    maxWidth: width - 120,
   },
   headerName: {
     color: "#fff",
@@ -279,7 +1180,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     padding: 15,
-    paddingBottom: 20,
+    paddingBottom: 24,
     flexGrow: 1,
   },
   emptyList: {
@@ -299,51 +1200,301 @@ const styles = StyleSheet.create({
   otherMessageRow: {
     justifyContent: "flex-start",
   },
+  dateHeaderContainer: {
+    alignItems: 'center',
+    marginVertical: 16,
+  },
+  dateHeaderBg: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  dateHeaderText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   bubble: {
     maxWidth: "80%",
-    padding: 12,
-    borderRadius: 20,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
-  myBubble: {
+  myBubbleBase: {
     backgroundColor: "#3b82f6",
-    borderBottomRightRadius: 4,
   },
-  otherBubble: {
+  otherBubbleBase: {
     backgroundColor: "rgba(30, 41, 59, 0.85)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
-    borderBottomLeftRadius: 4,
   },
   messageText: {
     color: "#ffffff",
     fontSize: 15,
     lineHeight: 20,
   },
+  attachmentHint: {
+    color: "rgba(255,255,255,0.75)",
+    fontSize: 12,
+    marginTop: 6,
+  },
+  attachmentLoading: {
+    paddingVertical: 8,
+  },
+  bubbleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  mediaWrapper: {
+    width: width * 0.65,
+    aspectRatio: 3 / 4,
+    marginBottom: 6,
+    position: 'relative',
+  },
+  mediaContainer: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.15)',
+  },
+  mediaSaveBtn: {
+    position: 'absolute',
+    top: 5,
+    right: 5,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    zIndex: 10,
+  },
+  videoDurationBadge: {
+    position: 'absolute',
+    bottom: 8,
+    left: 8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalBg: {
+    flex: 1,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+  },
+  modalHeader: {
+    position: 'absolute',
+    top: 40,
+    right: 20,
+    zIndex: 100,
+  },
+  modalCloseBtn: {
+    padding: 10,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 20,
+  },
+  fullScreenVideo: {
+    width: '100%',
+    height: Dimensions.get('window').height * 0.8,
+  },
+  fullScreenImage: {
+    width: '100%',
+    height: '100%',
+  },
+  videoCloudBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 18,
+    gap: 8,
+  },
+  videoMetaCol: {
+    justifyContent: 'center',
+  },
+  videoMetaText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  videoMetaDetail: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 9,
+  },
+  playIconBoxSmall: {
+     position: 'absolute',
+     top: '50%',
+     left: '50%',
+     marginTop: -25,
+     marginLeft: -25,
+     width: 50,
+     height: 50,
+     borderRadius: 25,
+     backgroundColor: 'rgba(0,0,0,0.4)',
+     justifyContent: 'center',
+     alignItems: 'center',
+     borderWidth: 1,
+     borderColor: 'rgba(255,255,255,0.2)',
+  },
+  audioPlayerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    padding: 10,
+    borderRadius: 16,
+    minWidth: 220,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 130, 246, 0.3)',
+  },
+  audioPlayBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#3b82f6',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  pauseIcon: {
+    width: 14,
+    height: 14,
+    borderLeftWidth: 4,
+    borderRightWidth: 4,
+    borderColor: '#fff',
+  },
+  audioInfo: {
+    flex: 1,
+  },
+  audioFileName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
+  audioSenderName: {
+    color: 'rgba(255,255,255,0.6)',
+    fontSize: 12,
+  },
+  mediaImage: {
+    width: '100%',
+    height: '100%',
+  },
+  mediaPlaceholder: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaVideoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(30, 41, 59, 1)',
+  },
+  playIconBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    minWidth: 200,
+  },
+  fileIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(56, 189, 248, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  fileInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  fileName: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  fileMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  fileTypeBadge: {
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  fileTypeBadgeText: {
+    color: '#ccc',
+    fontSize: 9,
+    fontWeight: 'bold',
+  },
+  actionText: {
+    color: '#38bdf8',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
   timestamp: {
     color: "rgba(255, 255, 255, 0.5)",
     fontSize: 10,
-    alignSelf: "flex-end",
-    marginTop: 4,
+  },
+  readReceipt: {
+    fontSize: 12,
+    fontWeight: 'bold',
   },
   inputArea: {
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    backgroundColor: "transparent",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: "rgba(255,255,255,0.1)",
+  },
+  /** Pastki qator — fon rasmi ChatBackground orqali ko‘rinadi (shisha, blur effektiga yaqin) */
+  inputGlass: {
     flexDirection: "row",
     alignItems: "flex-end",
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    backgroundColor: "rgba(15, 23, 42, 0.92)",
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255,255,255,0.05)",
-    paddingBottom: Platform.OS === "ios" ? 28 : 15,
+    gap: 10,
   },
   inputContainer: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.05)",
-    borderRadius: 25,
-    paddingHorizontal: 12,
-    minHeight: 44,
-    maxHeight: 100,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 26,
+    paddingHorizontal: 10,
+    minHeight: 48,
+    maxHeight: 120,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    overflow: "hidden",
   },
   input: {
     flex: 1,
@@ -355,17 +1506,182 @@ const styles = StyleSheet.create({
   inputIcon: {
     padding: 5,
   },
-  sendButton: {
+  attachmentButton: {
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: "#3b82f6",
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 2,
+  },
+  sendButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(59, 130, 246, 0.85)",
     justifyContent: "center",
     alignItems: "center",
-    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.28)",
   },
   sendButtonDisabled: {
-    backgroundColor: "rgba(59, 130, 246, 0.35)",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  callModalBg: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 100,
+  },
+  callInfoContainer: {
+    alignItems: 'center',
+  },
+  callName: {
+    color: '#fff',
+    fontSize: 32,
+    fontWeight: '700',
+    marginTop: 20,
+  },
+  callStatus: {
+    color: '#38bdf8',
+    fontSize: 18,
+    marginTop: 10,
+  },
+  callActions: {
+    flexDirection: 'row',
+    gap: 40,
+  },
+  callBtn: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  acceptBtn: {
+    backgroundColor: '#22c55e',
+  },
+  rejectBtn: {
+    backgroundColor: '#ef4444',
+  },
+  joinSessionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#10b981',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    gap: 8,
+    alignSelf: 'flex-start',
+  },
+  joinSessionBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  fullScreenCallContainer: {
+    flex: 1,
+    backgroundColor: '#0f172a',
+  },
+  remoteVideoPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarLargeBox: {
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  remoteNameText: {
+    color: '#fff',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginTop: 20,
+  },
+  callTimerText: {
+    color: '#38bdf8',
+    fontSize: 16,
+    marginTop: 8,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+  },
+  localVideoPreview: {
+    position: 'absolute',
+    top: 60,
+    right: 20,
+    width: 100,
+    height: 150,
+    borderRadius: 16,
+    backgroundColor: '#1e293b',
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  camOffPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  callControlsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 20,
+    paddingBottom: 60,
+  },
+  callControlBtn: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  controlBtnActive: {
+    backgroundColor: '#ef4444',
+  },
+  endCallBtn: {
+    width: 75,
+    height: 75,
+    borderRadius: 38,
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  avatarLargeBoxShadow: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 15,
+  },
+  videoGrid: {
+    flex: 1,
+    width: '100%',
+  },
+  remoteVideoBox: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  fill: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
   },
 });
 

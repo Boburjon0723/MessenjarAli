@@ -1,360 +1,594 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useLayoutEffect, useMemo, useRef, useState, useEffect } from "react";
 import {
   ActivityIndicator,
   FlatList,
-  Image,
-  ImageBackground,
   Pressable,
   RefreshControl,
   StyleSheet,
   Text,
   TextInput,
   View,
-  Platform,
-  Dimensions,
   ScrollView,
   StatusBar,
+  Alert,
+  Platform,
+  ActionSheetIOS,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
-import {
-  Globe,
-  User,
-  Wallet,
-  Users,
-  Radio,
-  Briefcase,
-  LineChart,
-  Menu,
-  PenSquare,
-  Search,
-  X,
-  MessageSquare,
-  Layout,
-  Settings,
-  HelpCircle,
-  Megaphone,
-  Contact,
-  LogOut,
-  Moon,
-} from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { User, Wallet, Briefcase, MessageSquare, Search, Users } from "lucide-react-native";
 import { Chat } from "../types";
-import { getChatsRequest } from "../service";
-import { DEFAULT_PLATFORM_BACKGROUND } from "../../../lib/constants";
+import { ChatBackground } from "../../../components/ChatBackground";
 import { useAuthStore } from "../../auth/store";
+import { WalletView, ServicesView, ContactsView } from "./DashboardViews";
+import { CHAT_CATEGORY_ITEMS, HEADER_RIGHT_ACTIONS, getMenuIcon } from "../chat-shell-menu";
+import { AvatarImage } from "../../../components/AvatarImage";
+import { getSocket, chatMetadataMap } from "../../../lib/socket";
+import PagerView from "react-native-pager-view";
+import { useChatStore } from "../../../store/chatStore";
+import { useAuthLocale } from "../../auth/locale";
 
-const { width, height } = Dimensions.get("window");
-
-const ICON_SM = 20;
 const ICON_MD = 24;
 
-const CAT_INACTIVE = "rgba(255,255,255,0.4)";
-const CAT_ACTIVE = "#ffffff";
-
-const CATEGORY_ICONS: {
-  id: string;
-  Icon: React.ComponentType<{ size?: number; color?: string }>;
-}[] = [
-  { id: "all", Icon: Globe },
-  { id: "user", Icon: User },
-  { id: "wallet", Icon: Wallet },
-  { id: "group", Icon: Users },
-  { id: "channel", Icon: Radio },
-  { id: "services", Icon: Briefcase },
-  { id: "finance", Icon: LineChart },
-];
+function categoryMatchesChat(categoryId: string, chat: Chat): boolean {
+  if (categoryId === "all") return true;
+  const t = (chat.type || "").toLowerCase();
+  switch (categoryId) {
+    case "user":
+      return !t || t === "private" || t === "user" || t === "direct";
+    case "wallet":
+      return t === "wallet";
+    case "group":
+      return t === "group";
+    case "channel":
+      return t === "channel";
+    case "services":
+      return t === "services";
+    case "finance":
+      return t === "finance";
+    default:
+      return true;
+  }
+}
 
 const BOTTOM_TABS: {
-  id: "chats" | "wallet" | "services" | "profile";
+  id: "chats" | "contacts" | "wallet" | "services" | "profile";
   label: string;
   icon: (active: boolean) => React.ReactNode;
 }[] = [
   {
     id: "chats",
     label: "CHATLAR",
-    icon: (active) => <MessageSquare color={active ? "#3b82f6" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
+    icon: (active) => <MessageSquare color={active ? "#fff" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
+  },
+  {
+    id: "contacts",
+    label: "KONTAKTLAR",
+    icon: (active) => <Users color={active ? "#fff" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
   },
   {
     id: "wallet",
     label: "HAMYON",
-    icon: (active) => <Wallet color={active ? "#3b82f6" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
+    icon: (active) => <Wallet color={active ? "#fff" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
   },
   {
     id: "services",
     label: "XIZMATLAR",
-    icon: (active) => <Briefcase color={active ? "#3b82f6" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
+    icon: (active) => <Briefcase color={active ? "#fff" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
   },
   {
     id: "profile",
     label: "PROFIL",
-    icon: (active) => <User color={active ? "#3b82f6" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
+    icon: (active) => <User color={active ? "#fff" : "rgba(255,255,255,0.4)"} size={ICON_MD} />,
   },
 ];
 
 export function ChatListScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const currentUser = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
-  const isExpert = Boolean((currentUser as { is_expert?: boolean })?.is_expert);
-
-  const [showMenu, setShowMenu] = useState(false);
-  const [activeCategory, setActiveCategory] = useState("all");
-  const [bottomTab, setBottomTab] = useState<"chats" | "wallet" | "services" | "profile">("chats");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [bottomTab, setBottomTab] = useState<"chats" | "contacts" | "wallet" | "services">("chats");
+  
+  // Use global store
+  const { chats, loadChats, isLoadingChats, updateChatLocally } = useChatStore();
+  const { t } = useAuthLocale();
+  
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  /** Gorizontal surish rejimi: qidiruv bo‘sh bo‘lganda kategoriya sahifalari */
+  const useCategoryPager = searchQuery.trim().length === 0;
+  const [pageIndex, setPageIndex] = useState(0);
+  const pagerRef = useRef<PagerView>(null);
+  const categoryNavScrollRef = useRef<ScrollView>(null);
+  const chipLayoutsRef = useRef<Array<{ x: number; width: number }>>([]);
+  const [categoryStripWidth, setCategoryStripWidth] = useState(0);
+  const [categoryContentWidth, setCategoryContentWidth] = useState(0);
 
-  const loadChats = useCallback(async () => {
-    setError(null);
-    try {
-      const list = await getChatsRequest();
-      setChats(list);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Chatlarni yuklab bo'lmadi");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const isExpert =
+    (currentUser as { isExpert?: boolean; role?: string } | null)?.isExpert === true ||
+    (currentUser as { role?: string } | null)?.role === "expert";
+
+  const chatsForCategory = useCallback((catId: string) => {
+    if (catId === "all") return chats;
+    return chats.filter((c) => categoryMatchesChat(catId, c));
+  }, [chats]);
+
+  const searchFilteredChats = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return chats;
+    return chats.filter(
+      (c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.lastMessage || "").toLowerCase().includes(q)
+    );
+  }, [chats, searchQuery]);
 
   useFocusEffect(
     useCallback(() => {
-      setLoading(true);
-      void loadChats();
-    }, [loadChats])
+      loadChats().then(() => {
+          // Barcha chatlar xonalarga kirish (join)
+          const socket = getSocket();
+          if (socket) {
+            chats.forEach((c) => {
+              socket.emit("join_room", c.id);
+              chatMetadataMap.set(String(c.id), { name: c.name, type: c.type || 'private' });
+            });
+          }
+      });
+    }, [loadChats, chats.length])
   );
 
-  const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    void loadChats();
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) return;
+
+    const handleReceive = (data: any) => {
+      const msg = data.message || data;
+      const chatId = msg.chatId || msg.chat_id;
+      if (!chatId) return;
+
+      const chat = chats.find(c => String(c.id) === String(chatId));
+      if (chat) {
+          let text = msg.text || "📎 Rasm/Fayl";
+          if (text === "📎 Fayl" || text === "📎 Rasm/Fayl") text = t('msgFile');
+          else if (text === "📷 Rasm") text = t('msgPhoto');
+          else if (text === "🎤 Ovozli xabar") text = t('msgVoice');
+
+          updateChatLocally(chatId, {
+              lastMessage: text,
+              unreadCount: (chat.unreadCount || 0) + 1
+          });
+      } else {
+          loadChats();
+      }
+    };
+
+    socket.on("receive_message", handleReceive);
+    return () => {
+      socket.off("receive_message", handleReceive);
+    };
   }, [loadChats]);
 
-  const displayedChats = useMemo(() => {
-    if (bottomTab !== "chats") return [];
-    let list = chats;
-    if (activeCategory === "user") list = list.filter((c) => c.type === "private" || !c.type);
-    else if (activeCategory === "group") list = list.filter((c) => c.type === "group");
-    else if (activeCategory === "channel") list = list.filter((c) => c.type === "channel");
+  const goToCategoryPage = useCallback((index: number) => {
+    const safe = Math.max(0, Math.min(CHAT_CATEGORY_ITEMS.length - 1, index));
+    setPageIndex(safe);
+    pagerRef.current?.setPage(safe);
+  }, []);
 
-    const q = searchQuery.trim().toLowerCase();
-    if (q) list = list.filter(c => c.name.toLowerCase().includes(q));
-    return list;
-  }, [chats, activeCategory, searchQuery, bottomTab]);
+  const scrollCategoryNavToIndex = useCallback(
+    (index: number) => {
+      const scroll = categoryNavScrollRef.current;
+      const chip = chipLayoutsRef.current[index];
+      const vw = categoryStripWidth;
+      if (!scroll || !chip || vw <= 0) return;
+      const center = chip.x + chip.width / 2;
+      let targetX = center - vw / 2;
+      const maxX = Math.max(0, categoryContentWidth - vw);
+      targetX = Math.max(0, Math.min(maxX, targetX));
+      scroll.scrollTo({ x: targetX, animated: true });
+    },
+    [categoryStripWidth, categoryContentWidth]
+  );
 
-  const handleLogout = async () => {
-    await logout();
-    navigation.replace("Login");
-  };
+  useLayoutEffect(() => {
+    if (!useCategoryPager) return;
+    let inner: number | undefined;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => scrollCategoryNavToIndex(pageIndex));
+    });
+    return () => {
+      cancelAnimationFrame(outer);
+      if (inner !== undefined) cancelAnimationFrame(inner);
+    };
+  }, [pageIndex, useCategoryPager, scrollCategoryNavToIndex, categoryStripWidth, categoryContentWidth]);
+
+  const onHeaderAction = useCallback((id: string) => {
+    if (id === "compose") {
+      const options = [
+        t('menuNewContact'),
+        t('menuNewGroup'),
+        t('menuNewChannel'),
+        t('menuSelect'),
+        t('msgCancel')
+      ];
+
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options,
+            cancelButtonIndex: 4,
+            title: t('composeChatTitle'),
+          },
+          (buttonIndex) => {
+             if (buttonIndex < 4) {
+               // Future implementation for each action
+               Alert.alert(options[buttonIndex], "Tez kunda... (Coming soon)");
+             }
+          }
+        );
+      } else {
+        Alert.alert(
+          t('composeChatTitle'),
+          t('composeChatDesc'),
+          [
+            { text: t('menuNewGroup'), onPress: () => Alert.alert(t('menuNewGroup'), "Coming soon") },
+            { text: t('menuNewChannel'), onPress: () => Alert.alert(t('menuNewChannel'), "Coming soon") },
+            { text: t('msgCancel'), style: "cancel" }
+          ]
+        );
+      }
+      return;
+    }
+    if (id === "expert_tools") {
+      Alert.alert(t('expertPanelTitle'), t('expertPanelDesc'));
+    }
+  }, [t]);
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-      <ImageBackground source={{ uri: DEFAULT_PLATFORM_BACKGROUND }} style={styles.backgroundImage}>
-        <View style={styles.overlay} />
-
-        {/* Dynamic Drawer Menu */}
-        {showMenu && (
-          <View style={styles.drawerOverlay}>
-            <Pressable style={styles.drawerBackdrop} onPress={() => setShowMenu(false)} />
-            <View style={styles.drawerContent}>
-              <View style={styles.drawerHeader}>
-                <View style={styles.drawerBranding}>
-                  <Text style={styles.drawerBrandTitle}>ExpertLine</Text>
-                  <Text style={styles.drawerBrandTag}>MUTAXASSISLARNI TOPING</Text>
+      <StatusBar barStyle="light-content" translucent />
+      <ChatBackground>
+        <View
+          style={[styles.mainContent, bottomTab !== "chats" && { paddingTop: insets.top + 8 }]}
+        >
+          {bottomTab === "chats" ? (
+            <View style={styles.chatsTab}>
+              <View style={[styles.chatsTop, { paddingTop: insets.top + 10 }]}>
+                <View style={styles.searchRow}>
+                  <View style={styles.searchBox}>
+                    <Search color="rgba(255,255,255,0.45)" size={18} />
+                    <TextInput
+                      placeholder={t('searchPlaceholder')}
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      style={styles.searchInput}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      returnKeyType="search"
+                    />
+                  </View>
+                  {HEADER_RIGHT_ACTIONS.filter((a) => a.visible({ isExpert })).map((action) => {
+                    const Icon = getMenuIcon(action.icon);
+                    return (
+                      <Pressable
+                        key={action.id}
+                        onPress={() => onHeaderAction(action.id)}
+                        style={styles.headerIconBtn}
+                        accessibilityLabel={action.accessibilityLabel}
+                      >
+                        <Icon color="#fff" size={22} />
+                      </Pressable>
+                    );
+                  })}
                 </View>
-                <Pressable onPress={() => setShowMenu(false)} style={styles.drawerClose}>
-                  <X color="#fff" size={20} />
-                </Pressable>
+                {useCategoryPager ? (
+                  <ScrollView
+                    ref={categoryNavScrollRef}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    bounces={Platform.OS === "ios"}
+                    directionalLockEnabled
+                    nestedScrollEnabled
+                    keyboardShouldPersistTaps="handled"
+                    contentContainerStyle={styles.categoryScroll}
+                    style={styles.categoryStrip}
+                    onLayout={(e) => setCategoryStripWidth(e.nativeEvent.layout.width)}
+                    onContentSizeChange={(w) => setCategoryContentWidth(w)}
+                  >
+                    {CHAT_CATEGORY_ITEMS.map((cat, idx) => {
+                      const active = pageIndex === idx;
+                      const CatIcon = getMenuIcon(cat.icon);
+                      return (
+                        <Pressable
+                          key={cat.id}
+                          onLayout={(e) => {
+                            const { x, width } = e.nativeEvent.layout;
+                            chipLayoutsRef.current[idx] = { x, width };
+                          }}
+                          onPress={() => goToCategoryPage(idx)}
+                          style={[styles.categoryChip, active && styles.categoryChipActive]}
+                        >
+                          <CatIcon color={active ? "#0f172a" : "rgba(255,255,255,0.85)"} size={14} />
+                          <Text style={[styles.categoryChipText, active && styles.categoryChipTextActive]}>
+                            {t(`cat${cat.id.charAt(0).toUpperCase() + cat.id.slice(1)}` as any)}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                ) : null}
               </View>
 
-              <View style={styles.drawerUserInfo}>
-                <View style={styles.drawerAvatar}>
-                  <Text style={styles.drawerAvatarText}>{currentUser?.name?.[0] || 'U'}</Text>
+              {isLoadingChats && chats.length === 0 ? (
+                <View style={styles.loadingBox}>
+                  <ActivityIndicator color="#fff" size="large" />
                 </View>
-                <View style={styles.drawerUserText}>
-                  <Text style={styles.drawerUserName}>{currentUser?.name || 'Foydalanuvchi'}</Text>
-                  <Text style={styles.drawerUserHandle}>@{currentUser?.phone?.slice(-4) || 'user'}</Text>
-                </View>
-              </View>
-
-              <ScrollView style={styles.drawerNav}>
-                <DrawerItem icon={<User color="rgba(255,255,255,0.5)" size={22}/>} label="Profil" onPress={() => {setShowMenu(false); setBottomTab("profile");}} />
-                <DrawerItem icon={<Wallet color="rgba(255,255,255,0.5)" size={22}/>} label="Hamyon" onPress={() => {setShowMenu(false); setBottomTab("wallet");}} />
-                <DrawerItem icon={<HelpCircle color="rgba(255,255,255,0.5)" size={22}/>} label="Yordam" onPress={() => {}} />
-                <View style={styles.drawerSeparator} />
-                <DrawerItem icon={<Users color="rgba(255,255,255,0.5)" size={22}/>} label="Guruh yaratish" onPress={() => {}} />
-                <DrawerItem icon={<Megaphone color="rgba(255,255,255,0.5)" size={22}/>} label="Kanal yaratish" onPress={() => {}} />
-                <DrawerItem icon={<Contact color="rgba(255,255,255,0.5)" size={22}/>} label="Kontaktlar" onPress={() => {}} />
-                <DrawerItem icon={<Settings color="rgba(255,255,255,0.5)" size={22}/>} label="Sozlamalar" onPress={() => {}} />
-              </ScrollView>
-
-              <View style={styles.drawerFooter}>
-                <Pressable style={styles.logoutBtn} onPress={handleLogout}>
-                  <LogOut color="#fca5a5" size={20} />
-                  <Text style={styles.logoutText}>Chiqish</Text>
-                </Pressable>
-                <Moon color="rgba(255,255,255,0.3)" size={20} />
-              </View>
+              ) : useCategoryPager ? (
+                <PagerView
+                  ref={pagerRef}
+                  style={styles.pager}
+                  initialPage={0}
+                  onPageSelected={(e) => setPageIndex(e.nativeEvent.position)}
+                >
+                  {CHAT_CATEGORY_ITEMS.map((cat) => (
+                    <View key={cat.id} style={styles.pagerPage} collapsable={false}>
+                      <FlatList
+                        style={styles.chatList}
+                        nestedScrollEnabled
+                        data={chatsForCategory(cat.id)}
+                        keyExtractor={(item) => item.id}
+                        renderItem={({ item }) => (
+                          <Pressable
+                            style={styles.chatItem}
+                            onPress={() =>
+                              navigation.navigate("ChatDetail", {
+                                chatId: item.id,
+                                name: item.name,
+                                avatarUrl: item.avatarUrl ?? null,
+                              })
+                            }
+                          >
+                            <AvatarImage uri={item.avatarUrl} name={item.name} size={50} />
+                            <View style={styles.chatInfo}>
+                              <View style={styles.chatInfoHeader}>
+                                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                  <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
+                                  {item.type === 'group' && <Text style={styles.chatTypeLabel}>{t('chatGroupLabel')}</Text>}
+                                  {item.type === 'channel' && <Text style={styles.chatTypeLabel}>{t('chatChannelLabel')}</Text>}
+                                </View>
+                                {item.unreadCount > 0 && (
+                                  <View style={styles.unreadBadge}>
+                                    <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                                  </View>
+                                )}
+                              </View>
+                              <Text style={styles.chatMsg} numberOfLines={1}>
+                                {item.lastMessage === "Xabarlar yo'q" ? t('msgNoMessages') : 
+                                 item.lastMessage === "📷 Rasm" ? t('msgPhoto') :
+                                 item.lastMessage === "🎤 Ovozli xabar" ? t('msgVoice') :
+                                 (item.lastMessage === "📎 Fayl" || item.lastMessage === "📎 Rasm/Fayl") ? t('msgFile') :
+                                 item.lastMessage}
+                              </Text>
+                            </View>
+                          </Pressable>
+                        )}
+                        contentContainerStyle={styles.listPadding}
+                        refreshControl={
+                          <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={() => {
+                              setRefreshing(true);
+                              loadChats();
+                            }}
+                          />
+                        }
+                        ListEmptyComponent={
+                          <Text style={styles.emptyList}>{t('searchNoResult')}</Text>
+                        }
+                      />
+                    </View>
+                  ))}
+                </PagerView>
+              ) : (
+                <FlatList
+                  style={styles.chatList}
+                  nestedScrollEnabled
+                  data={searchFilteredChats}
+                  keyExtractor={(item) => item.id}
+                  renderItem={({ item }) => (
+                    <Pressable
+                      style={styles.chatItem}
+                      onPress={() =>
+                        navigation.navigate("ChatDetail", {
+                          chatId: item.id,
+                          name: item.name,
+                          avatarUrl: item.avatarUrl ?? null,
+                        })
+                      }
+                    >
+                      <AvatarImage uri={item.avatarUrl} name={item.name} size={50} />
+                      <View style={styles.chatInfo}>
+                        <View style={styles.chatInfoHeader}>
+                          <View style={{ flexDirection: "row", alignItems: "center" }}>
+                            <Text style={styles.chatName} numberOfLines={1}>{item.name}</Text>
+                            {item.type === 'group' && <Text style={styles.chatTypeLabel}>{t('chatGroupLabel')}</Text>}
+                            {item.type === 'channel' && <Text style={styles.chatTypeLabel}>{t('chatChannelLabel')}</Text>}
+                          </View>
+                          {item.unreadCount > 0 && (
+                            <View style={styles.unreadBadge}>
+                              <Text style={styles.unreadText}>{item.unreadCount}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <Text style={styles.chatMsg} numberOfLines={1}>
+                          {item.lastMessage === "Xabarlar yo'q" ? t('msgNoMessages') : 
+                           item.lastMessage === "📷 Rasm" ? t('msgPhoto') :
+                           item.lastMessage === "🎤 Ovozli xabar" ? t('msgVoice') :
+                           (item.lastMessage === "📎 Fayl" || item.lastMessage === "📎 Rasm/Fayl") ? t('msgFile') :
+                           item.lastMessage}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  )}
+                  contentContainerStyle={styles.listPadding}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={() => {
+                        setRefreshing(true);
+                        loadChats();
+                      }}
+                    />
+                  }
+                  ListEmptyComponent={
+                    <Text style={styles.emptyList}>{t('searchNoResult')}</Text>
+                  }
+                />
+              )}
             </View>
-          </View>
-        )}
-
-        {bottomTab === "chats" ? (
-          <View style={styles.header}>
-            <View style={styles.topBar}>
-              <Pressable style={styles.iconButtonRound} onPress={() => setShowMenu(true)}>
-                <Menu color="#fff" size={ICON_MD} />
-              </Pressable>
-              <View style={styles.titleContainer}>
-                <Text style={styles.headerTitle}>ExpertLine</Text>
-                <Text style={styles.headerSubtitle}>Ekspertlar va mijozlar</Text>
-              </View>
-              <View style={styles.headerRight}>
-                {isExpert && <Pressable style={styles.iconButtonRoundedRect}><Layout color="#fff" size={ICON_SM} /></Pressable>}
-                <Pressable style={styles.iconButtonRoundedRect}><PenSquare color="#fff" size={ICON_SM} /></Pressable>
-              </View>
-            </View>
-
-            <View style={styles.searchContainer}>
-              <Search color="rgba(255,255,255,0.3)" size={ICON_SM} style={styles.searchIcon} />
-              <TextInput
-                placeholder="Qidiruv..."
-                placeholderTextColor="rgba(255,255,255,0.3)"
-                style={styles.searchInput}
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {searchQuery.length > 0 && <Pressable onPress={() => setSearchQuery("")}><X color="#fff" size={16} /></Pressable>}
-            </View>
-
-            <View style={styles.categoryRow}>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryScroll}>
-                {CATEGORY_ICONS.map(({ id, Icon }) => (
-                  <Pressable key={id} onPress={() => setActiveCategory(id)} style={[styles.categoryCircle, activeCategory === id ? styles.categoryCircleActive : styles.categoryCircleIdle]}>
-                    <Icon size={ICON_MD} color={activeCategory === id ? CAT_ACTIVE : CAT_INACTIVE} />
-                  </Pressable>
-                ))}
-              </ScrollView>
-            </View>
-          </View>
-        ) : (
-          <View style={styles.altHeader}>
-            <Text style={styles.altHeaderTitle}>{bottomTab.toUpperCase()}</Text>
-          </View>
-        )}
-
-        <FlatList
-          data={displayedChats}
-          keyExtractor={(item) => item.id}
-          renderItem={({ item }) => (
-            <Pressable style={styles.chatItem} onPress={() => navigation.navigate("ChatDetail", { chatId: item.id, name: item.name })}>
-              <View style={styles.avatarContainer}>
-                <View style={styles.avatar}><Text style={styles.initialsText}>{item.name[0]}</Text></View>
-                <View style={styles.onlineBadge} />
-              </View>
-              <View style={styles.chatContent}>
-                <View style={styles.chatHeader}>
-                  <Text style={styles.chatName}>{item.name}</Text>
-                  <Text style={styles.chatTime}>{item.timestamp}</Text>
-                </View>
-                <Text style={styles.lastMessage} numberOfLines={1}>{item.lastMessage}</Text>
-              </View>
-              {item.unreadCount > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadText}>{item.unreadCount}</Text></View>}
-            </Pressable>
+          ) : bottomTab === "contacts" ? (
+            <ContactsView navigation={navigation} />
+          ) : bottomTab === "wallet" ? (
+            <WalletView />
+          ) : (
+            <ServicesView navigation={navigation} />
           )}
-          contentContainerStyle={styles.listContent}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#3b82f6" />}
-        />
-
-        <View style={styles.bottomTab}>
-          {BOTTOM_TABS.map((tab) => (
-            <Pressable key={tab.id} style={styles.tabItem} onPress={() => setBottomTab(tab.id)}>
-              {tab.icon(bottomTab === tab.id)}
-              <Text style={[styles.tabText, bottomTab === tab.id && styles.tabTextActive]}>{tab.label}</Text>
-            </Pressable>
-          ))}
         </View>
-      </ImageBackground>
+
+        {/* Floating Glass Bottom Tab */}
+        <View style={styles.tabWrapper}>
+          <View style={styles.glassTab}>
+            {BOTTOM_TABS.map((tab) => {
+              const active = tab.id !== "profile" && bottomTab === tab.id;
+              return (
+                <Pressable
+                  key={tab.id}
+                  style={styles.tabItem}
+                  onPress={() => {
+                    if (tab.id === "profile") {
+                      navigation.navigate("Settings");
+                      return;
+                    }
+                    setBottomTab(tab.id);
+                  }}
+                >
+                  {tab.icon(active)}
+                  <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                    {t(`tab${tab.id.charAt(0).toUpperCase() + tab.id.slice(1)}` as any)}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </ChatBackground>
     </View>
   );
 }
 
-function DrawerItem({ icon, label, onPress }: any) {
-  return (
-    <Pressable style={styles.drawerItem} onPress={onPress}>
-      <View style={styles.drawerItemIcon}>{icon}</View>
-      <Text style={styles.drawerItemLabel}>{label}</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#0f1117" },
-  backgroundImage: { flex: 1, width: "100%" },
-  overlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(15, 23, 42, 0.55)" },
-  drawerOverlay: { ...StyleSheet.absoluteFillObject, zIndex: 1000, flexDirection: "row" },
-  drawerBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
-  drawerContent: {
-    width: 300,
-    height: "100%",
-    backgroundColor: "rgba(255,255,255,0.15)",
-    borderRightWidth: 1,
-    borderRightColor: "rgba(255,255,255,0.1)",
-    paddingTop: 50,
+  container: { flex: 1, backgroundColor: "#000" },
+  mainContent: { flex: 1 },
+  chatsTab: { flex: 1 },
+  chatsTop: { paddingHorizontal: 16, paddingBottom: 8 },
+  /** Gorizontal kategoriya — faqat shu qator yon suriladi; ro‘yxat bilan aralashmasin */
+  categoryStrip: { flexGrow: 0 },
+  pager: { flex: 1 },
+  pagerPage: { flex: 1 },
+  chatList: { flex: 1 },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  searchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    height: 44,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
   },
-  drawerHeader: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 20, marginBottom: 30 },
-  drawerBranding: { flex: 1 },
-  drawerBrandTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  drawerBrandTag: { color: "rgba(255,255,255,0.4)", fontSize: 8, fontWeight: "bold", letterSpacing: 1 },
-  drawerClose: { padding: 5 },
-  drawerUserInfo: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, marginBottom: 30 },
-  drawerAvatar: { width: 55, height: 55, borderRadius: 27, backgroundColor: "#3b82f6", justifyContent: "center", alignItems: "center" },
-  drawerAvatarText: { color: "#fff", fontSize: 22, fontWeight: "bold" },
-  drawerUserText: { marginLeft: 15 },
-  drawerUserName: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  drawerUserHandle: { color: "rgba(255,255,255,0.5)", fontSize: 13 },
-  drawerNav: { flex: 1 },
-  drawerItem: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 14 },
-  drawerItemIcon: { marginRight: 20 },
-  drawerItemLabel: { color: "#fff", fontSize: 15, fontWeight: "500" },
-  drawerSeparator: { height: 1, backgroundColor: "rgba(255,255,255,0.1)", marginVertical: 10, marginHorizontal: 20 },
-  drawerFooter: { padding: 20, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.1)", flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  logoutBtn: { flexDirection: "row", alignItems: "center" },
-  logoutText: { color: "#fca5a5", marginLeft: 10, fontWeight: "bold" },
-  header: { paddingTop: 40, paddingHorizontal: 16, backgroundColor: "rgba(15, 17, 23, 0.8)" },
-  altHeader: { paddingTop: 50, paddingHorizontal: 16, paddingBottom: 15, backgroundColor: "#0f1117" },
-  altHeaderTitle: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
-  titleContainer: { alignItems: "center" },
-  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "bold" },
-  headerSubtitle: { color: "rgba(255,255,255,0.4)", fontSize: 8, letterSpacing: 1 },
-  headerRight: { flexDirection: "row", gap: 10 },
-  iconButtonRound: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.1)", justifyContent: "center", alignItems: "center" },
-  iconButtonRoundedRect: { width: 42, height: 42, borderRadius: 12, backgroundColor: "rgba(255,255,255,0.1)", justifyContent: "center", alignItems: "center" },
-  searchContainer: { flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,0.05)", borderRadius: 20, paddingHorizontal: 15, height: 44, marginBottom: 15 },
-  searchIcon: { marginRight: 10 },
-  searchInput: { flex: 1, color: "#fff" },
-  categoryRow: { marginBottom: 5 },
-  categoryScroll: { paddingBottom: 10 },
-  categoryCircle: { width: 48, height: 48, borderRadius: 24, justifyContent: "center", alignItems: "center", marginRight: 15 },
-  categoryCircleActive: { backgroundColor: "#3b82f6" },
-  categoryCircleIdle: { backgroundColor: "rgba(255,255,255,0.05)" },
-  listContent: { paddingHorizontal: 16, paddingBottom: 100 },
-  chatItem: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: 0.5, borderBottomColor: "rgba(255,255,255,0.05)" },
-  avatarContainer: { position: "relative" },
-  avatar: { width: 55, height: 55, borderRadius: 27, backgroundColor: "#1e293b", justifyContent: "center", alignItems: "center" },
-  initialsText: { color: "#fff", fontSize: 20, fontWeight: "bold" },
-  onlineBadge: { position: "absolute", bottom: 2, right: 2, width: 14, height: 14, borderRadius: 7, backgroundColor: "#10b981", borderWidth: 2, borderColor: "#0f172a" },
-  chatContent: { flex: 1, marginLeft: 15 },
-  chatHeader: { flexDirection: "row", justifyContent: "space-between", marginBottom: 4 },
-  chatName: { color: "#fff", fontSize: 16, fontWeight: "bold" },
-  chatTime: { color: "rgba(255,255,255,0.4)", fontSize: 11 },
-  lastMessage: { color: "rgba(255,255,255,0.5)", fontSize: 13 },
-  unreadBadge: { backgroundColor: "#3b82f6", borderRadius: 10, minWidth: 20, height: 20, justifyContent: "center", alignItems: "center", marginLeft: 10 },
+  searchInput: {
+    flex: 1,
+    marginLeft: 8,
+    color: "#fff",
+    fontSize: 15,
+    paddingVertical: 0,
+  },
+  headerIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.22)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  categoryScroll: {
+    paddingTop: 10,
+    paddingBottom: 4,
+    gap: 8,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    marginRight: 8,
+  },
+  categoryChipActive: {
+    backgroundColor: "rgba(255,255,255,0.92)",
+    borderColor: "rgba(255,255,255,0.95)",
+  },
+  categoryChipText: { color: "rgba(255,255,255,0.9)", fontSize: 12, fontWeight: "600" },
+  categoryChipTextActive: { color: "#0f172a" },
+  loadingBox: { flex: 1, justifyContent: "center", alignItems: "center" },
+  emptyList: { textAlign: "center", color: "rgba(255,255,255,0.45)", marginTop: 24, fontSize: 15 },
+  listPadding: { paddingHorizontal: 20, paddingBottom: 120 },
+  chatItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255,255,255,0.1)",
+    padding: 15,
+    borderRadius: 25,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)"
+  },
+  chatInfo: { marginLeft: 15, flex: 1 },
+  chatInfoHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 },
+  chatName: { color: "#fff", fontSize: 16, fontWeight: "bold", maxWidth: "80%" },
+  chatTypeLabel: { color: "#38bdf8", fontSize: 10, marginLeft: 6, fontWeight: "bold", backgroundColor: "rgba(56, 189, 248, 0.15)", paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
+  unreadBadge: { backgroundColor: "#ef4444", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, minWidth: 20, alignItems: "center" },
   unreadText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
-  bottomTab: { position: "absolute", bottom: 0, width: "100%", height: 80, backgroundColor: "rgba(15, 23, 42, 0.95)", flexDirection: "row", justifyContent: "space-around", alignItems: "center", paddingBottom: 15 },
-  tabItem: { alignItems: "center" },
-  tabText: { color: "rgba(255,255,255,0.4)", fontSize: 10, marginTop: 4, fontWeight: "bold" },
-  tabTextActive: { color: "#3b82f6" },
-});
+  chatMsg: { color: "rgba(255,255,255,0.5)", fontSize: 13, marginTop: 2 },
 
+  tabWrapper: {
+    position: "absolute",
+    bottom: 30,
+    left: 20,
+    right: 20,
+    height: 80,
+    zIndex: 1000
+  },
+  glassTab: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center",
+    borderRadius: 30, // 4 tomonlama 25% (visual)
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    overflow: "hidden",
+    backgroundColor: "rgba(255,255,255,0.15)", // Oqish shaffof
+  },
+  tabItem: { alignItems: "center", justifyContent: "center" },
+  tabText: { color: "rgba(255,255,255,0.4)", fontSize: 8, fontWeight: "bold", marginTop: 4 },
+  tabTextActive: { color: "#fff" },
+});

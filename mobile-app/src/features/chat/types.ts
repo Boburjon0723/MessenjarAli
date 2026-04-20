@@ -16,5 +16,10 @@ export interface Message {
   senderId: string;
   timestamp: string;
   status: "sent" | "delivered" | "read";
+  /** API: text | image | file | voice | ... */
+  messageType?: string;
+  /** To‘liq URL — fayl/rasmni yuklab ochish uchun */
+  remoteFileUrl?: string | null;
+  metadata?: any;
 }
 

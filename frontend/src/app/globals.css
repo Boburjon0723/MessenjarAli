@@ -333,7 +333,8 @@ body::before {
   scroll-snap-type: x mandatory;
   overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
-  touch-action: pan-x pan-y;
+  /* Faqat gorizontal pager; vertikal aylantirish ichki ro‘yxatda (touch-pan-y) */
+  touch-action: pan-x;
 }
 
 .messages-category-pager > .messages-category-pager-slide {
@@ -344,6 +345,12 @@ body::before {
   max-width: 100%;
   scroll-snap-align: start;
   scroll-snap-stop: always;
+}
+
+/* Vertikal ro‘yxat — yon surish pager bilan aralashmasin */
+.messages-category-feed-scroll {
+  touch-action: pan-y;
+  isolation: isolate;
 }
 
 @keyframes shake {

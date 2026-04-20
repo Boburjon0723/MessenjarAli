@@ -3,7 +3,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { getPublicWsUrl } from '@/lib/public-origin';
-import { getToken } from '@/lib/auth-storage';
+import { getToken, getRefreshToken, AUTH_TOKEN_CHANGED_EVENT } from '@/lib/auth-storage';
+import { tryRefreshAccessToken } from '@/lib/api';
 
 interface SocketContextType {
     socket: Socket | null;
@@ -23,6 +24,8 @@ export const useSocket = () => useContext(SocketContext);
 
 export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     const socketRef = useRef<Socket | null>(null);
+    const authRecoveryRef = useRef(false);
+    const connectInnerRef = useRef<() => void>(() => {});
     /** Ref o‘rniga state: Provider har renderda yangi socket referensini beradi (useSocket() doim yangilanadi). */
     const [socket, setSocket] = useState<Socket | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -37,7 +40,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         setIsConnected(false);
     }, []);
 
-    const connect = useCallback(() => {
+    const connectInner = useCallback(() => {
         const token = typeof window !== 'undefined' ? getToken() : null;
         if (!token) {
             disconnect();
@@ -81,35 +84,70 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
             setIsConnected(false);
         });
 
-        socketInstance.on('connect_error', (err) => {
-            console.error('[SocketContext] Connection error:', err.message);
+        socketInstance.on('connect_error', async (err) => {
             setIsConnected(false);
+            const msg = String(err?.message || '');
+            const looksAuth =
+                /invalid token|authentication error|token required|jwt expired|expired/i.test(msg);
+            if (looksAuth && getRefreshToken() && !authRecoveryRef.current) {
+                authRecoveryRef.current = true;
+                try {
+                    const ok = await tryRefreshAccessToken();
+                    /** `setAuth` → `AUTH_TOKEN_CHANGED_EVENT` → `forceReconnect` (ikkilanmaslik uchun shu yerda qayta chaqirmaymiz) */
+                    if (ok) {
+                        return;
+                    }
+                } finally {
+                    authRecoveryRef.current = false;
+                }
+            }
+            console.error('[SocketContext] Connection error:', err.message);
         });
     }, [disconnect]);
 
+    connectInnerRef.current = connectInner;
+
+    /** Yangi token bilan qayta ulanish (oldingi socket to‘liq yopiladi). */
+    const forceReconnect = useCallback(() => {
+        disconnect();
+        queueMicrotask(() => {
+            const token = typeof window !== 'undefined' ? getToken() : null;
+            if (!token) return;
+            connectInnerRef.current();
+        });
+    }, [disconnect]);
+
+    const connect = useCallback(() => {
+        connectInner();
+    }, [connectInner]);
+
     useEffect(() => {
-        connect();
+        connectInner();
 
         const onStorageChange = (e: StorageEvent) => {
             if (e.key === 'token') {
-                connect();
+                forceReconnect();
             }
         };
 
+        const onTokenChanged = () => forceReconnect();
+
         window.addEventListener('storage', onStorageChange);
+        window.addEventListener(AUTH_TOKEN_CHANGED_EVENT, onTokenChanged);
 
         const interval = setInterval(() => {
             if (!socketRef.current?.connected && getToken()) {
-                connect();
+                connectInnerRef.current();
             }
         }, 15000);
 
         return () => {
             clearInterval(interval);
             window.removeEventListener('storage', onStorageChange);
+            window.removeEventListener(AUTH_TOKEN_CHANGED_EVENT, onTokenChanged);
             disconnect();
         };
-    }, [connect, disconnect]);
+    }, [connectInner, disconnect, forceReconnect]);
 
     return (
         <SocketContext.Provider value={{ socket, isConnected, connect, disconnect }}>
@@ -117,6 +155,5 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         </SocketContext.Provider>
     );
 };
-
 
 

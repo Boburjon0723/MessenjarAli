@@ -104,7 +104,7 @@ export function LiveVideoFrame({
     //  - huquq/psixologiya/konsultatsiyada dublikat chiqmasligi uchun pastki oyna berkitiladi
     const baseGridTracks = isMentor
         ? sortedRemoteForMentor
-        : (showClassroomLayout ? [localVideoTrack].filter(Boolean) : []);
+        : [localVideoTrack].filter(Boolean);
 
     const mainIsClient = Boolean(swapMainWithClient && isMentor);
 
@@ -139,39 +139,40 @@ export function LiveVideoFrame({
     };
 
     return (
-        <div className={`flex flex-col w-full h-full relative ${immersive ? 'bg-black' : 'bg-[#0d0f1a]'} overflow-hidden`}>
+        <div className={`flex flex-col w-full h-full relative ${immersive ? 'bg-black' : 'bg-[#0f172a]'} overflow-hidden`}>
 
             {(isWhiteboardOpen || screenShareTrack) ? (
                 // --- SCREEN SHARE / WHITEBOARD ACTIVE MODE ---
-                <div className="flex-1 flex flex-col md:flex-row overflow-hidden w-full h-full min-h-0">
-                    <div className="flex-1 min-h-0 bg-black relative flex items-center justify-center p-2">
-                        {isWhiteboardOpen && socket && sessionId ? (
-                            <LiveWhiteboard socket={socket} sessionId={sessionId} isMentor={isMentor} onClose={onCloseWhiteboard} />
-                        ) : screenShareTrack ? (
-                            <div className="w-full h-full rounded-xl overflow-hidden shadow-2xl ring-1 ring-white/10">
+                <div className="flex-1 relative overflow-hidden w-full h-full min-h-0 bg-black">
+                    <div className="absolute inset-0 z-0 flex items-center justify-center p-0">
+                        {screenShareTrack && (
+                            <div className="w-full h-full">
                                 <ParticipantTile trackRef={screenShareTrack!} className="w-full h-full object-contain [&>video]:object-contain" />
                             </div>
-                        ) : null}
+                        )}
+                        {isWhiteboardOpen && socket && sessionId && (
+                            <LiveWhiteboard 
+                                socket={socket} 
+                                sessionId={sessionId} 
+                                isMentor={isMentor} 
+                                onClose={onCloseWhiteboard} 
+                                isOverlay={!!screenShareTrack}
+                            />
+                        )}
                     </div>
 
-                    <div className="w-full md:w-64 shrink-0 h-[140px] md:h-full bg-[#11131a] border-t md:border-t-0 md:border-l border-white/5 flex flex-col p-2 md:p-3 gap-2 md:gap-3 overflow-hidden">
-                        <div className="text-[10px] md:text-xs font-bold text-white/50 uppercase tracking-wide mb-0.5 px-1">Qatnashchilar</div>
-                        <div className="flex-1 min-h-0 flex flex-row md:flex-col gap-2 md:gap-3 overflow-x-auto md:overflow-y-auto custom-scrollbar">
-                        {mainTrack && (
-                            <div className="w-44 md:w-full aspect-video rounded-xl overflow-hidden relative bg-slate-800 shrink-0 ring-1 ring-white/10 shadow-lg">
-                                <ParticipantTile trackRef={mainTrack} className="w-full h-full [&>video]:object-cover" />
-                                <div className="absolute bottom-1.5 left-1.5 text-[10px] font-bold text-white bg-black/60 px-2 py-0.5 rounded-lg backdrop-blur-md border border-white/10">
-                                    {mainIsClient ? 'Mijoz' : isMentor ? "Siz (Mentor)" : "Mentor"}
-                                </div>
+                    {/* Floating Expert Overlay when Whiteboard/Share is active */}
+                    {mainTrack && (
+                        <div className="absolute bottom-4 right-4 z-50 w-40 sm:w-64 aspect-video rounded-3xl overflow-hidden bg-black/40 backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:scale-110 group ring-1 ring-white/10">
+                            <ParticipantTile trackRef={mainTrack} className="w-full h-full [&>video]:object-cover" />
+                            <div className="absolute bottom-3 left-3 text-[9px] font-black text-white bg-black/60 px-2.5 py-1 rounded-xl backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">
+                                {mainIsClient ? 'Mijoz' : isMentor ? "Siz" : "Ekspert"}
                             </div>
-                        )}
-                        {gridTracks.map((track, i) => (
-                            <div key={track?.participant?.identity || `thumb-${i}`} className="w-44 md:w-full shrink-0">
-                                {participantThumb(track, i)}
+                            <div className="absolute top-3 right-3 flex gap-1.5">
+                                <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.8)]"></div>
                             </div>
-                        ))}
                         </div>
-                    </div>
+                    )}
                 </div>
             ) : immersive ? (
                 // --- IMMERSIVE THEATRE MODE ---
@@ -217,8 +218,8 @@ export function LiveVideoFrame({
                         {gridTracks.slice(0, 3).map((track, i) => (
                             <div key={track?.participant?.identity || i} className="w-48 aspect-video rounded-2xl overflow-hidden relative bg-black/40 backdrop-blur-xl border border-white/20 shadow-2xl transition-all hover:scale-105 group">
                                 {track ? <ParticipantTile trackRef={track} className="w-full h-full [&>video]:object-cover" /> : null}
-                                <div className="absolute bottom-2 left-2 text-[9px] font-black text-white bg-black/60 px-2 py-1 rounded-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    {track?.participant?.identity || `Talaba ${i + 1}`}
+                                <div className="absolute bottom-2 left-2 text-[9px] font-black text-white bg-black/60 px-2 py-1 rounded-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase">
+                                    {track?.participant?.isLocal ? "Siz" : (track?.participant?.identity || `Talaba ${i + 1}`)}
                                 </div>
                                 {track?.participant?.isLocal && (
                                     <div className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>

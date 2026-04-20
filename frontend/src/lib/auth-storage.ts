@@ -95,6 +95,11 @@ export function setAuth(
   clearOther.removeItem('refreshToken');
   clearOther.removeItem('user');
   notifyUserUpdated(user);
+  try {
+    window.dispatchEvent(new CustomEvent(AUTH_TOKEN_CHANGED_EVENT));
+  } catch {
+    /* ignore */
+  }
 }
 
 export function clearAuth(): void {
@@ -112,6 +117,9 @@ export function clearAuth(): void {
 export function getStorageForAuth(): Storage {
   return getStorage();
 }
+
+/** Access/refresh token `setAuth` orqali yangilanganda (Socket.IO qayta ulanishi uchun) */
+export const AUTH_TOKEN_CHANGED_EVENT = 'mali-auth-token-changed';
 
 /** Profil yangilanganda React (menyu/header) storage bilan sinxron bo‘lishi uchun */
 export const AUTH_USER_UPDATED_EVENT = 'mali-auth-user-updated';

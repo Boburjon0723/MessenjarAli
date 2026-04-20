@@ -9,7 +9,22 @@
       "**/*"
     ],
     "android": {
-      "package": "uz.expertline.mobile"
-    }
+      "package": "uz.expertline.mobile",
+      "softwareKeyboardLayoutMode": "resize",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
+      ]
+    },
+    "ios": {
+      "bundleIdentifier": "uz.expertline.mobile",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Chat fonini sozlash uchun galereyadan rasm tanlash.",
+        "NSCameraUsageDescription": "Video aloqa uchun kamera kerak.",
+        "NSMicrophoneUsageDescription": "Ovozli muloqot uchun mikrofon kerak."
+      }
+    },
+    "plugins": []
   }
 }

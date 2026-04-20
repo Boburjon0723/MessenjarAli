@@ -31,6 +31,10 @@ export async function getUser(): Promise<AuthUser | null> {
   }
 }
 
+export async function saveUser(user: AuthUser): Promise<void> {
+  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user || {}));
+}
+
 export async function clearAuth(): Promise<void> {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);

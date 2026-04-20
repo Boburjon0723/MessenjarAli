@@ -289,8 +289,9 @@ export default function ChatList({
         touchStartX.current = null;
         touchStartY.current = null;
 
-        // Only react to gorizontal, yetarli uzun swipe
-        if (Math.abs(dx) < 40 || Math.abs(dx) < Math.abs(dy)) return;
+        // Faqat aniq gorizontal niyat: katta dx va vertikalga nisbatan ancha katta
+        const minDx = 72;
+        if (Math.abs(dx) < minDx || Math.abs(dx) < Math.abs(dy) * 1.75) return;
 
         const currentIndex = CATEGORIES.findIndex(c => c.id === activeCategory);
         if (currentIndex === -1) return;
@@ -724,7 +725,7 @@ export default function ChatList({
                             key={cat.id}
                             className="messages-category-pager-slide h-full min-h-0 flex flex-col overflow-hidden"
                         >
-                            <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom,0px)+2.75rem)] lg:pb-1 custom-scrollbar space-y-3">
+                            <div className="messages-category-feed-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom,0px)+2.75rem)] lg:pb-1 custom-scrollbar space-y-3 touch-pan-y">
                                 {renderCategoryFeed(cat.id)}
                             </div>
                         </div>
@@ -732,7 +733,7 @@ export default function ChatList({
                 </div>
             ) : (
                 <div
-                    className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom,0px)+2.75rem)] lg:pb-1 custom-scrollbar"
+                    className="messages-category-feed-scroll flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-3 pt-2 pb-[calc(72px+env(safe-area-inset-bottom,0px)+2.75rem)] lg:pb-1 custom-scrollbar touch-pan-y"
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                 >

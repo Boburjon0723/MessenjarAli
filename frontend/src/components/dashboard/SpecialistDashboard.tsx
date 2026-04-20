@@ -58,6 +58,7 @@ import {
     Globe,
     ExternalLink,
     History,
+    Phone,
 } from 'lucide-react';
 import {
     getExpertPanelMode,
@@ -276,8 +277,9 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             : sessionId && sessionId !== 'demo-session-id'
                 ? sessionId
                 : '') || '';
+    /** LiveKit + socket xonasi: `demo-session-id` truthy bo‘lib qolsa ham haqiqiy `sessionId` ga tushsin (aks holda doska boshqa room ga ketadi). */
     const socketRoomId =
-        selectedGroupId ||
+        (selectedGroupId && selectedGroupId !== 'demo-session-id' ? selectedGroupId : '') ||
         (sessionId && sessionId !== 'demo-session-id' ? sessionId : '');
 
     // Live Quiz State
@@ -472,8 +474,8 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
     }, [loadSessionResources, fetchHistory, fetchGroups, fetchLiveKitToken, selectedGroupId]);
 
     useEffect(() => {
-        if (socket && selectedGroupId) {
-            socket.emit('session_join', { sessionId: selectedGroupId });
+        if (socket && socketRoomId && String(socketRoomId) !== 'demo-session-id') {
+            socket.emit('session_join', { sessionId: socketRoomId });
 
             const handleNewMaterial = (newMaterial: any) => {
                 setMaterials(prev => prev.some(m => m.id === newMaterial.id) ? prev : [newMaterial, ...prev]);
@@ -510,7 +512,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             const handleNewBooking = () => { };
             const handleNewChatMessage = (msg: any) => {
                 const room = msg.roomId ?? msg.chat_id ?? msg.room_id;
-                if (room != null && String(room) !== String(selectedGroupId)) return;
+                if (room != null && String(room) !== String(socketRoomId)) return;
                 const formattedMsg = {
                     id: msg.id || Date.now(),
                     text: msg.content || msg.text || '',
@@ -549,7 +551,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
 
             const handleWhiteboardToggle = (data: any) => {
                 const open = typeof data === 'boolean' ? data : Boolean(data?.isOpen);
-                if (typeof data === 'object' && data?.sessionId != null && String(data.sessionId) !== String(selectedGroupId)) return;
+                if (typeof data === 'object' && data?.sessionId != null && String(data.sessionId) !== String(socketRoomId)) return;
                 setIsWhiteboardOpen(open);
             };
 
@@ -589,7 +591,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                 window.removeEventListener('socket_reconnected', handleReconnect);
             };
         }
-    }, [socket, selectedGroupId, loadSessionResources, fetchHistory, fetchGroups, fetchLiveKitToken, pushSessionNotice, enrichAttendeeProfile, user?.id, t]);
+    }, [socket, socketRoomId, loadSessionResources, fetchHistory, fetchGroups, fetchLiveKitToken, pushSessionNotice, enrichAttendeeProfile, user?.id, t]);
 
     const handleCreateQuiz = async () => {
         if (!newQuizTitle || !selectedGroupId) return;
@@ -1543,7 +1545,7 @@ function DashboardContent({
     } | null>(null);
 
     const sendConsultAcceptNotice = useCallback(
-        (chatId: string) => {
+        (chatId: string, isPaymentRequest = false) => {
             const id = String(chatId || '').trim();
             if (!id || !socket) return;
             const expertName =
@@ -1555,6 +1557,7 @@ function DashboardContent({
                     chatId: id,
                     expertName,
                     sessionStyle: getConsultPanelInviteSessionStyle(expertPanelMode),
+                    isPaymentRequest,
                 });
                 onConsultSessionChat?.(id);
             } catch (e) {
@@ -1737,7 +1740,7 @@ function DashboardContent({
         setConsultDdgResult(null);
         try {
             const res = await fetch(
-                `https://api.duckduckgo.com/?q=${encodeURIComponent(q)}&format=json&no_html=1&skip_disambig=1&t=mali_consult`
+                `/api/consult-search?q=${encodeURIComponent(q)}`
             );
             const data = await res.json();
             if (!res.ok) {
@@ -3450,12 +3453,20 @@ function DashboardContent({
                             type="button"
                             disabled={consultAcceptModal.loading}
                             onClick={() => {
-                                sendConsultAcceptNotice(consultAcceptModal.chatId);
+                                // Agar sessiya yo'q bo'lsa yoki to'lanmagan bo'lsa - majburiy to'lov so'rovi
+                                const isMandatoryPayment = !consultAcceptModal.prep?.session || (consultAcceptModal.prep?.session?.status !== 'initiated' && consultAcceptModal.prep?.session?.status !== 'ongoing');
+                                sendConsultAcceptNotice(consultAcceptModal.chatId, isMandatoryPayment);
                                 setConsultAcceptModal(null);
                             }}
-                            className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-xs font-bold text-white hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className={`flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all disabled:opacity-40 ${(!consultAcceptModal.prep?.session || (consultAcceptModal.prep?.session?.status !== 'initiated' && consultAcceptModal.prep?.session?.status !== 'ongoing'))
+                                ? 'bg-amber-600 hover:bg-amber-500 shadow-[0_0_15px_rgba(217,119,6,0.2)]' 
+                                : 'bg-emerald-600 hover:bg-emerald-500'
+                            }`}
                         >
-                            {t('send_offer_btn')}
+                            {!consultAcceptModal.prep?.session || (consultAcceptModal.prep?.session?.status !== 'initiated' && consultAcceptModal.prep?.session?.status !== 'ongoing')
+                                ? "💸 To'lov so'rash" 
+                                : t('send_offer_btn')
+                            }
                         </button>
                     </div>
                 </div>
