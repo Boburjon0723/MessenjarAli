@@ -14,7 +14,7 @@ const CATEGORIES = [
   { id: 'logistics', label: 'Kuryer va Haydovchi', icon: '🚚', type: 'offline' },
 ];
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
 export default function JobsPanel() {
   const [activeTab, setActiveTab] = useState<'online' | 'offline'>('online');

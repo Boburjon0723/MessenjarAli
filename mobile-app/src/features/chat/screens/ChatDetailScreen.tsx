@@ -438,10 +438,30 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     const u = s.user as { id?: string; _id?: string } | null | undefined;
     return normalizeUserId(u?.id ?? u?._id);
   });
+  const isExpert = useMemo(() => useAuthStore.getState().user?.is_expert, []);
 
   // Global Store integration
   const { messages: allMessages, loadMessages: syncMessages, addMessageLocally, updateMessageLocally, isLoadingChats } = useChatStore();
   const messages = allMessages[chatId] || [];
+
+  const pendingPayment = useMemo(() => {
+    // Oxirgi kelgan to'lov so'rovini topish
+    const cid = String(chatId).toLowerCase();
+    const uid = String(currentUserId).toLowerCase();
+    
+    return [...messages].reverse().find(m => {
+      const isPeer = String(m.senderId).toLowerCase() !== uid;
+      const isPayment = (
+        m.metadata?.kind === 'payment_request' || 
+        m.metadata?.metadata?.kind === 'payment_request' ||
+        m.metadata?.serviceAmountMali ||
+        m.metadata?.metadata?.serviceAmountMali ||
+        m.messageType === 'consult_panel_invite'
+      );
+      return isPeer && isPayment;
+    });
+  }, [messages, currentUserId, chatId]);
+
 
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
@@ -498,7 +518,10 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       if (!socket) return () => { setCurrentChatId(null); };
 
       socket.emit('join_room', chatId);
-      console.log(`[Socket] Joined room: ${chatId}`);
+      if (chatId && chatId !== chatId.toLowerCase()) {
+        socket.emit('join_room', chatId.toLowerCase());
+      }
+      console.log(`[Socket] Joined rooms: ${chatId} ${chatId !== chatId.toLowerCase() ? '& ' + chatId.toLowerCase() : ''}`);
 
       const handleMessagesRead = (data: { chatId: string, readerId: string, messageIds: string[] }) => {
         if (String(data.chatId) === String(chatId)) {
@@ -517,9 +540,14 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       const handleReceive = (data: any) => {
         const rawMsg = data.message || data;
         const msg = mapApiMessageToMessage(rawMsg);
-        if (String(msg.chatId) === String(chatId)) {
+        
+        const mChatId = String(msg.chatId).toLowerCase();
+        const sChatId = String(chatId).toLowerCase();
+
+        if (mChatId === sChatId) {
           addMessageLocally(chatId, msg);
           markChatReadRequest(chatId).catch(() => {});
+          setTimeout(() => scrollToEnd(), 100);
         }
       };
 
@@ -779,6 +807,8 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     const fileName = item.remoteFileUrl ? item.remoteFileUrl.split('/').pop()?.split('?')[0] || t('msgFile') : t('msgFile');
 
     const bubbleBody = (
+
+
       <>
         {hasAttachment && isMedia ? (
            <MediaAttachment 
@@ -815,44 +845,94 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           </Pressable>
         ) : null}
 
-        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && (
+        {/* PAYMENT REQUEST CARD */}
+        {(item.metadata?.kind === 'payment_request' || 
+          item.metadata?.metadata?.kind === 'payment_request' || 
+          (item.messageType === 'consult_panel_invite' && item.metadata?.serviceAmountMali)) && (
+          <View style={styles.paymentCard}>
+            <View style={styles.paymentHeader}>
+              <View style={styles.paymentIconBox}>
+                <CreditCard color="#3b82f6" size={20} />
+              </View>
+              <Text style={styles.paymentTitle}>Xizmat uchun to'lov</Text>
+            </View>
+            
+            <View style={styles.paymentDivider} />
+            
+            <View style={styles.paymentAmountBox}>
+              <Text style={styles.paymentLabel}>Summa:</Text>
+              <Text style={styles.paymentValue}>{(item.metadata?.serviceAmountMali || item.metadata?.metadata?.serviceAmountMali || 0)} MALI</Text>
+            </View>
+
+
+            <Pressable 
+              style={styles.payNowBtn}
+              onPress={() => {
+                 const amount = item.metadata?.serviceAmountMali || 0;
+                 Alert.alert(
+                   "To'lovni tasdiqlang",
+                   `${amount} MALI to'lov qilinsinmi?`,
+                   [
+                     { text: "Yo'q", style: "cancel" },
+                     { 
+                       text: "Ha, to'lash", 
+                       onPress: async () => {
+                         try {
+                            await initiateSessionRequest(item.senderId, amount, chatId);
+                            Alert.alert("Muvaffaqiyatli", "To'lov qabul qilindi");
+                         } catch (e) {
+                            Alert.alert("Xatolik", e instanceof Error ? e.message : "To'lovda xato yuz berdi");
+                         }
+                       }
+                     }
+                   ]
+                 );
+              }}
+            >
+              <CreditCard color="#fff" size={18} />
+              <Text style={styles.payNowBtnText}>HOZIR TO'LASH</Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* PAID BADGE */}
+        {item.metadata?.kind === 'panel_open' && (
+          <View style={styles.paymentCard}>
+             <View style={styles.paidBadge}>
+                <CheckCircle color="#4ade80" size={18} />
+                <Text style={styles.paidBadgeText}>TO'LANGAN</Text>
+             </View>
+             <Pressable 
+               style={[styles.payNowBtn, { marginTop: 12, backgroundColor: '#10b981' }]}
+               onPress={() => {
+                  setCallType('video');
+                  setCallStatus('connected');
+                  setCallVisible(true);
+                  acceptCall();
+               }}
+             >
+                <VideoIcon color="#fff" size={18} />
+                <Text style={styles.payNowBtnText}>SUHBATGA KIRISH</Text>
+             </Pressable>
+          </View>
+        )}
+
+
+        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && item.metadata?.kind !== 'payment_request' && item.metadata?.kind !== 'panel_open' && (
            <Pressable 
              style={styles.joinSessionBtn}
              onPress={() => {
-                if (item.metadata?.kind === 'payment_request') {
-                   const amount = item.metadata?.serviceAmountMali || 0;
-                   Alert.alert(
-                     t('payConfirm'),
-                     `${amount} MALI ${t('payDesc')}`,
-                     [
-                       { text: t('payNo'), style: "cancel" },
-                       { 
-                         text: t('payYes'), 
-                         onPress: async () => {
-                           try {
-                              await initiateSessionRequest(item.senderId, amount, chatId);
-                              Alert.alert(t('paySuccess'), t('paySuccessSub'));
-                           } catch (e) {
-                              Alert.alert(t('loginErrorGeneric'), e instanceof Error ? e.message : t('payNo'));
-                           }
-                         }
-                       }
-                     ]
-                   );
-                } else {
-                   setCallType('video');
-                   setCallStatus('connected');
-                   setCallVisible(true);
-                   acceptCall();
-                }
+                setCallType('video');
+                setCallStatus('connected');
+                setCallVisible(true);
+                acceptCall();
              }}
            >
-             {item.metadata?.kind === 'payment_request' ? <CreditCard color="#fff" size={16} /> : <VideoIcon color="#fff" size={16} />}
-             <Text style={styles.joinSessionBtnText}>
-                {item.metadata?.kind === 'payment_request' ? t('paymentAction') : t('sessionJoin')}
-             </Text>
+             <VideoIcon color="#fff" size={16} />
+             <Text style={styles.joinSessionBtnText}>{t('sessionJoin')}</Text>
            </Pressable>
         )}
+
 
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: isMedia && !displayText ? 0 : 2 }}>
            {displayText ? <Text style={[styles.messageText, (hasAttachment && !isMedia) && { marginTop: 8 }]}>{displayText}</Text> : null}
@@ -975,9 +1055,6 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       )}
       <View style={styles.inputArea}>
         <View style={styles.inputGlass}>
-          <Pressable style={styles.inputIcon} disabled={busy}>
-            <Smile color="rgba(255,255,255,0.55)" size={24} />
-          </Pressable>
           <Pressable
             style={styles.attachmentButton}
             onPress={() => void pickAndSendFile()}
@@ -990,6 +1067,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
               <Paperclip color="rgba(255,255,255,0.7)" size={24} />
             )}
           </Pressable>
+
           <View style={styles.inputContainer}>
             <TextInput
               style={styles.input}
@@ -1000,6 +1078,9 @@ export function ChatDetailScreen({ route, navigation }: Props) {
               multiline
               editable={!busy}
             />
+            <Pressable style={[styles.inputIcon, { marginRight: 4 }]} disabled={busy}>
+              <Smile color="rgba(255,255,255,0.55)" size={24} />
+            </Pressable>
           </View>
           <Pressable
             style={[styles.sendButton, (!inputText.trim() || busy) && styles.sendButtonDisabled]}
@@ -1029,8 +1110,9 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <ChatBackground>
+      <ChatBackground isChatWindow={true}>
         <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
+
           <Pressable onPress={() => navigation.goBack()} style={styles.iconButton}>
             <ArrowLeft color="#fff" size={24} />
           </Pressable>
@@ -1065,10 +1147,96 @@ export function ChatDetailScreen({ route, navigation }: Props) {
             </Pressable>
             <Pressable 
               style={styles.iconButton}
-              onPress={() => startCall('video')}
+              onPress={() => {
+                if (pendingPayment) {
+                   // MIJOZ HOLATI: TO'LOV QILISH
+                   const amount = (pendingPayment.metadata?.serviceAmountMali || 0);
+                   Alert.alert(
+                     "To'lov qilish",
+                     `${title} sizdan ${amount} MALI so'ramoqda. To'lov qilasizmi?`,
+                     [
+                       { text: "Bekor qilish", style: "cancel" },
+                       { 
+                         text: "Ha, to'lash", 
+                         onPress: async () => {
+                           try {
+                              await initiateSessionRequest(pendingPayment.senderId, amount, chatId);
+                              Alert.alert("Muvaffaqiyatli", "To'lov qabul qilindi");
+                           } catch (e) {
+                              Alert.alert("Xatolik", e instanceof Error ? e.message : "Xatolik");
+                           }
+                         }
+                       }
+                     ]
+                   );
+                } else if (isExpert) {
+                  // EKSPERT HOLATI: TO'LOV SO'RASH
+                  const promptTitle = "To'lov so'rash";
+                  const promptMsg = "Mijozdan qancha xizmat haqi so'ramoqchisiz (MALI)?";
+                  
+                  const sendRequest = (amount: number) => {
+                    const socket = getSocket();
+                    if (socket && chatId) {
+                      const expertName = useAuthStore.getState().user?.name || "Ekspert";
+                      socket.emit('consult_panel_invite', {
+                        chatId,
+                        expertName,
+                        sessionStyle: 'consult',
+                        isPaymentRequest: true
+                      });
+                      Alert.alert("Yuborildi", `Mijozga ${amount} MALI to'lov so'rovi yuborildi.`);
+                    }
+                  };
+
+                  if (Platform.OS === 'ios') {
+                    Alert.prompt(
+                      promptTitle,
+                      promptMsg,
+                      [
+                        { text: "Bekor qilish", style: "cancel" },
+                        {
+                          text: "So'rash",
+                          onPress: (val: string | undefined) => {
+                            const amount = parseInt(val || "0");
+                            if (amount > 0) sendRequest(amount);
+                          }
+                        }
+                      ],
+                      'plain-text',
+                      '50'
+                    );
+                  } else {
+                    Alert.alert(promptTitle, "Standart narx (50 MALI) yuborilsinmi?", [
+                      { text: "Bekor qilish", style: "cancel" },
+                      { text: "Yuborish (50 MALI)", onPress: () => sendRequest(50) }
+                    ]);
+                  }
+                } else {
+                  Alert.alert("Ma'lumot", "Hozircha sizga to'lov so'rovi kelmagan.");
+                }
+              }}
             >
-              <VideoIcon color="#fff" size={21} />
+
+              <View>
+                <CreditCard color="#fff" size={22} />
+                {!!pendingPayment && (
+                  <View style={{
+                    position: 'absolute',
+                    top: -2,
+                    right: -2,
+                    width: 10,
+                    height: 10,
+                    backgroundColor: '#ef4444',
+                    borderRadius: 5,
+                    borderWidth: 1.5,
+                    borderColor: 'rgba(255,255,255,0.2)'
+                  }} />
+                )}
+              </View>
             </Pressable>
+
+
+
             <Pressable style={styles.iconButton}>
               <MoreVertical color="#fff" size={20} />
             </Pressable>
@@ -1584,7 +1752,98 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  // --- PAYMENT CARD STYLES ---
+  paymentCard: {
+    backgroundColor: 'rgba(30, 41, 59, 0.95)',
+    borderRadius: 20,
+    padding: 16,
+    marginVertical: 8,
+    borderWidth: 1.5,
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+    width: width * 0.7,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  paymentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
+  paymentIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  paymentTitle: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+    flex: 1,
+  },
+  paymentDivider: {
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    marginBottom: 12,
+  },
+  paymentAmountBox: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    padding: 10,
+    borderRadius: 12,
+  },
+  paymentLabel: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  paymentValue: {
+    color: '#38bdf8',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  payNowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#3b82f6',
+    paddingVertical: 12,
+    borderRadius: 12,
+    gap: 8,
+  },
+  payNowBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  paidBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(34, 197, 94, 0.15)',
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(34, 197, 94, 0.3)',
+    gap: 6,
+  },
+  paidBadgeText: {
+    color: '#4ade80',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   fullScreenCallContainer: {
+
     flex: 1,
     backgroundColor: '#0f172a',
   },

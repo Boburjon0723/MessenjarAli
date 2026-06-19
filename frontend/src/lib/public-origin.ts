@@ -1,7 +1,7 @@
 import { BACKEND_PUBLIC_ORIGIN } from './backend-origin';
 
 /** REST fallback — `backend-origin.ts` */
-const RAILWAY_API = BACKEND_PUBLIC_ORIGIN;
+const DEFAULT_API = BACKEND_PUBLIC_ORIGIN;
 
 function isLocalOrLoopback(url: string): boolean {
     try {
@@ -21,15 +21,15 @@ function isLocalOrLoopback(url: string): boolean {
 
 export function getPublicApiUrl(): string {
     const raw = (process.env.NEXT_PUBLIC_API_URL || '').trim().replace(/\/$/, '');
-    if (!raw || isLocalOrLoopback(raw)) return RAILWAY_API;
+    if (!raw || isLocalOrLoopback(raw)) return DEFAULT_API;
     return raw;
 }
 
 /**
  * Socket.io ulanish URL — doim REST API bilan bir xil origin (`https://...`).
  *
- * Avvalgi `NEXT_PUBLIC_WS_URL` alohida hostga (masalan, eski Railway `...-ad05...`) ishora qilganda
- * REST `NEXT_PUBLIC_API_URL` boshqacha deployment bo‘lishi mumkin edi: xabarlar kutish (socket yo‘q), API ishlaydi.
+ * `NEXT_PUBLIC_WS_URL` alohida hostga ishora qilsa REST bilan nomuvofiqlik bo‘lishi mumkin
+ * (API ishlaydi, socket ulanmaydi). Shuning uchun WS faqat API origin dan olinadi.
  * Shuning uchun WS alohida env orqali emas, faqat API origin dan olinadi.
  */
 export function getPublicWsUrl(): string {

@@ -23,7 +23,8 @@ import { PasscodeScreen } from "./src/features/auth/screens/PasscodeScreen";
 import { ChatListScreen } from "./src/features/chat/screens/ChatListScreen";
 import { ChatDetailScreen } from "./src/features/chat/screens/ChatDetailScreen";
 import { SettingsScreen } from "./src/features/chat/screens/SettingsScreen";
-import { ThemeDesignScreen } from "./src/features/chat/screens/ThemeDesignScreen";
+import { ThemeDesignScreen } from "./src/features/dashboard/screens/ThemeDesignScreen";
+
 import { ChatPeerInfoScreen } from "./src/features/chat/screens/ChatPeerInfoScreen";
 import { ProfileScreen } from "./src/features/dashboard/screens/ProfileScreen";
 import { WalletScreen } from "./src/features/dashboard/screens/WalletScreen";
@@ -33,7 +34,11 @@ import { PrivacySettingsScreen } from "./src/features/chat/screens/PrivacySettin
 import { NotificationSettingsScreen } from "./src/features/chat/screens/NotificationSettingsScreen";
 import { AboutAppScreen } from "./src/features/chat/screens/AboutAppScreen";
 import { SupportScreen } from "./src/features/chat/screens/SupportScreen";
+import { JobListScreen } from "./src/features/jobs/screens/JobListScreen";
+import { ExpertDetailScreen } from "./src/features/dashboard/screens/ExpertDetailScreen";
 import { setupNotifications } from "./src/lib/notifications";
+
+
 
 // WebRTC globals are handled above
 
@@ -53,8 +58,15 @@ type RootStackParamList = {
   NotificationSettings: undefined;
   AboutApp: undefined;
   Support: undefined;
+  Jobs: undefined;
+  JobDetail: { jobId: number };
+  ExpertDetail: { expertId: string; fallbackData?: any };
   Passcode: { mode: 'set' | 'unlock'; onSuccess?: () => void };
 };
+
+
+
+
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -119,7 +131,13 @@ export default function App() {
         <Stack.Screen name="NotificationSettings" component={NotificationSettingsScreen} />
         <Stack.Screen name="AboutApp" component={AboutAppScreen} />
         <Stack.Screen name="Support" component={SupportScreen} />
+        <Stack.Screen name="Jobs" component={JobListScreen} />
+        <Stack.Screen name="ExpertDetail" component={ExpertDetailScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Passcode" component={PasscodeScreen} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+
+
+
+
       </Stack.Navigator>
     </NavigationContainer>
     </AuthLocaleProvider>

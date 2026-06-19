@@ -31,7 +31,7 @@ interface LiveVideoFrameProps {
     mentorMaterialsPanelOpen?: boolean;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 const getAvatarUrl = (path: string) => {
     if (!path) return null;
     if (path.startsWith('http') || path.startsWith('data:')) return path;

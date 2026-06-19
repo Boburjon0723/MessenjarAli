@@ -69,7 +69,7 @@ export default function ContactsModal({ open, contacts, onClose, onStartChat, on
                                                 if (avatar && avatar !== 'null' && avatar !== '' && avatar !== 'use_initials') {
                                                     const src = avatar.startsWith('http') || avatar.startsWith('data:')
                                                         ? avatar
-                                                        : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
+                                                        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
                                                     return (
                                                         <img
                                                             src={src}

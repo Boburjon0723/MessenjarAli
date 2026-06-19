@@ -68,7 +68,7 @@ export default function MediaContextMenu({
     const adjustedY = typeof window !== 'undefined' && y + 320 > window.innerHeight ? y - 280 : y;
     const adjustedX = typeof window !== 'undefined' && x + 260 > window.innerWidth ? x - 240 : x;
 
-    const mediaUrl = (message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`;
+    const mediaUrl = (message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`;
     const isMedia = message.type === 'image' || message.type === 'video' || message.type === 'voice' || message.type === 'file';
 
     const handleSaveAs = async () => {

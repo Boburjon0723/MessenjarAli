@@ -56,7 +56,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         const raw = (message.text || '').trim();
         if (!raw) return '';
         if (/^https?:\/\//i.test(raw)) return raw;
-        const base = (process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app').replace(/\/$/, '');
+        const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
         return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
     }, [message.text]);
 

@@ -22,7 +22,7 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
     const { socket } = useSocket();
     const { showSuccess, showError } = useNotification();
     const { t } = useLanguage();
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
     // Basic Info
     const [name, setName] = useState("");

@@ -1,5 +1,5 @@
 /**
- * Production backend (Railway). Barcha default API / Socket.io ulanishlari shu originga.
- * Deployment o‘zgarganda faqat shu qatorni yangilang.
+ * Default backend origin. Barcha API / Socket.io fallback ulanishlari shu manzilga.
+ * Lokal: http://localhost:4000. Production deploy bo‘lganda shu qatorni yangilang.
  */
-export const BACKEND_PUBLIC_ORIGIN = "https://backend-production-37a60.up.railway.app";
+export const BACKEND_PUBLIC_ORIGIN = "http://localhost:4000";

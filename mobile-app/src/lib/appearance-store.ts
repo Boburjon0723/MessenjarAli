@@ -8,12 +8,14 @@ function clamp(n: number, min: number, max: number): number {
 }
 
 export type AppearanceState = {
+  themeId: string;
   /** Panel / shisha effekt (web: `app-bg-blur`) */
   panelBlur: number;
   /** Fon rasmi xiraligi (web: `app-bg-image-blur`) */
   imageBlur: number;
   backgroundUri: string;
   isDarkTheme: boolean;
+  setTheme: (id: string) => void;
   setPanelBlur: (v: number) => void;
   setImageBlur: (v: number) => void;
   setBackgroundUri: (uri: string) => void;
@@ -23,24 +25,29 @@ export type AppearanceState = {
 export const useAppearanceStore = create<AppearanceState>()(
   persist(
     (set) => ({
+      themeId: "vibrant",
       panelBlur: 8,
       imageBlur: 20,
       backgroundUri: DEFAULT_PLATFORM_BACKGROUND,
       isDarkTheme: true,
+      setTheme: (id: string) => set({ themeId: id }),
       setPanelBlur: (v: number) => set({ panelBlur: clamp(Math.round(v), 0, 100) }),
       setImageBlur: (v: number) => set({ imageBlur: clamp(Math.round(v), 0, 100) }),
       setBackgroundUri: (uri: string) => set({ backgroundUri: uri }),
       setDarkTheme: (dark: boolean) => set({ isDarkTheme: dark }),
     }),
+
     {
       name: "app-appearance",
       storage: createJSONStorage(() => AsyncStorage),
       partialize: (s) => ({
+        themeId: s.themeId,
         panelBlur: s.panelBlur,
         imageBlur: s.imageBlur,
         backgroundUri: s.backgroundUri,
         isDarkTheme: s.isDarkTheme,
       }),
+
     }
   )
 );

@@ -14,7 +14,9 @@ import {
 import { useFocusEffect } from "@react-navigation/native";
 import {
   ArrowUpRight,
+  ArrowDownLeft,
   Plus,
+
   History,
   Search,
   Star,
@@ -29,6 +31,8 @@ import {
   Users,
   MessageSquare,
 } from "lucide-react-native";
+
+
 import { useAuthStore } from "../../auth/store";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { AuthUser } from "../../auth/types";
@@ -38,7 +42,9 @@ import {
   fetchRecentTransactions,
   fetchWalletBalance,
   searchExperts,
+  fetchContacts,
   type ExpertSearchRow,
+
   type TokenBalance,
   type TransactionRow,
 } from "../../dashboard/api";
@@ -48,10 +54,17 @@ const { width } = Dimensions.get("window");
 
 type MessagesNav = {
   navigate: (
-    name: "ChatDetail",
-    params: { chatId: string; name: string; avatarUrl?: string | null }
+    name: "ChatDetail" | "ExpertDetail",
+    params: { 
+      chatId?: string; 
+      name?: string; 
+      avatarUrl?: string | null;
+      expertId?: string;
+      fallbackData?: any;
+    }
   ) => void;
 };
+
 
 // --- WALLET VIEW ---
 export function WalletView() {
@@ -165,33 +178,53 @@ export function WalletView() {
   );
 }
 
+function formatTxDate(dateStr: string) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  const now = new Date();
+  const isToday = d.toDateString() === now.toDateString();
+  const isYesterday = d.toDateString() === new Date(now.setDate(now.getDate() - 1)).toDateString();
+  
+  const time = d.toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" });
+  if (isToday) return `Bugun, ${time}`;
+  if (isYesterday) return `Kecha, ${time}`;
+  
+  return d.toLocaleDateString("uz-UZ", { day: "2-digit", month: "short" }) + `, ${time}`;
+}
+
 function TransactionRowView({ tx, myId }: { tx: TransactionRow; myId: string }) {
   const isOut = myId && String(tx.sender_id) === myId;
   const amount = parseFloat(String(tx.amount ?? 0)) || 0;
   const otherName = isOut
     ? [tx.receiver_name, tx.receiver_surname].filter(Boolean).join(" ").trim()
     : [tx.sender_name, tx.sender_surname].filter(Boolean).join(" ").trim();
-  const title = otherName || tx.type || "Tranzaksiya";
-  const sub = tx.note || tx.status || "";
-  const when = tx.created_at
-    ? new Date(tx.created_at).toLocaleString("uz-UZ", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })
-    : "";
+  
+  const title = otherName || (isOut ? "To'lov" : "Kirim");
+  const sub = tx.note || (isOut ? "Chiquvchi o'tkazma" : "Kiruvchi o'tkazma");
+  const when = formatTxDate(tx.created_at);
   const sign = isOut ? "−" : "+";
   const color = isOut ? "#fca5a5" : "#86efac";
+  const Icon = isOut ? ArrowUpRight : ArrowDownLeft;
 
   return (
     <View style={styles.txRow}>
+      <View style={[styles.txIconBox, { backgroundColor: isOut ? "rgba(252,165,165,0.1)" : "rgba(134,239,172,0.1)" }]}>
+        <Icon color={color} size={18} />
+      </View>
       <View style={styles.txRowText}>
         <Text style={styles.txTitle} numberOfLines={1}>{title}</Text>
-        {sub ? <Text style={styles.txSub} numberOfLines={1}>{sub}</Text> : null}
-        {when ? <Text style={styles.txWhen}>{when}</Text> : null}
+        <Text style={styles.txWhen}>{when}</Text>
       </View>
-      <Text style={[styles.txAmount, { color }]}>
-        {sign}{amount.toLocaleString("uz-UZ", { maximumFractionDigits: 2 })} MALI
-      </Text>
+      <View style={{ alignItems: 'flex-end' }}>
+        <Text style={[styles.txAmount, { color }]}>
+          {sign}{amount.toLocaleString("uz-UZ", { maximumFractionDigits: 2 })}
+        </Text>
+        <Text style={styles.txCurrency}>MALI</Text>
+      </View>
     </View>
   );
 }
+
 
 // --- SERVICES VIEW ---
 export function ServicesView({ navigation }: { navigation: MessagesNav }) {
@@ -256,6 +289,8 @@ export function ServicesView({ navigation }: { navigation: MessagesNav }) {
   return (
     <View style={styles.viewContainer}>
       <View style={styles.glassSearch}>
+
+
         <Search color="rgba(255,255,255,0.4)" size={18} />
         <TextInput
           placeholder={t('dashSearchPlaceholder')}
@@ -377,7 +412,7 @@ export function ContactsView({ navigation }: { navigation: MessagesNav }) {
     useCallback(() => {
       let cancelled = false;
       setLoading(true);
-      searchExperts("").then(list => {
+      fetchContacts().then(list => {
         if (!cancelled) {
           setContacts(list);
           setLoading(false);
@@ -390,9 +425,12 @@ export function ContactsView({ navigation }: { navigation: MessagesNav }) {
   );
 
   const filtered = contacts.filter(c => {
-    const name = `${c.name} ${c.surname}`.toLowerCase();
-    return name.includes(search.toLowerCase()) || (c.username || "").toLowerCase().includes(search.toLowerCase());
+    const name = `${c.name || ""} ${c.surname || ""}`.toLowerCase();
+    const username = (c.username || "").toLowerCase();
+    const searchLow = search.toLowerCase();
+    return name.includes(searchLow) || username.includes(searchLow);
   });
+
 
   const onAddContact = () => {
     Alert.alert(t('menuNewContact'), "Yangi kontakt qo'shish xizmati tez kunda ishga tushadi.");
@@ -538,28 +576,17 @@ function ExpertGlassCard({
   const avg = parseFloat(String(expert.expert_rating ?? 0));
   const ratingLabel = Number.isFinite(avg) && avg > 0 ? avg.toFixed(1) : "—";
 
-  const onBook = async () => {
-    if (booking) return;
-    setBooking(true);
-    try {
-      const { chatId, name, avatarUrl } = await createOrOpenPrivateChat(expert.id);
-      navigation.navigate("ChatDetail", {
-        chatId,
-        name,
-        avatarUrl: avatarUrl ?? undefined,
-      });
-    } catch (e) {
-      Alert.alert("Chat", e instanceof Error ? e.message : "Chat ochilmadi");
-    } finally {
-      setBooking(false);
-    }
+  const onOpenDetail = () => {
+    navigation.navigate("ExpertDetail", { 
+      expertId: expert.id,
+      fallbackData: expert 
+    });
   };
 
   return (
     <Pressable
-      style={[styles.expertGlassCard, booking && styles.expertCardBusy]}
-      onPress={onBook}
-      disabled={booking}
+      style={styles.expertGlassCard}
+      onPress={onOpenDetail}
     >
       <View style={styles.expertTop}>
         <AvatarImage uri={expert.avatar_url} name={fullName} size={44} />
@@ -578,17 +605,14 @@ function ExpertGlassCard({
           <Text style={styles.priceLabel}>{t('dashPrice')}:</Text>
           <Text style={styles.priceVal}>{price} UZS</Text>
         </View>
-        <View style={[styles.bookBtn, booking && styles.bookBtnDisabled]}>
-          {booking ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.bookBtnText}>{t('dashBook')}</Text>
-          )}
+        <View style={styles.bookBtn}>
+          <Text style={styles.bookBtnText}>{t('dashBook')}</Text>
         </View>
       </View>
     </Pressable>
   );
 }
+
 
 function MenuGlassItem({
   icon,
@@ -633,6 +657,8 @@ const styles = StyleSheet.create({
   lockedHint: { color: "rgba(251,191,36,0.85)", fontSize: 11, marginTop: 8 },
   inlineError: { color: "#fca5a5", fontSize: 13, marginBottom: 8, marginLeft: 4 },
 
+
+
   actionsGrid: { flexDirection: "row", justifyContent: "space-between", marginBottom: 25 },
   actionItem: { alignItems: "center", width: width / 5 },
   actionGlassIcon: { width: 52, height: 52, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.1)", overflow: "hidden" },
@@ -648,18 +674,21 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    borderRadius: 20,
-    paddingVertical: 12,
+    borderRadius: 24,
+    paddingVertical: 14,
     paddingHorizontal: 16,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.15)",
-    backgroundColor: "rgba(255,255,255,0.06)",
+    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "rgba(255,255,255,0.04)",
   },
-  txRowText: { flex: 1, marginRight: 12 },
-  txTitle: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  txIconBox: { width: 40, height: 40, borderRadius: 14, justifyContent: "center", alignItems: "center", marginRight: 15 },
+  txRowText: { flex: 1 },
+  txTitle: { color: "#fff", fontSize: 15, fontWeight: "600" },
   txSub: { color: "rgba(255,255,255,0.35)", fontSize: 11, marginTop: 2 },
-  txWhen: { color: "rgba(255,255,255,0.25)", fontSize: 10, marginTop: 4 },
-  txAmount: { fontSize: 13, fontWeight: "800" },
+  txWhen: { color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 2 },
+  txAmount: { fontSize: 15, fontWeight: "800" },
+  txCurrency: { color: "rgba(255,255,255,0.4)", fontSize: 10, fontWeight: "900", marginTop: 2 },
+
 
   // Services
   glassSearch: { flexDirection: "row", alignItems: "center", borderRadius: 20, paddingHorizontal: 15, height: 50, marginBottom: 20, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.12)", overflow: "hidden" },

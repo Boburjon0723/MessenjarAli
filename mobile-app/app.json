@@ -25,6 +25,11 @@
         "NSMicrophoneUsageDescription": "Ovozli muloqot uchun mikrofon kerak."
       }
     },
-    "plugins": []
+    "plugins": [],
+    "extra": {
+      "eas": {
+        "projectId": "aca6e1d6-bd8b-4ec9-a1a3-d0ef1e6374b1"
+      }
+    }
   }
 }

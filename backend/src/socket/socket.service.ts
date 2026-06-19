@@ -526,7 +526,8 @@ export class SocketService {
                     isPaymentRequest?: boolean;
                 }) => {
                     try {
-                        const { chatId, expertName, sessionStyle, isPaymentRequest } = data;
+                        const { expertName, sessionStyle, isPaymentRequest } = data;
+                        const chatId = String(data.chatId || '').trim().toLowerCase();
                         const userId = authSocket.user.id;
                         if (!chatId || !expertName) return;
 

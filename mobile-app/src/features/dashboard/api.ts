@@ -67,3 +67,19 @@ export async function searchExperts(search?: string): Promise<ExpertSearchRow[]>
   const rows = (await res.json()) as ExpertSearchRow[];
   return Array.isArray(rows) ? rows : [];
 }
+
+export async function fetchExpertDetail(userId: string): Promise<any> {
+  const res = await apiFetch(`/api/users/${userId}`);
+  if (!res.ok) throw new Error("Mutaxassis ma'lumotlarini yuklashda xatolik");
+  return res.json();
+}
+
+export async function fetchContacts(): Promise<ExpertSearchRow[]> {
+  const res = await apiFetch("/api/users/contacts");
+  if (!res.ok) return [];
+  /** Backend: getContacts returns enriched list */
+  const rows = (await res.json()) as ExpertSearchRow[];
+  return Array.isArray(rows) ? rows : [];
+}
+
+

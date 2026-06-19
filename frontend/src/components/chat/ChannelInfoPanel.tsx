@@ -41,7 +41,7 @@ export default function ChannelInfoPanel({ chat, onClose }: ChannelInfoPanelProp
         setLoading(true);
         try {
             const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
+            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
             const res = await fetch(`${API_URL}/api/chats/${chat.id || chat._id}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });

@@ -121,7 +121,7 @@ export function LiveChatPanel({ socket, sessionId, user, className = "" }: LiveC
                         <div key={msg.id} className="flex gap-3.5 text-sm animate-slide-up group">
                             <div className="relative shrink-0">
                                 {(() => {
-                                    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-37a60.up.railway.app';
+                                    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
                                     const getAvatarUrl = (path: string) => {
                                         if (!path) return null;
                                         if (path.startsWith('http') || path.startsWith('data:')) return path;

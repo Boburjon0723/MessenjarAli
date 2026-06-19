@@ -1,5 +1,6 @@
 /**
- * Production backend (Railway) — frontend `src/lib/backend-origin.ts` bilan bir xil host.
+ * Default backend — frontend `src/lib/backend-origin.ts` bilan bir xil host.
+ * Fizik telefondan test: kompyuter LAN IP, masalan http://192.168.1.10:4000
  */
-export const BACKEND_PUBLIC_ORIGIN = "https://backend-production-37a60.up.railway.app";
+export const BACKEND_PUBLIC_ORIGIN = "http://localhost:4000";
 
