@@ -5,11 +5,12 @@ import { Server } from 'socket.io';
 import { SocketService } from './socket/socket.service';
 import { pool } from './config/database';
 import { TokenService } from './services/token.service';
+import { validateSecretsAtBoot } from './config/security';
 
 import { createAdapter } from '@socket.io/redis-adapter';
 import { redisClient, subClient } from './config/redis';
 
-
+validateSecretsAtBoot();
 
 const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
@@ -353,8 +354,125 @@ const runAutoMigration = async () => {
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             )
         `);
+        await runQuery('CreateTable_SecurityEventAudit', `
+            CREATE TABLE IF NOT EXISTS security_event_audit (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                event VARCHAR(64) NOT NULL,
+                user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                ip_address VARCHAR(255),
+                user_agent TEXT,
+                success BOOLEAN NOT NULL,
+                reason VARCHAR(255),
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await runQuery(
+            'Idx_SecurityEventAudit_CreatedAt',
+            'CREATE INDEX IF NOT EXISTS idx_security_event_audit_created_at ON security_event_audit(created_at DESC)'
+        );
+        await runQuery(
+            'Idx_SecurityEventAudit_Event',
+            'CREATE INDEX IF NOT EXISTS idx_security_event_audit_event ON security_event_audit(event)'
+        );
 
-        // Bots table (user-created bots, token auth for external API)
+        await runQuery('CreateTable_CompanyWallets', `
+            CREATE TABLE IF NOT EXISTS company_wallets (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                axis_company_id VARCHAR(64) NOT NULL UNIQUE,
+                owner_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+                company_name VARCHAR(255),
+                balance NUMERIC(18,4) NOT NULL DEFAULT 0,
+                locked_balance NUMERIC(18,4) NOT NULL DEFAULT 0,
+                lifetime_earned NUMERIC(18,4) NOT NULL DEFAULT 0,
+                lifetime_spent NUMERIC(18,4) NOT NULL DEFAULT 0,
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await runQuery('CreateTable_SettlementWalletLinks', `
+            CREATE TABLE IF NOT EXISTS settlement_wallet_links (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                company_wallet_id UUID NOT NULL REFERENCES company_wallets(id) ON DELETE CASCADE,
+                axis_company_id VARCHAR(64) NOT NULL,
+                key_id VARCHAR(64) NOT NULL UNIQUE,
+                hmac_secret_hash TEXT NOT NULL,
+                status VARCHAR(32) NOT NULL DEFAULT 'active',
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await runQuery('CreateTable_SettlementTransactions', `
+            CREATE TABLE IF NOT EXISTS settlement_transactions (
+                id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+                type VARCHAR(16) NOT NULL,
+                status VARCHAR(32) NOT NULL,
+                axis_order_id VARCHAR(128),
+                buyer_company_id VARCHAR(64),
+                seller_company_id VARCHAR(64),
+                buyer_wallet_id UUID REFERENCES company_wallets(id),
+                seller_wallet_id UUID REFERENCES company_wallets(id),
+                amount NUMERIC(18,4) NOT NULL,
+                commission_rate NUMERIC(8,6) NOT NULL DEFAULT 0.01,
+                commission_amount NUMERIC(18,4) NOT NULL DEFAULT 0,
+                net_amount NUMERIC(18,4) NOT NULL DEFAULT 0,
+                idempotency_key VARCHAR(128) NOT NULL UNIQUE,
+                related_hold_id UUID REFERENCES settlement_transactions(id),
+                metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+        await runQuery('CreateTable_SettlementNonces', `
+            CREATE TABLE IF NOT EXISTS settlement_nonces (
+                key_id VARCHAR(64) NOT NULL,
+                nonce VARCHAR(128) NOT NULL,
+                expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                PRIMARY KEY (key_id, nonce)
+            )
+        `);
+        await runQuery(
+            'Idx_SettlementTx_Order',
+            'CREATE INDEX IF NOT EXISTS idx_settlement_tx_order ON settlement_transactions(axis_order_id)'
+        );
+
+        // Ledger / escrow schema hardening
+        await runQuery(
+            'AddCol_Transactions_ReferenceType',
+            'ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reference_type VARCHAR(64)'
+        );
+        await runQuery(
+            'AddCol_Transactions_ReferenceId',
+            'ALTER TABLE transactions ADD COLUMN IF NOT EXISTS reference_id UUID'
+        );
+        await runQuery(
+            'AddCol_Escrow_BookingId',
+            'ALTER TABLE escrow ADD COLUMN IF NOT EXISTS booking_id UUID'
+        );
+        await runQuery(
+            'Idx_Transactions_Reference',
+            'CREATE INDEX IF NOT EXISTS idx_transactions_reference ON transactions(reference_type, reference_id)'
+        );
+        // Non-negativity guards (ignore if already present / unsupported)
+        await runQuery(
+            'Check_TokenBalances_NonNegative',
+            `DO $$ BEGIN
+               ALTER TABLE token_balances
+                 ADD CONSTRAINT token_balances_balance_nonneg CHECK (balance >= 0);
+             EXCEPTION WHEN duplicate_object THEN NULL;
+             END $$;`
+        );
+		await runQuery(
+			'Check_TokenBalances_LockedNonNegative',
+			`DO $$ BEGIN
+               ALTER TABLE token_balances
+                 ADD CONSTRAINT token_balances_locked_nonneg CHECK (locked_balance >= 0);
+             EXCEPTION WHEN duplicate_object THEN NULL;
+             END $$;`
+		);
+
+		// Bots table (user-created bots, token auth for external API)
         await runQuery('CreateTable_Bots', `
             CREATE TABLE IF NOT EXISTS bots (
                 id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

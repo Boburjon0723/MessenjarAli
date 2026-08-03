@@ -1,17 +1,17 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
 import { GlassDatePicker } from '../ui/GlassDatePicker';
 import { useSocket } from '@/context/SocketContext';
 import { useLanguage } from '@/context/LanguageContext';
-import { getUser, setUser } from '@/lib/auth-storage';
+import { getUser, setUser, getToken } from '@/lib/auth-storage';
+import { apiFetch } from '@/lib/api';
 import {
     getExpertFormPlaceholders,
     getExpertPanelMode,
     isLegalProfession,
     isMentorProfession,
 } from '@/lib/expert-roles';
-import { CHAT_BACKGROUND_PRESETS } from '@/lib/wallpapers';
 import {
     User,
     Bell,
@@ -36,13 +36,16 @@ import {
     Clock,
     DollarSign,
     Heart,
-    FileText,
     Moon,
     CheckCircle,
     Shield,
     UserCheck,
-    Plus
 } from 'lucide-react';
+import { ProfileChatSettingsView } from './profile/ProfileChatSettingsView';
+import { ProfileWalletView } from './profile/ProfileWalletView';
+import { ProfileSettingsView } from './profile/ProfileSettingsView';
+import { ProfileExpertModal } from './profile/ProfileExpertModal';
+import { ProfileEditModals } from './profile/ProfileEditModals';
 
 interface ProfileViewerProps {
     onClose: () => void;
@@ -94,7 +97,7 @@ export default function ProfileViewer({
     const [editUsername, setEditUsername] = useState("");
     /** Guruh profilidagi kabi: fayl tanlanishi bilan yuklash + serverga yozish */
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
-    /** Telegram uslubi: rasmni kattalashtirib ko‘rish */
+    /** Telegram uslubi: rasmni kattalashtirib koвЂrish */
     const [avatarPreviewUrl, setAvatarPreviewUrl] = useState<string | null>(null);
 
     // Expert States
@@ -257,17 +260,14 @@ export default function ProfileViewer({
         }
     }, [propUser, applyUserProfileToState]);
 
-    /** localStorage / propUser da ekspert maydonlari bo‘lmasa ham, tahrirlash modali ochilganda serverdan to‘liq profil. */
+    /** localStorage / propUser da ekspert maydonlari boвЂlmasa ham, tahrirlash modali ochilganda serverdan toвЂliq profil. */
     useEffect(() => {
         if (!showExpertModal) return;
         const ac = new AbortController();
         (async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) return;
-                const res = await fetch(`${API_URL}/api/users/me`, {
+                const res = await apiFetch('/api/users/me', {
                     signal: ac.signal,
-                    headers: { Authorization: `Bearer ${token}` }
                 });
                 if (!res.ok) return;
                 const full = await res.json();
@@ -355,19 +355,19 @@ export default function ProfileViewer({
         const blocks: Record<string, { title: string; body: string }> = {
             mentor: {
                 title: 'Mentor / ustoz',
-                body: 'Odatda soatlik narx (masalan, 45–60 daqiqalik dars) qulay — mijoz vaqtni aniq biladi.'
+                body: 'Odatda soatlik narx (masalan, 45вЂ“60 daqiqalik dars) qulay — mijoz vaqtni aniq biladi.'
             },
             legal: {
                 title: 'Huquqshunos',
-                body: 'Ko‘pincha bir murojaat, qisqa maslahat yoki ish paketi (seans) narxi beriladi.'
+                body: 'KoвЂpincha bir murojaat, qisqa maslahat yoki ish paketi (seans) narxi beriladi.'
             },
             psychology: {
                 title: 'Psixolog',
-                body: '50–60 daqiqalik seans narxi odatiy. Soatlik ham mumkin — mijozga seans vaqtini oldindan yozing.'
+                body: '50вЂ“60 daqiqalik seans narxi odatiy. Soatlik ham mumkin — mijozga seans vaqtini oldindan yozing.'
             },
             consult: {
                 title: 'Konsultant',
-                body: 'Xizmat soat bilan bo‘lsa «Soatlik», tayyor uchrashuv/paket bo‘lsa «Seans» tanlang.'
+                body: 'Xizmat soat bilan boвЂlsa В«SoatlikВ», tayyor uchrashuv/paket boвЂlsa В«SeansВ» tanlang.'
             }
         };
         return blocks[mode] || blocks.consult;
@@ -400,13 +400,7 @@ export default function ProfileViewer({
             if (!user?.id) return;
             try {
                 setAvailableGroupsLoading(true);
-                const token = localStorage.getItem('token');
-                if (!token) return;
-                const res = await fetch(`${API_URL}/api/chats/expert/${user.id}`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
+                const res = await apiFetch(`/api/chats/expert/${user.id}`);
                 if (!res.ok) return;
                 const data = await res.json();
                 setAvailableGroups(Array.isArray(data) ? data : []);
@@ -471,15 +465,9 @@ export default function ProfileViewer({
     };
 
     const handleSaveName = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         try {
-            const res = await fetch(`${API_URL}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     name: editFirstName,
                     surname: editLastName
@@ -487,7 +475,7 @@ export default function ProfileViewer({
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                setToast({ type: 'error', message: (err as any).message || 'Saqlab bo‘lmadi' });
+                setToast({ type: 'error', message: (err as any).message || 'Saqlab boвЂlmadi' });
                 return;
             }
             const merged = { ...user, name: editFirstName, surname: editLastName };
@@ -507,18 +495,12 @@ export default function ProfileViewer({
     const handleSaveUsername = async () => {
         const clean = editUsername.trim().replace(/^@+/, '');
         if (!clean) {
-            setToast({ type: 'warning', message: 'Username bo‘sh bo‘lmasin' });
+            setToast({ type: 'warning', message: 'Username boвЂsh boвЂlmasin' });
             return;
         }
-        const token = localStorage.getItem('token');
-        if (!token) return;
         try {
-            const res = await fetch(`${API_URL}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
                 body: JSON.stringify({ username: clean })
             });
             if (!res.ok) {
@@ -597,9 +579,6 @@ export default function ProfileViewer({
             return;
         }
 
-        const token = localStorage.getItem('token');
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
         // Create actual chat groups for new expert groups
         const updatedGroups = [...expertGroups];
         let createdAny = false;
@@ -607,12 +586,8 @@ export default function ProfileViewer({
             const grp = updatedGroups[i];
             if (!grp.chatId) {
                 try {
-                    const res = await fetch(`${apiUrl}/api/chats`, {
+                    const res = await apiFetch('/api/chats', {
                         method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`
-                        },
                         body: JSON.stringify({ type: 'group', name: grp.name, participants: [] })
                     });
                     if (res.ok) {
@@ -651,7 +626,7 @@ export default function ProfileViewer({
             service_languages: serviceLanguages,
             service_format: serviceFormat,
             specialty_desc: specialtyDesc,
-            /** DB ikkala ustunda bir xil — e‘lon matni bitta maydondan */
+            /** DB ikkala ustunda bir xil — eвЂlon matni bitta maydondan */
             expert_proposal: String(specialtyDesc || "").trim(),
             bio_expert: bioExpert,
             resume_url: resumeUrl,
@@ -660,7 +635,7 @@ export default function ProfileViewer({
             services_json: JSON.stringify(servicesJson),
             expert_groups: JSON.stringify(updatedGroups),
             expert_fee_total: expertFee
-            // verified_status ni yubormaymiz – backend ma'lumot o'zgarmasa tasdiqni saqlaydi
+            // verified_status ni yubormaymiz вЂ“ backend ma'lumot o'zgarmasa tasdiqni saqlaydi
         };
         const apiPayload = {
             name: user.name,
@@ -669,12 +644,8 @@ export default function ProfileViewer({
             ...payload
         };
         try {
-            const res = await fetch(`${apiUrl}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
                 body: JSON.stringify(apiPayload)
             });
             if (!res.ok) {
@@ -682,9 +653,7 @@ export default function ProfileViewer({
                 throw new Error(err.message || 'Saqlash muvaffaqiyatsiz');
             }
             // Backend qaysi holatni qaytganini bilish uchun profilni qayta olamiz
-            const profileRes = await fetch(`${apiUrl}/api/users/me`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const profileRes = await apiFetch('/api/users/me');
             const updatedProfile = profileRes.ok ? await profileRes.json() : null;
             const newStatus = updatedProfile?.verified_status || 'pending';
 
@@ -751,7 +720,7 @@ export default function ProfileViewer({
         fileInputRef.current?.click();
     };
 
-    /** GroupInfoPanel dagi bilan bir xil: FormData → /api/media/upload → profilga URL */
+    /** GroupInfoPanel dagi bilan bir xil: FormData в†’ /api/media/upload в†’ profilga URL */
     const handleProfileAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !file.type.startsWith('image/')) {
@@ -760,13 +729,12 @@ export default function ProfileViewer({
         }
         const maxBytes = 6 * 1024 * 1024;
         if (file.size > maxBytes) {
-            setToast({ type: 'warning', message: 'Rasm hajmi 6 MB dan kichik bo‘lsin.' });
+            setToast({ type: 'warning', message: 'Rasm hajmi 6 MB dan kichik boвЂlsin.' });
             e.target.value = '';
             return;
         }
         e.target.value = '';
-        const token = localStorage.getItem('token');
-        if (!token) {
+        if (!getToken()) {
             setToast({ type: 'error', message: 'Kirish kerak.' });
             return;
         }
@@ -785,12 +753,8 @@ export default function ProfileViewer({
                         'Rasm URL olinmadi'
                 );
             }
-            const res = await fetch(`${API_URL}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`,
-                },
                 body: JSON.stringify({ avatar_url: url }),
             });
             if (!res.ok) {
@@ -806,7 +770,7 @@ export default function ProfileViewer({
                 /* quota */
             }
             if (socket) socket.emit('update_profile', { avatar: url });
-            setToast({ type: 'success', message: t('save_record') + ' ✓' });
+            setToast({ type: 'success', message: t('save_record') + ' вњ“' });
         } catch (err: any) {
             console.error('Profile avatar upload:', err);
             setToast({
@@ -820,17 +784,14 @@ export default function ProfileViewer({
 
     const profileAvatarUploadLabel =
         language === 'ru'
-            ? 'Загрузить фото профиля'
+            ? 'Р—Р°РіСЂСѓР·РёС‚СЊ С„РѕС‚Рѕ РїСЂРѕС„РёР»СЏ'
             : language === 'en'
               ? 'Upload profile photo'
               : 'Profil rasmini yuklash';
 
     const fetchWallet = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/wallet/balance`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch('/api/wallet/balance');
             if (res.ok) {
                 const data = await res.json();
                 if (data.success) {
@@ -849,10 +810,8 @@ export default function ProfileViewer({
     const handleSubscribe = async () => {
         setIsSubscribing(true);
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}/api/wallet/subscribe`, {
+            const res = await apiFetch('/api/wallet/subscribe', {
                 method: 'POST',
-                headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
             if (res.ok && data.success) {
@@ -877,15 +836,9 @@ export default function ProfileViewer({
     };
 
     const handleTurnOffExpert = async () => {
-        const token = localStorage.getItem('token');
-        if (!token) return;
         try {
-            const res = await fetch(`${API_URL}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    Authorization: `Bearer ${token}`
-                },
                 body: JSON.stringify({
                     name: user.name,
                     surname: user.surname || '',
@@ -964,7 +917,7 @@ export default function ProfileViewer({
             style={{ backgroundColor: 'rgba(255, 255, 255, 0.18)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
             onClick={(e) => e.stopPropagation()}
         >
-            {/* Header with Big Image — bosish: katta ko‘rinish (Telegram); kamera: yangi rasm */}
+            {/* Header with Big Image — bosish: katta koвЂrinish (Telegram); kamera: yangi rasm */}
             <div className="relative h-[220px] w-full overflow-hidden flex-shrink-0">
                 <img
                     src={profilePhotoDisplaySrc}
@@ -982,7 +935,7 @@ export default function ProfileViewer({
                         }}
                         aria-label={
                             language === 'ru'
-                                ? 'Открыть фото'
+                                ? 'РћС‚РєСЂС‹С‚СЊ С„РѕС‚Рѕ'
                                 : language === 'en'
                                   ? 'View photo'
                                   : 'Rasmni kattalashtirish'
@@ -1049,7 +1002,7 @@ export default function ProfileViewer({
                 />
             </div>
 
-            {/* Guruh bilan bir xil: yuklashda havola yo‘q, `GroupInfoPanel` dagi klasslar */}
+            {/* Guruh bilan bir xil: yuklashda havola yoвЂq, `GroupInfoPanel` dagi klasslar */}
             {!uploadingAvatar && (
                 <div className="flex justify-center px-4 pb-1 relative z-20">
                     <button
@@ -1113,7 +1066,7 @@ export default function ProfileViewer({
                             <span className="text-[#00A884]/80 text-[15px] font-medium">{displayAge()!.current}</span>
                             <div className="flex flex-col flex-1">
                                 <span className="text-white text-[15px]">
-                                    {displayAge()!.current} {t('years_old')} • {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
+                                    {displayAge()!.current} {t('years_old')} вЂў {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
                                 </span>
                                 <span className="text-white/30 text-[12px]">{t('age_label')}</span>
                             </div>
@@ -1200,314 +1153,43 @@ export default function ProfileViewer({
     );
 
     const renderChatSettings = () => (
-        <GlassCard
-            className={`w-full h-full lg:h-auto lg:max-w-[420px] !p-0 border-none lg:border flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:!rounded-[25px] shadow-2xl animate-scale-up lg:border-white/10 text-white`}
-            style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <div className={`flex items-center gap-4 p-4 px-6 border-b border-white/10`}>
-                <button onClick={() => setCurrentView('main')} className={`text-white/40 hover:text-white transition-colors p-1`}><X className="h-6 w-6 rotate-90" /></button>
-                <h2 className="font-medium text-[19px]">Настройки чатов</h2>
-            </div>
-
-            <div className="overflow-y-auto custom-scrollbar flex-1 p-6 space-y-8 pb-10">
-                {/* PANEL AND BACKGROUND BLUR SLIDERS */}
-                <div className="space-y-4">
-                    <h4 className="text-accent-primary text-xs font-bold uppercase tracking-widest ml-1">{t('blur_settings')}</h4>
-                    <div className="rounded-2xl p-5 space-y-6 border bg-white/5 border-white/10">
-                        {/* Panel Blur Slider */}
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
-                                <span className="text-white">{t('panel_blur')}</span>
-                                <span className="text-white/60">{bgSettings?.blur || 0}px</span>
-                            </div>
-                            <input
-                                type="range" min="0" max="100" step="1"
-                                value={bgSettings?.blur || 0}
-                                onChange={(e) => onUpdateBgBlur?.(parseInt(e.target.value))}
-                                className="w-full h-2 bg-[#1a1f2e] rounded-lg appearance-none cursor-pointer accent-blue-500 hover:accent-blue-400 focus:outline-none"
-                            />
-                        </div>
-
-                        {/* Background Image Blur Slider */}
-                        <div className="space-y-3">
-                            <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-wider">
-                                <span className="text-white">{t('bg_blur')}</span>
-                                <span className="text-white/60">{bgSettings?.imageBlur || 0}px</span>
-                            </div>
-                            <input
-                                type="range" min="0" max="100" step="1"
-                                value={bgSettings?.imageBlur || 0}
-                                onChange={(e) => onUpdateBgImageBlur?.(parseInt(e.target.value))}
-                                className="w-full h-2 bg-[#1a1f2e] rounded-lg appearance-none cursor-pointer accent-emerald-500 hover:accent-emerald-400 focus:outline-none"
-                            />
-                        </div>
-                    </div>
-                </div>
-
-
-
-                {/* WALLPAPER SELECTOR */}
-                <div className="space-y-4">
-                    <h4 className="text-accent-primary text-xs font-bold uppercase tracking-widest ml-1">{t('change_wallpaper')}</h4>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                        {['custom_upload', ...CHAT_BACKGROUND_PRESETS].map((url, i) => (
-                            <div key={i}
-                                onClick={() => {
-                                    if (url === 'custom_upload') {
-                                        const input = document.createElement('input');
-                                        input.type = 'file';
-                                        input.accept = 'image/*';
-                                        input.onchange = (e) => {
-                                            const file = (e.target as HTMLInputElement).files?.[0];
-                                            if (file) {
-                                                const reader = new FileReader();
-                                                reader.onloadend = () => onUpdateBgImage?.(reader.result as string);
-                                                reader.readAsDataURL(file);
-                                            }
-                                        };
-                                        input.click();
-                                    } else {
-                                        onUpdateBgImage?.(url);
-                                    }
-                                }}
-                                className={`aspect-video rounded-xl cursor-pointer border-2 transition-all hover:scale-105 active:scale-95 overflow-hidden flex flex-col items-center justify-center ${bgSettings?.image === url ? 'border-accent-primary shadow-lg shadow-accent-primary/20' : 'border-transparent bg-white/5'}`}>
-                                {url === 'custom_upload' ? (
-                                    <>
-                                        <div className="w-8 h-8 rounded-full flex items-center justify-center mb-1 group-hover:scale-110 transition-transform bg-white/10">
-                                            <Plus className="h-4 w-4 text-white" />
-                                        </div>
-                                        <span className="text-[10px] font-bold uppercase text-white/40 group-hover:text-[#00A884]">{t('upload_custom')}</span>
-                                    </>
-                                ) : (
-                                    <div className="relative w-full h-full">
-                                        <img src={url} alt="" className="w-full h-full object-cover" loading="lazy" />
-                                        {bgSettings?.image === url && (
-                                            <div className="absolute inset-0 bg-accent-primary/20 flex items-center justify-center">
-                                                <div className="w-8 h-8 rounded-full bg-accent-primary flex items-center justify-center text-white shadow-lg">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                                                    </svg>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            </div>
-        </GlassCard>
+        <ProfileChatSettingsView
+            bgSettings={bgSettings}
+            onBack={() => setCurrentView('main')}
+            onUpdateBgBlur={onUpdateBgBlur}
+            onUpdateBgImageBlur={onUpdateBgImageBlur}
+            onUpdateBgImage={onUpdateBgImage}
+        />
     );
 
     const renderWallet = () => (
-        <GlassCard
-            className={`w-full h-full lg:h-auto lg:max-w-[420px] !p-0 border-none lg:border flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:!rounded-[25px] shadow-2xl animate-scale-up lg:border-white/10 text-white`}
-            style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-            onClick={(e) => e.stopPropagation()}
-        >
-            <div className={`flex items-center gap-4 p-4 px-6 border-b border-white/10`}>
-                <button onClick={() => setCurrentView('main')} className={`text-white/40 hover:text-white transition-colors p-1`}><X className="h-6 w-6 rotate-90" /></button>
-                <h2 className="font-medium text-[19px]">{t('wallet')}</h2>
-            </div>
-
-            <div className="overflow-y-auto custom-scrollbar flex-1 p-6 space-y-6 pb-10">
-                {/* Balance Cards */}
-                <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
-                    <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
-                    <div className="relative z-10 flex flex-col gap-1 text-center">
-                        <span className="text-white/60 text-xs font-black uppercase tracking-widest">{t('available_balance')}</span>
-                        <div className="flex items-center justify-center gap-2">
-                            <DollarSign className="h-8 w-8 text-white" />
-                            <span className="text-white font-black text-4xl">{walletData.available} <span className="text-lg opacity-60">MALI</span></span>
-                        </div>
-                    </div>
-                </div>
-
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-5 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                        <div className="p-3 bg-white/5 rounded-xl text-yellow-500"><Lock className="h-5 w-5" /></div>
-                        <div className="flex flex-col">
-                            <span className="text-white font-bold">{t('escrow_reserved')}</span>
-                            <span className="text-white/40 text-xs text-left">{t('escrow_reserved_desc')}</span>
-                        </div>
-                    </div>
-                    <div className="text-yellow-500 font-black">{walletData.locked} MALI</div>
-                </div>
-
-                {/* Subscription Card */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
-                    <div className="flex items-center gap-3 mb-2">
-                        <div className="p-3 bg-accent-primary/20 rounded-xl text-[#00A884]"><Award className="h-5 w-5" /></div>
-                        <div className="flex flex-col h-full items-start justify-center">
-                            <span className="text-white font-bold leading-none">{t('specialist_subscription')}</span>
-                            <span className="text-[#00A884] font-black text-xs uppercase tracking-widest leading-none mt-1">{t('free_for_now')}</span>
-                        </div>
-                    </div>
-
-                    <p className="text-white/40 text-[11.5px] leading-relaxed pb-2">
-                        {t('subscription_desc')}
-                    </p>
-
-                    <GlassButton
-                        onClick={handleSubscribe}
-                        disabled={isSubscribing}
-                        className={`w-full !rounded-xl py-3.5 font-bold transition-all ${isExpert && verifiedStatus !== 'none' ? '!bg-white/10 !text-white/40 cursor-not-allowed' : '!bg-emerald-600 !text-white'}`}
-                    >
-                        {isSubscribing ? t('loading') : (isExpert && verifiedStatus !== 'none' ? t('subscription_active') : t('enable_specialist_free'))}
-                    </GlassButton>
-                </div>
-
-            </div>
-        </GlassCard>
+        <ProfileWalletView
+            bgSettings={bgSettings}
+            onBack={() => setCurrentView('main')}
+            walletData={walletData}
+            isSubscribing={isSubscribing}
+            isExpert={isExpert}
+            verifiedStatus={verifiedStatus}
+            onSubscribe={handleSubscribe}
+        />
     );
 
-    const renderSettings = () => {
-        const SETTINGS_ITEMS = [
-            { id: 'account', icon: <User className="h-5 w-5" />, label: t('profile'), subtext: t('edit_account_sub') },
-            { id: 'wallet', icon: <DollarSign className="h-5 w-5 text-emerald-400" />, label: t('wallet'), subtext: t('wallet_sub') },
-            // { id: 'privacy', icon: <Lock className="h-5 w-5" />, label: 'Конфиденциальность' },
-            { id: 'chats', icon: <MessageSquare className="h-5 w-5" />, label: t('chat_settings'), subtext: t('chat_settings_sub') },
-            // { id: 'folders', icon: <Folder className="h-5 w-5" />, label: 'Папки с чатами' },
-            // { id: 'advanced', icon: <Sliders className="h-5 w-5" />, label: 'Продвинутые настройки' },
-            // { id: 'call', icon: <Volume2 className="h-5 w-5" />, label: 'Звук и камера' },
-            // { id: 'battery', icon: <Zap className="h-5 w-5" />, label: 'Заряд батареи и анимация' },
-            ...(user.role === 'admin' ? [{ id: 'admin', icon: <Shield className="h-5 w-5 text-emerald-400" />, label: 'Admin Panel', subtext: t('admin_panel_sub') }] : []),
-        ];
-
-        return (
-            <GlassCard
-                className={`w-full h-full lg:h-auto lg:max-w-[420px] !p-0 border-none lg:border flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:!rounded-[25px] shadow-2xl animate-scale-up lg:border-white/10 text-white`}
-                style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-                onClick={(e: React.MouseEvent) => e.stopPropagation()}
-            >
-                {/* Sarlavha: mobil notch/status bar + tugmalar uchun xavfsiz joy */}
-                <div
-                    className={`flex min-h-[52px] items-center justify-between gap-2 border-b border-white/10 px-4 pb-3 sm:px-6`}
-                    style={{
-                        paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-                        paddingLeft: 'max(1rem, env(safe-area-inset-left))',
-                        paddingRight: 'max(1rem, env(safe-area-inset-right))',
-                    }}
-                >
-                    <h2 className="min-w-0 flex-1 truncate font-medium text-[17px] sm:text-[19px]">{t('settings')}</h2>
-                    <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 text-white/50">
-                        <button
-                            type="button"
-                            onClick={() => setShowLanguageModal(true)}
-                            className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center gap-1 rounded-xl bg-white/10 px-2 py-2 text-[11px] font-bold uppercase tracking-wide border border-white/10 hover:text-white transition-colors sm:min-h-0 sm:min-w-0 sm:px-2.5 sm:py-1.5 sm:text-[13px]"
-                        >
-                            <Languages className="h-[17px] w-[17px] shrink-0 sm:h-[18px] sm:w-[18px]" />
-                            <span className="max-w-[2.5rem] truncate sm:max-w-none">{language}</span>
-                        </button>
-                        <button
-                            type="button"
-                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
-                            aria-label="Search"
-                        >
-                            <Search className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
-                        </button>
-                        <button
-                            type="button"
-                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
-                            aria-label="More"
-                        >
-                            <MoreVertical className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
-                        </button>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
-                            aria-label={t('cancel')}
-                        >
-                            <X className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="overflow-y-auto custom-scrollbar flex-1 pb-6">
-                    {/* User Profile Section (Row style from screenshot) */}
-                    <div className="px-6 py-5 flex items-center gap-5 group cursor-pointer hover:bg-white/5 transition-all"
-                        onClick={() => { setEditFirstName(user.name || ""); setEditLastName(user.surname || ""); setShowNameModal(true); }}>
-                        <div
-                            role="button"
-                            tabIndex={0}
-                            className={`w-[64px] h-[64px] rounded-full overflow-hidden border-2 border-white/10 shadow-xl relative shrink-0 ${getAvatarUrl(user.avatar || user.avatar_url) ? 'cursor-zoom-in' : ''}`}
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                if (getAvatarUrl(user.avatar || user.avatar_url)) openAvatarLightbox();
-                            }}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' || e.key === ' ') {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    if (getAvatarUrl(user.avatar || user.avatar_url)) openAvatarLightbox();
-                                }
-                            }}
-                            aria-label={
-                                language === 'ru'
-                                    ? 'Открыть фото'
-                                    : language === 'en'
-                                      ? 'View photo'
-                                      : 'Rasmni kattalashtirish'
-                            }
-                        >
-                            <img
-                                src={profilePhotoDisplaySrc}
-                                alt=""
-                                className="w-full h-full object-cover transition-transform group-hover:scale-110 pointer-events-none"
-                            />
-                        </div>
-                        <div className="flex-1">
-                            <h3 className="text-white font-bold text-[18px] leading-tight group-hover:text-[#00A884] transition-colors">{user.name} {user.surname || ''}</h3>
-                            <div className="flex flex-col mt-0.5 opacity-40">
-                                <span className="text-[13px]">{user.phone || '+998 -- --- -- --'}</span>
-                                <span className="text-[13px]">@{user.username || 'username'}</span>
-                                {displayAge() && (
-                                    <span className="text-[12px] mt-0.5 opacity-70">
-                                        {displayAge()!.current} {t('years_old')} • {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-                        <button className="text-white/20 group-hover:text-white transition-all bg-white/5 p-2 rounded-xl active:scale-95"><Grid className="h-6 w-6" /></button>
-                    </div>
-
-                    <div className="h-[1px] bg-white/5 mx-6 mb-2"></div>
-
-                    {/* Settings List */}
-                    <div className="space-y-0.5 mt-2">
-                        {SETTINGS_ITEMS.map((item) => (
-                            <button
-                                key={item.id}
-                                className="w-full flex items-center gap-5 px-6 py-3.5 hover:bg-white/5 transition-all group text-left"
-                                onClick={() => {
-                                    if (item.id === 'account') { setEditFirstName(user.name || ""); setEditLastName(user.surname || ""); setShowNameModal(true); }
-                                    else if (item.id === 'wallet') {
-                                        setCurrentView('wallet');
-                                        fetchWallet();
-                                    }
-                                    else if (item.id === 'chats') { setCurrentView('chat_settings'); }
-                                    else if (item.id === 'admin') { window.open('/AdminZero0723s', '_blank'); }
-                                }}
-                            >
-                                <span className="text-white/30 group-hover:text-[#00A884] transition-colors">{item.icon}</span>
-                                <div className="flex-1 flex flex-col justify-center">
-                                    <span className="text-white/90 group-hover:text-white text-[15px] font-medium">{item.label}</span>
-                                    {item.subtext && <span className="text-white/20 text-[12px] mt-0.5">{item.subtext}</span>}
-                                </div>
-                            </button>
-                        ))}
-                    </div>
-
-                    <div className="px-6 mt-8">
-                        <button onClick={onLogout} className="w-full py-4 text-red-500/80 font-bold text-[15px] hover:text-red-500 hover:bg-red-500/5 rounded-xl transition-all border border-red-500/5">{t('logout')}</button>
-                    </div>
-                </div>
-            </GlassCard>
-        );
-    };
+    const renderSettings = () => (
+        <ProfileSettingsView
+            bgSettings={bgSettings}
+            user={user}
+            profilePhotoDisplaySrc={profilePhotoDisplaySrc}
+            getAvatarUrl={(url) => getAvatarUrl(String(url || ''))}
+            displayAge={displayAge}
+            onClose={onClose}
+            onLogout={onLogout}
+            onOpenLanguage={() => setShowLanguageModal(true)}
+            onOpenNameEdit={() => { setEditFirstName(user.name || ""); setEditLastName(user.surname || ""); setShowNameModal(true); }}
+            onOpenAvatar={openAvatarLightbox}
+            onOpenWallet={() => { setCurrentView('wallet'); fetchWallet(); }}
+            onOpenChatSettings={() => setCurrentView('chat_settings')}
+        />
+    );
 
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center lg:p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
@@ -1516,629 +1198,82 @@ export default function ProfileViewer({
                     currentView === 'wallet' ? renderWallet() :
                         (mode === 'profile' ? renderProfile() : renderSettings()))}
 
-            {/* SHARED MODALS */}
-            {showLanguageModal && (
-                <div className="absolute inset-0 z-[120] flex items-center justify-center bg-black/80 backdrop-blur-md" onClick={(e) => { e.stopPropagation(); setShowLanguageModal(false); }}>
-                    <GlassCard
-                        className="w-full max-w-[300px] !bg-transparent p-4 rounded-[28px] border border-white/10 overflow-hidden shadow-2xl"
-                        style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-                        onClick={e => e.stopPropagation()}
-                    >
-                        <h3 className="text-white font-bold p-3 text-lg mb-2">{t('language_modal_title')}</h3>
-                        <div className="space-y-1">
-                            {[{ id: 'uz', n: 'O\'zbekcha' }, { id: 'ru', n: 'Русский' }, { id: 'en', n: 'English' }].map(l => (
-                                <button key={l.id}
-                                    onClick={() => handleSaveLanguage(l.id as any)}
-                                    className={`w - full flex items - center justify - between p - 4 rounded - xl transition - all ${language === l.id ? 'bg-accent-primary text-white font-bold' : 'text-white/60 hover:bg-white/5'} `}>
-                                    <span>{l.n}</span>
-                                    {language === l.id && <div className="w-2 h-2 bg-white rounded-full" />}
-                                </button>
-                            ))}
-                        </div>
-                    </GlassCard>
-                </div>
-            )}
-            {showNameModal && (
-                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md px-4" onClick={(e) => { e.stopPropagation(); setShowNameModal(false); }}>
-                    <GlassCard
-                        className="w-full max-w-[340px] !bg-transparent p-7 shadow-2xl animate-scale-in rounded-[28px] border border-white/10"
-                        style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h3 className="text-white font-bold text-xl mb-6">{t('edit_profile')}</h3>
-                        <div className="space-y-5">
-                            <div className="space-y-1.5 focus-within:translate-x-1 transition-transform">
-                                <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('name')}</label>
-                                <input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none transition-all" />
-                            </div>
-                            <div className="space-y-1.5 focus-within:translate-x-1 transition-transform">
-                                <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{language === 'uz' ? 'Familiya' : (language === 'ru' ? 'Фамилия' : 'Surname')}</label>
-                                <input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none transition-all" />
-                            </div>
-                        </div>
-                        <div className="flex flex-col gap-3 mt-10">
-                            <GlassButton onClick={handleSaveName} className="w-full !bg-accent-primary !text-white !rounded-xl py-3.5 font-bold shadow-lg shadow-accent-primary/20">{t('save')}</GlassButton>
-                            <button onClick={() => setShowNameModal(false)} className="w-full py-3 text-white/30 hover:text-white transition-colors text-[14px]">{t('cancel')}</button>
-                        </div>
-                    </GlassCard>
-                </div>
-            )}
-
-            {showUsernameModal && (
-                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md px-4" onClick={(e) => { e.stopPropagation(); setShowUsernameModal(false); }}>
-                    <GlassCard
-                        className="w-full max-w-[340px] !bg-transparent p-7 shadow-2xl animate-scale-in rounded-[28px] border border-white/10"
-                        style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <h3 className="text-white font-bold text-xl mb-4">Username</h3>
-                        <div className="relative group">
-                            <span className="absolute left-4 top-[15px] text-accent-primary font-bold text-lg group-focus-within:scale-110 transition-transform">@</span>
-                            <input value={editUsername} onChange={(e) => setEditUsername(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 pl-9 pr-4 text-white focus:border-accent-primary focus:outline-none transition-all text-lg" placeholder="username" />
-                        </div>
-                        <p className="text-white/20 text-[12px] mt-4 leading-relaxed">{t('username_desc')}</p>
-                        <div className="flex flex-col gap-3 mt-10">
-                            <GlassButton onClick={handleSaveUsername} className="w-full !bg-accent-primary !text-white !rounded-xl py-3.5 font-bold">{t('save')}</GlassButton>
-                            <button onClick={() => setShowUsernameModal(false)} className="w-full py-3 text-white/30 hover:text-white transition-colors">{t('cancel')}</button>
-                        </div>
-                    </GlassCard>
-                </div>
-            )}
-
-            {showExpertModal && (
-                <div
-                    className="absolute inset-0 z-[110] flex items-center justify-center bg-[#0f1419]/88 backdrop-blur-lg px-0 sm:px-4 py-0 sm:py-6 animate-fade-in"
-                    onClick={(e) => { e.stopPropagation(); setShowExpertModal(false); }}
-                >
-                    <div
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby="expert-profile-title"
-                        className="w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-[500px] rounded-none sm:rounded-[24px] shadow-2xl border-0 sm:border border-white/30 flex flex-col overflow-hidden text-white"
-                        style={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.18)',
-                            backdropFilter: 'blur(24px)',
-                            WebkitBackdropFilter: 'blur(24px)',
-                            boxShadow: '0 8px 32px rgba(0,0,0,0.12)'
-                        }}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <div className="px-4 sm:px-8 pt-5 sm:pt-7 pb-4 flex-shrink-0 border-b border-white/10">
-                            <div className="flex items-center justify-between gap-4">
-                                <h3 id="expert-profile-title" className="text-white font-bold text-xl sm:text-2xl flex items-center gap-3">
-                                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 border border-white/10">
-                                        <Award className="h-6 w-6 text-[#00A884]" />
-                                    </span>
-                                    {t('specialist_profile')}
-                                </h3>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowExpertModal(false)}
-                                    className="text-white/70 hover:text-white bg-white/10 hover:bg-white/15 p-2.5 rounded-full border border-white/10 transition-all"
-                                >
-                                    <X className="h-5 w-5" />
-                                </button>
-                            </div>
-                        </div>
-
-                        {(verifiedStatus === 'pending' || verifiedStatus === 'approved') && (
-                            <div className={`mx-4 sm:mx-8 mt-4 sm:mt-5 mb-2 p-4 rounded-[18px] flex flex-col gap-3 ${verifiedStatus === 'pending' ? 'bg-amber-500/[0.12] border border-amber-400/25' : 'bg-[#00A884]/10 border border-[#00A884]/30'}`}>
-                                <div className="flex items-center gap-3">
-                                    {verifiedStatus === 'pending' ? <Clock className="h-6 w-6 text-yellow-500" /> : <CheckCircle className="h-6 w-6 text-emerald-500" />}
-                                    <div className="flex flex-col">
-                                        <span className={`font-bold text-sm uppercase tracking-wider ${verifiedStatus === 'pending' ? 'text-yellow-500' : 'text-emerald-500'}`}>
-                                            {verifiedStatus === 'pending' ? t('wait_admin_generic') : t('verified')}
-                                        </span>
-                                        <span className="text-white/60 text-xs mt-0.5">
-                                            {verifiedStatus === 'pending' ? t('expert_pending_desc') : t('expert_confirmed_desc')}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between mt-1 text-[9px] text-white/60">
-                                    {[
-                                        { id: 'sent', label: t('step_sent') },
-                                        { id: 'review', label: t('step_review') },
-                                        { id: 'done', label: t('step_confirmed') }
-                                    ].map((step, index) => {
-                                        const isActive =
-                                            verifiedStatus === 'pending'
-                                                ? index <= 1
-                                                : verifiedStatus === 'approved'
-                                                    ? index <= 2
-                                                    : index === 0;
-                                        return (
-                                            <div key={step.id} className="flex-1 flex items-center">
-                                                <div className={`w-2.5 h-2.5 rounded-full mr-2 ${isActive ? 'bg-emerald-400' : 'bg-white/20'}`} />
-                                                <span className={`${isActive ? 'text-emerald-100' : 'text-white/30'}`}>{step.label}</span>
-                                                {index < 2 && (
-                                                    <div className={`flex-1 h-px ml-2 ${isActive ? 'bg-emerald-400/60' : 'bg-white/10'}`} />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-
-                        <div className="flex-1 overflow-y-auto px-4 sm:px-8 custom-scrollbar space-y-8 py-5 sm:py-6 min-h-0">
-                            {/* SECTION 1: BASIC INFO */}
-                            <div className="space-y-4">
-                                <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest border-b border-white/15 pb-2">{t('basic_info')}</h4>
-                                <div className="space-y-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('profession_type')}</label>
-                                        <select
-                                            ref={professionRef}
-                                            value={profession}
-                                            onChange={(e) => setProfession(e.target.value)}
-                                            className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white focus:outline-none appearance-none border ${
-                                                expertErrors.profession ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
-                                            }`}
-                                        >
-                                            <option value="" className="bg-[#121B22]">{t('select')}...</option>
-                                            <optgroup label="Ta'lim va Mentorlik" className="bg-[#121B22] text-emerald-400 font-bold">
-                                                <option value="O'qituvchi">O'qituvchi (Mentor)</option>
-                                                <option value="Mentor">Mentor (Biznes/Shaxsiy)</option>
-                                                <option value="Startap mentori">Startap mentori</option>
-                                                <option value="Dasturchi mentor">Dasturchi mentor</option>
-                                            </optgroup>
-                                            <optgroup label="Huquq sohasi" className="bg-[#121B22] text-[#00A884] font-bold">
-                                                <option value="Advokat">Advokat</option>
-                                                <option value="Yurist">Yurist</option>
-                                                <option value="Notarius maslahatchi">Notarius maslahatchi</option>
-                                                <option value="Soliq maslahatchisi">Soliq maslahatchisi</option>
-                                                <option value="Mehnat huquqi eksperti">Mehnat huquqi eksperti</option>
-                                                <option value="Migratsiya maslahatchisi">Migratsiya maslahatchisi</option>
-                                            </optgroup>
-                                            <optgroup label="Psixologiya" className="bg-[#121B22] text-[#00A884] font-bold">
-                                                <option value="Klinik psixolog">Klinik psixolog</option>
-                                                <option value="Oila psixologi">Oila psixologi</option>
-                                                <option value="Bolalar psixologi">Bolalar psixologi</option>
-                                                <option value="Psixoterapevt">Psixoterapevt</option>
-                                                <option value="Stress / depressiya mutaxassisi">Stress / depressiya mutaxassisi</option>
-                                                <option value="Career coach">Career coach</option>
-                                            </optgroup>
-                                            <optgroup label="Biznes va moliya" className="bg-[#121B22] text-[#00A884] font-bold">
-                                                <option value="Biznes konsultant">Biznes konsultant</option>
-                                                <option value="Startap mentori">Startap mentori</option>
-                                                <option value="Marketing strateg">Marketing strateg</option>
-                                                <option value="SMM mutaxassis">SMM mutaxassis</option>
-                                                <option value="Moliyaviy maslahatchi">Moliyaviy maslahatchi</option>
-                                                <option value="Investitsiya eksperti">Investitsiya eksperti</option>
-                                            </optgroup>
-                                            <option value="Other" className="bg-[#121B22]">Boshqa</option>
-                                        </select>
-                                        {expertErrors.profession && (
-                                            <p className="text-[10px] text-red-400 mt-1 ml-1">{expertErrors.profession}</p>
-                                        )}
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">
-                                            {t('specialization_req')}
-                                        </label>
-                                        <input
-                                            ref={specializationRef}
-                                            value={specializationDetails}
-                                            onChange={(e) => setSpecializationDetails(e.target.value)}
-                                            placeholder={expertFormPh.direction}
-                                            className={`w-full bg-white/5 border rounded-xl py-3.5 px-4 text-white placeholder:text-white/35 focus:outline-none transition-all ${
-                                                expertErrors.specialization ? 'border-red-500/70' : 'border-white/10 focus:border-[#00A884]'
-                                            }`}
-                                        />
-                                        {expertErrors.specialization && (
-                                            <p className="text-[10px] text-red-400 mt-1 ml-1">{expertErrors.specialization}</p>
-                                        )}
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('experience_years_label')}</label>
-                                            <input
-                                                ref={experienceRef}
-                                                type="number"
-                                                value={experience || 0}
-                                                onChange={(e) => setExperience(parseInt(e.target.value) || 0)}
-                                                placeholder={expertFormPh.experienceExample}
-                                                className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white placeholder:text-white/35 focus:outline-none border ${
-                                                    expertErrors.experience ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
-                                                }`}
-                                            />
-                                            {expertErrors.experience && (
-                                                <p className="text-[10px] text-red-400 mt-1 ml-1">{expertErrors.experience}</p>
-                                            )}
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('has_diploma_label')}</label>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setHasDiploma(true)} className={`flex-1 py-3.5 rounded-xl border transition-all font-bold text-xs ${hasDiploma ? 'bg-accent-primary border-accent-primary text-white' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('yes_label')}</button>
-                                                <button onClick={() => setHasDiploma(false)} className={`flex-1 py-3.5 rounded-xl border transition-all font-bold text-xs ${!hasDiploma ? 'bg-red-500/20 border-red-500/40 text-red-500' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('no_label')}</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* SECTION 2: DOCUMENTS */}
-                            <div className="space-y-4">
-                                <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest border-b border-white/15 pb-2">{t('documents_req')}</h4>
-                                <div className="grid grid-cols-2 gap-3">
-                                            {[
-                                        { label: t('resume_pdf_req'), key: 'resume', icon: <FileText className="h-5 w-5 text-indigo-400" />, ref: resumeRef, url: resumeUrl, accept: '.pdf', error: expertErrors.resume }
-                                    ].map((doc) => (
-                                        <div key={doc.key} className="relative group">
-                                            <button
-                                                onClick={() => doc.ref.current?.click()}
-                                                className={`w-full flex flex-col items-center justify-center p-4 rounded-2xl border border-dashed transition-all ${
-                                                    doc.error
-                                                        ? 'bg-red-500/5 border-red-500/60'
-                                                        : doc.url
-                                                            ? 'bg-emerald-500/10 border-emerald-500/30'
-                                                            : 'bg-white/5 border-white/10 hover:border-accent-primary/50 hover:bg-white/10'
-                                                }`}
-                                            >
-                                                <div className={`p-3 rounded-full mb-2 transition-colors ${
-                                                    doc.error
-                                                        ? 'bg-red-500/20 text-red-400'
-                                                        : doc.url
-                                                            ? 'bg-emerald-500/20 text-emerald-400'
-                                                            : 'bg-white/5 text-white/30 group-hover:text-[#00A884]'
-                                                }`}>{doc.icon}</div>
-                                                <span className={`text-[10px] uppercase font-bold ${
-                                                    doc.error
-                                                        ? 'text-red-400'
-                                                        : doc.url
-                                                            ? 'text-emerald-400'
-                                                            : 'text-white/40'
-                                                }`}>
-                                                    {doc.url ? t('uploaded_status') : doc.label}
-                                                </span>
-                                            </button>
-                                            <input
-                                                type="file"
-                                                ref={doc.ref as any}
-                                                className="hidden"
-                                                accept={doc.accept}
-                                                onChange={(e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (file) handleDocumentUpload(doc.key, file);
-                                                }}
-                                            />
-                                            {doc.error && (
-                                                <p className="text-[9px] text-red-400 mt-1 text-center">{doc.error}</p>
-                                            )}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* SECTION 4: PRICING & FORMAT */}
-                            <div className="space-y-4">
-                                <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest border-b border-white/15 pb-2">{t('finance')}</h4>
-                                <div className="space-y-4">
-                                    <div className="rounded-[14px] border border-white/10 bg-white/[0.06] px-3 py-3 space-y-2">
-                                        <p className="text-[10px] font-bold text-[#00A884] uppercase tracking-wider">
-                                            {expertFormPricingHint.title}
-                                        </p>
-                                        <p className="text-[11px] text-white/65 leading-snug">{expertFormPricingHint.body}</p>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{language === 'uz' ? 'Narx turi' : (language === 'ru' ? 'Тип цены' : 'Price type')}</label>
-                                        <div className="flex gap-2">
-                                            {[
-                                                ...(isLegalMode ? [] : [{ key: 'hourly' as const, label: t('hourly') }]),
-                                                { key: 'session' as const, label: isLegalMode ? (language === 'uz' ? 'Bir martalik maslahat / xizmat' : (language === 'ru' ? 'Единоразовая консультация' : 'One-time service')) : t('session') }
-                                            ].map((opt) => (
-                                                <button
-                                                    key={opt.key}
-                                                    type="button"
-                                                    onClick={() => setPricingModel(opt.key)}
-                                                    className={`flex-1 py-2.5 rounded-xl border text-[11px] font-bold transition-all ${
-                                                        pricingModel === opt.key
-                                                            ? 'bg-[#00A884] border-[#00A884] text-white'
-                                                            : 'bg-white/5 border-white/15 text-white/55 hover:bg-white/10'
-                                                    }`}
-                                                >
-                                                    {opt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="space-y-1.5">
-                                            <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">
-                                                {pricingModel === 'session'
-                                                    ? (isLegalMode ? (language === 'uz' ? 'Bir martalik maslahat / xizmat narxi' : (language === 'ru' ? 'Цена единоразовой услуги' : 'One-time service price')) : `${t('session')} ${t('price').toLowerCase()}`)
-                                                    : `1 ${t('hourly').toLowerCase()} ${t('price').toLowerCase()}`}
-                                            </label>
-                                            <input
-                                                ref={priceRef}
-                                                type="number"
-                                                value={price || 0}
-                                                onChange={(e) => setPrice(parseInt(e.target.value) || 0)}
-                                                className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white focus:outline-none border ${
-                                                    expertErrors.price ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
-                                                }`}
-                                            />
-                                            {expertErrors.price && (
-                                                <p className="text-[10px] text-red-400 mt-1 ml-1">{expertErrors.price}</p>
-                                            )}
-                                        </div>
-                                        <div className="space-y-1.5">
-                                            <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{language === 'uz' ? 'Valyuta' : (language === 'ru' ? 'Валюта' : 'Currency')}</label>
-                                            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none appearance-none">
-                                                <option value="MALI" className="bg-[#121B22]">MALI</option>
-                                                <option value="UZS" className="bg-[#121B22]">UZS</option>
-                                                <option value="USD" className="bg-[#121B22]">USD</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('languages')}</label>
-                                        <input
-                                            value={serviceLanguages}
-                                            onChange={(e) => setServiceLanguages(e.target.value)}
-                                            placeholder={t('languages_list')}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{language === 'uz' ? 'Xizmat turi' : (language === 'ru' ? 'Формат услуг' : 'Service format')}</label>
-                                        <div className="flex gap-2">
-                                            {[
-                                                { key: 'online', label: t('job_type_online') },
-                                                { key: 'offline', label: t('job_type_offline') }
-                                            ].map((fmt) => (
-                                                <button
-                                                    key={fmt.key}
-                                                    onClick={() => setServiceFormat(fmt.key)}
-                                                    className={`flex-1 py-3 rounded-xl border transition-all text-[11px] font-bold ${
-                                                        serviceFormat === fmt.key
-                                                            ? 'bg-[#00A884] border-[#00A884] text-white shadow-md'
-                                                            : 'bg-white/5 border-white/15 text-white/60 hover:bg-white/10 hover:text-white/90'
-                                                    }`}
-                                                >
-                                                    {fmt.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* SECTION 4.5: GROUPS (FOR MENTORS) */}
-                            {isMentorProfession(profession) && (
-                                <div className="space-y-4">
-                                    <div className="flex items-center justify-between border-b border-white/15 pb-2">
-                                        <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest">{t('mentor_groups_title')}</h4>
-                                        {availableGroupsLoading && (
-                                            <span className="text-[10px] text-emerald-200">
-                                                {t('loading')}
-                                            </span>
-                                        )}
-                                    </div>
-
-                                    <div className="space-y-3">
-                                        {/* Yangi guruh yaratish */}
-                                        <div className="flex gap-2">
-                                            <input
-                                                value={newGroupName}
-                                                onChange={(e) => setNewGroupName(e.target.value)}
-                                                placeholder={t('add_group_placeholder')}
-                                                className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:border-accent-primary outline-none"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (newGroupName.trim()) {
-                                                        setExpertGroups([
-                                                            ...expertGroups,
-                                                            { id: Date.now().toString(), name: newGroupName.trim(), time: '' }
-                                                        ]);
-                                                        setNewGroupName("");
-                                                    }
-                                                }}
-                                                className="bg-[#00A884]/20 text-[#00E6C3] hover:bg-[#00A884] hover:text-white px-4 rounded-xl border border-[#00A884]/30 transition-all shrink-0"
-                                            >
-                                                <Plus className="h-5 w-5" />
-                                            </button>
-                                        </div>
-
-                                        {/* Tanlangan guruhlar ro'yxati */}
-                                        <div className="space-y-2">
-                                            {expertGroups.map((g) => (
-                                                <div key={g.id} className="flex items-center justify-between p-3 bg-white/5 border border-white/5 rounded-xl">
-                                                    <div className="flex flex-col min-w-0">
-                                                        <span className="text-sm font-bold text-white truncate">{g.name}</span>
-                                                    </div>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setExpertGroups(expertGroups.filter(x => x.id !== g.id))}
-                                                        className="text-red-400/50 hover:text-red-400 p-1"
-                                                    >
-                                                        <X className="h-4 w-4" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                            {expertGroups.length === 0 && (
-                                                <div className="text-center py-4 text-xs text-white/20 italic border border-dashed border-white/5 rounded-xl">
-                                                    {t('at_least_one_group')}
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Mavjud guruhlardan qo'shish */}
-                                        {availableGroups.length > 0 && (
-                                            <div className="space-y-2 pt-3 border-t border-white/5">
-                                                <p className="text-[11px] text-white/40 font-medium">
-                                                    {t('add_from_existing')}
-                                                </p>
-                                                {availableGroups
-                                                    .filter(ag => !expertGroups.some(g => g.chatId === ag.chatId || g.id === ag.id))
-                                                    .map(ag => (
-                                                        <button
-                                                            key={ag.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                setExpertGroups([
-                                                                    ...expertGroups,
-                                                                    { id: ag.id, name: ag.name, time: '', chatId: ag.chatId || ag.id }
-                                                                ]);
-                                                            }}
-                                                            className="w-full flex items-center justify-between px-3 py-2 rounded-lg bg-white/5 border border-white/10 hover:bg-[#00A884]/15 hover:border-[#00A884]/40 transition-all"
-                                                        >
-                                                            <div className="flex flex-col text-left min-w-0">
-                                                                <span className="text-sm text-white font-medium truncate">{ag.name}</span>
-                                                            </div>
-                                                            <span className="text-[11px] px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-200 font-semibold">
-                                                                {t('add')}
-                                                            </span>
-                                                        </button>
-                                                    ))}
-                                                {availableGroups.filter(ag => !expertGroups.some(g => g.chatId === ag.chatId || g.id === ag.id)).length === 0 && (
-                                                    <p className="text-[11px] text-white/30 italic">
-                                                        {t('all_groups_added')}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* SECTION 5: LISTING + BIO */}
-                            <div className="space-y-4">
-                                <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest border-b border-white/15 pb-2">{t('detailed_info')}</h4>
-                                <div className="space-y-4">
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">
-                                            {t('specialty_offer_label')}
-                                        </label>
-                                        <p className="text-[10px] text-white/35 leading-snug px-1">
-                                            {t('specialty_offer_hint')}
-                                        </p>
-                                        <textarea
-                                            value={specialtyDesc}
-                                            onChange={(e) => setSpecialtyDesc(e.target.value)}
-                                            placeholder={expertFormPh.listing}
-                                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 px-4 text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[140px] resize-none"
-                                        />
-                                    </div>
-                                    <div className="space-y-1.5">
-                                        <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('bio')}</label>
-                                        <textarea
-                                            value={bioExpert}
-                                            onChange={(e) => setBioExpert(e.target.value)}
-                                            placeholder={t('bio_expert_placeholder')}
-                                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 px-4 text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[100px] resize-none"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="flex-shrink-0 border-t border-white/10 bg-white/[0.06] px-4 sm:px-8 py-4 sm:py-5 flex flex-col gap-4">
-                            <div className="rounded-[14px] border border-amber-400/25 bg-amber-500/[0.1] px-3 py-3 flex items-start gap-3">
-                                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-300 flex-shrink-0 border border-amber-400/20">
-                                    <Bell className="h-4 w-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">
-                                        {t('important_info')}
-                                    </p>
-                                    <p className="text-[11px] text-white/80 leading-snug">
-                                        {t('expert_free_hint')}
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowExpertModal(false)}
-                                    className="py-2.5 text-[13px] text-white/55 hover:text-white transition-colors text-center sm:text-left"
-                                >
-                                    {t('cancel')}
-                                </button>
-                                <GlassButton
-                                    type="button"
-                                    onClick={handleSaveExpertData}
-                                    className="w-full sm:w-auto !min-w-[140px] !bg-[#00A884] hover:!bg-[#009975] !text-white !rounded-xl py-3 text-sm font-bold shadow-lg shadow-black/20 border border-white/10"
-                                >
-                                    {t('send')}
-                                </GlassButton>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-            <GlassDatePicker
-                open={showDatePicker}
-                value={birthday}
-                language={language === 'ru' ? 'ru' : 'uz'}
-                onChange={(val) => {
-                    handleSaveBirthday(val);
-                    setShowDatePicker(false);
-                }}
-                onClose={() => setShowDatePicker(false)}
+            <ProfileEditModals
+                t={t}
+                language={language}
+                bgSettings={bgSettings}
+                showLanguageModal={showLanguageModal}
+                setShowLanguageModal={setShowLanguageModal}
+                handleSaveLanguage={handleSaveLanguage}
+                showNameModal={showNameModal}
+                setShowNameModal={setShowNameModal}
+                editFirstName={editFirstName}
+                setEditFirstName={setEditFirstName}
+                editLastName={editLastName}
+                setEditLastName={setEditLastName}
+                handleSaveName={handleSaveName}
+                showUsernameModal={showUsernameModal}
+                setShowUsernameModal={setShowUsernameModal}
+                editUsername={editUsername}
+                setEditUsername={setEditUsername}
+                handleSaveUsername={handleSaveUsername}
+                showDatePicker={showDatePicker}
+                setShowDatePicker={setShowDatePicker}
+                birthday={birthday}
+                handleSaveBirthday={handleSaveBirthday}
+                avatarPreviewUrl={avatarPreviewUrl}
+                setAvatarPreviewUrl={setAvatarPreviewUrl}
+                toast={toast}
+                setToast={setToast}
             />
 
-            {avatarPreviewUrl && (
-                <div
-                    className="fixed inset-0 z-[140] flex flex-col bg-black animate-fade-in"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={
-                        language === 'ru' ? 'Фото профиля' : language === 'en' ? 'Profile photo' : 'Profil rasmi'
-                    }
-                    onClick={() => setAvatarPreviewUrl(null)}
-                >
-                    <div className="flex justify-end p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-[max(0.75rem,env(safe-area-inset-right))]">
-                        <button
-                            type="button"
-                            className="rounded-full bg-white/15 p-2.5 text-white hover:bg-white/25 transition-colors touch-manipulation"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setAvatarPreviewUrl(null);
-                            }}
-                            aria-label={t('cancel')}
-                        >
-                            <X className="h-6 w-6" />
-                        </button>
-                    </div>
-                    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                            src={avatarPreviewUrl}
-                            alt=""
-                            className="max-h-[min(88dvh,100%)] max-w-full object-contain select-none"
-                            style={{ touchAction: 'pinch-zoom' }}
-                            onClick={(e) => e.stopPropagation()}
-                            draggable={false}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {toast && (
-                <div
-                    className={`
-                        fixed bottom-6 left-1/2 -translate-x-1/2 z-[130] px-4 py-3 rounded-2xl shadow-2xl border text-xs sm:text-sm
-                        ${toast.type === 'success' ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-100' :
-                            toast.type === 'warning' ? 'bg-amber-500/15 border-amber-500/40 text-amber-100' :
-                                'bg-red-500/15 border-red-500/40 text-red-100'}
-                    `}
-                >
-                    <div className="flex items-center gap-2">
-                        {toast.type === 'success' && <CheckCircle className="w-4 h-4 flex-shrink-0" />}
-                        {toast.type === 'warning' && <Bell className="w-4 h-4 flex-shrink-0" />}
-                        {toast.type === 'error' && <X className="w-4 h-4 flex-shrink-0" />}
-                        <span className="leading-snug">{toast.message}</span>
-                        <button
-                            onClick={() => setToast(null)}
-                            className="ml-2 text-white/60 hover:text-white flex-shrink-0"
-                        >
-                            <X className="w-3 h-3" />
-                        </button>
-                    </div>
-                </div>
+            {showExpertModal && (
+                <ProfileExpertModal
+                    t={t}
+                    language={language}
+                    isLegalMode={isLegalMode}
+                    verifiedStatus={verifiedStatus}
+                    onClose={() => setShowExpertModal(false)}
+                    profession={profession}
+                    setProfession={setProfession}
+                    professionRef={professionRef}
+                    specializationDetails={specializationDetails}
+                    setSpecializationDetails={setSpecializationDetails}
+                    specializationRef={specializationRef}
+                    experience={experience}
+                    setExperience={setExperience}
+                    experienceRef={experienceRef}
+                    hasDiploma={hasDiploma}
+                    setHasDiploma={setHasDiploma}
+                    expertErrors={expertErrors}
+                    expertFormPh={expertFormPh}
+                    expertFormPricingHint={expertFormPricingHint}
+                    resumeRef={resumeRef}
+                    resumeUrl={resumeUrl}
+                    handleDocumentUpload={handleDocumentUpload}
+                    price={price}
+                    setPrice={setPrice}
+                    priceRef={priceRef}
+                    pricingModel={pricingModel}
+                    setPricingModel={setPricingModel}
+                    currency={currency}
+                    setCurrency={setCurrency}
+                    serviceLanguages={serviceLanguages}
+                    setServiceLanguages={setServiceLanguages}
+                    serviceFormat={serviceFormat}
+                    setServiceFormat={setServiceFormat}
+                    availableGroupsLoading={availableGroupsLoading}
+                    newGroupName={newGroupName}
+                    setNewGroupName={setNewGroupName}
+                    expertGroups={expertGroups}
+                    setExpertGroups={setExpertGroups}
+                    availableGroups={availableGroups}
+                    specialtyDesc={specialtyDesc}
+                    setSpecialtyDesc={setSpecialtyDesc}
+                    bioExpert={bioExpert}
+                    setBioExpert={setBioExpert}
+                    onSave={handleSaveExpertData}
+                />
             )}
         </div >
     );

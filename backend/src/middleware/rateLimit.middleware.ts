@@ -2,7 +2,6 @@ import rateLimit from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
 import { redisClient } from '../config/redis';
 
-// Helper to create store
 const createStore = (prefix: string) => {
     if (redisClient && redisClient.isOpen) {
         return new RedisStore({
@@ -11,30 +10,67 @@ const createStore = (prefix: string) => {
             prefix: `rl:${prefix}:`,
         });
     }
-    return undefined; // Falls back to MemoryStore
+    return undefined;
 };
 
-// Global rate limiter
 export const globalLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per `window`
+    windowMs: 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_IP_MAX || 90),
     standardHeaders: true,
     legacyHeaders: false,
     store: createStore('global'),
     message: {
-        message: 'Juda ko\'p so\'rov yuborildi. Iltimos, 15 daqiqadan so\'ng qayta urinib ko\'ring.'
-    }
+        message: "Juda ko'p so'rov yuborildi. Iltimos, birozdan so'ng qayta urinib ko'ring.",
+    },
 });
 
-// Stepped limiter for auth routes
+/** Login ~10/min (Axis-yaqin) */
+export const loginLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 10,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore('login'),
+    message: { message: "Login urinishlari juda ko'p. 1 daqiqadan so'ng qayta urining." },
+});
+
+/** Register ~5/min */
+export const registerLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore('register'),
+    message: { message: "Ro'yxatdan o'tish urinishlari juda ko'p." },
+});
+
+/** Legacy alias used by auth routes that share login/register */
 export const authLimiter = rateLimit({
-    windowMs: 5 * 60 * 1000,
-    max: 50,
+    windowMs: 60 * 1000,
+    max: 10,
     standardHeaders: true,
     legacyHeaders: false,
     store: createStore('auth'),
     message: {
-        message: 'Login yoki ro\'yxatdan o\'tish urinishlari juda ko\'p. Birozdan so\'ng qayta urining.'
-    }
+        message: "Login yoki ro'yxatdan o'tish urinishlari juda ko'p. Birozdan so'ng qayta urining.",
+    },
 });
 
+export const refreshLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore('refresh'),
+    message: { message: "Refresh so'rovlari juda ko'p." },
+});
+
+/** Wallet / transfer / escrow mutations */
+export const moneyLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 15,
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore('money'),
+    message: { message: "Pul operatsiyalari limiti. Biroz kuting." },
+});

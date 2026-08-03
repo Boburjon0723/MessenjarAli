@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { GlassCard } from '../ui/GlassCard';
 import {
     Volume2, Settings, Gift, Users, Shield, LogOut,
     Image as ImageIcon, AlertCircle, Plus, X, Sliders
 } from 'lucide-react';
 import EditChannelModal from './EditChannelModal';
+import { apiFetch } from '@/lib/api';
+import { getUser } from '@/lib/auth-storage';
 
 interface ChannelInfoPanelProps {
     chat: any;
@@ -13,13 +14,12 @@ interface ChannelInfoPanelProps {
 
 export default function ChannelInfoPanel({ chat, onClose }: ChannelInfoPanelProps) {
     const [currentUser, setCurrentUser] = useState<any>(null);
-    const [loading, setLoading] = useState(false);
     const [fullChatDetails, setFullChatDetails] = useState<any>(null);
     const [showEditModal, setShowEditModal] = useState(false);
     const lastFetchedChannelIdRef = useRef<string | null>(null);
 
     useEffect(() => {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = getUser() || {};
         setCurrentUser(user);
     }, []);
 
@@ -38,21 +38,14 @@ export default function ChannelInfoPanel({ chat, onClose }: ChannelInfoPanelProp
 
     const fetchChatDetails = async () => {
         if (!chat) return;
-        setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/chats/${chat.id || chat._id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/chats/${chat.id || chat._id}`);
             if (res.ok) {
                 const data = await res.json();
                 setFullChatDetails(data);
             }
         } catch (err) {
             console.error("Failed to fetch chat details:", err);
-        } finally {
-            setLoading(false);
         }
     };
 

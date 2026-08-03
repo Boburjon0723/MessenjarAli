@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { useNotification } from '@/context/NotificationContext';
+import { apiFetch } from '@/lib/api';
+import { getUser } from '@/lib/auth-storage';
 
 export default function CommunitiesList() {
     const { showSuccess } = useNotification();
@@ -16,7 +18,7 @@ export default function CommunitiesList() {
     ];
 
     useEffect(() => {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user: any = getUser() || {};
         setMyUser(user);
         if (user.wiloyat) setSelectedRegion(user.wiloyat);
     }, []);
@@ -24,15 +26,11 @@ export default function CommunitiesList() {
     const fetchCommunities = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            let url = API_URL + '/api/chats/communities?';
+            let url = '/api/chats/communities?';
             if (selectedRegion) url += 'region=' + encodeURIComponent(selectedRegion) + '&';
             if (searchQuery) url += 'q=' + encodeURIComponent(searchQuery) + '&';
 
-            const res = await fetch(url, {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
+            const res = await apiFetch(url);
             if (res.ok) setCommunities(await res.json());
         } catch (e) {
             console.error(e);
@@ -47,11 +45,8 @@ export default function CommunitiesList() {
 
     const handleJoin = async (communityId: string) => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(API_URL + '/api/chats/communities/' + communityId + '/join', {
+            const res = await apiFetch('/api/chats/communities/' + communityId + '/join', {
                 method: 'POST',
-                headers: { 'Authorization': 'Bearer ' + token }
             });
             if (res.ok) {
                 showSuccess("Guruhga muvaffaqiyatli qo'shildingiz!");

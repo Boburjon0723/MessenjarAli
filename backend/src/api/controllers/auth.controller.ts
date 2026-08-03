@@ -3,35 +3,33 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { pool } from '../../config/database';
 import { UserModel } from '../../models/postgres/User';
-
-const getJwtSecrets = () => {
-    const accessTokenSecret = process.env.JWT_SECRET;
-    const refreshTokenSecret = process.env.JWT_REFRESH_SECRET;
-    if (!accessTokenSecret || !refreshTokenSecret) {
-        throw new Error('JWT secrets are not configured');
-    }
-    if (
-        process.env.NODE_ENV === 'production' &&
-        (accessTokenSecret.length < 32 || refreshTokenSecret.length < 32)
-    ) {
-        throw new Error('JWT secrets are too short for production');
-    }
-    return { accessTokenSecret, refreshTokenSecret };
-};
+import {
+    accessTokenExpiresIn,
+    getJwtSecrets,
+    JWT_SIGN_OPTS,
+    JWT_VERIFY_OPTS,
+    randomDigits,
+    randomLinkCode,
+    refreshTokenExpiresIn,
+    timingSafeEqualString,
+} from '../../config/security';
+import { clearSessionCookies, setSessionCookies } from '../../config/authCookies';
+import { extractAccessToken, userIdFromToken } from '../../middleware/auth.middleware';
+import { recordSecurityAudit } from '../../services/securityAudit.service';
 
 const generateTokens = async (userId: string, phone: string, role: string, isExpert: boolean = false, name: string = '', surname: string = '') => {
     const { accessTokenSecret, refreshTokenSecret } = getJwtSecrets();
 
     const accessToken = jwt.sign(
-        { id: userId, phone, role, isExpert, name, surname },
+        { sub: userId, id: userId, phone, role, isExpert, name, surname },
         accessTokenSecret,
-        { expiresIn: (process.env.NEXT_PUBLIC_JWT_EXPIRES_IN || '1d') as any }
+        { ...JWT_SIGN_OPTS, expiresIn: accessTokenExpiresIn() as jwt.SignOptions['expiresIn'] }
     );
 
     const refreshToken = jwt.sign(
-        { id: userId },
+        { sub: userId, id: userId },
         refreshTokenSecret,
-        { expiresIn: (process.env.NEXT_PUBLIC_JWT_REFRESH_EXPIRES_IN || '7d') as any }
+        { ...JWT_SIGN_OPTS, expiresIn: refreshTokenExpiresIn() as jwt.SignOptions['expiresIn'] }
     );
 
     // Hash the refresh token before storing it for extra security
@@ -76,19 +74,9 @@ const insertAdminLoginAudit = async (
     }
 };
 
-const generateResetCode = () => {
-    const num = Math.floor(100000 + Math.random() * 900000); // 6-digit
-    return String(num);
-};
+const generateResetCode = () => randomDigits(6);
 
-const generateTelegramLinkCode = () => {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let linkCode = '';
-    for (let i = 0; i < 6; i++) {
-        linkCode += alphabet[Math.floor(Math.random() * alphabet.length)];
-    }
-    return linkCode;
-};
+const generateTelegramLinkCode = () => randomLinkCode(6);
 
 /** Backend → Telegram xizmati (parol tiklash yoki ro‘yxatdan keyingi OTP) */
 async function sendOtpViaBot(chatId: number, code: string, purpose: 'reset' | 'registration'): Promise<void> {
@@ -217,10 +205,13 @@ export const login = async (req: Request, res: Response) => {
             });
         }
 
+        const csrfToken = setSessionCookies(res, accessToken);
+
         res.json({
             message: 'Login successful',
             token: accessToken,
             refreshToken,
+            csrfToken,
             user: {
                 id: user.id,
                 phone: user.phone,
@@ -253,7 +244,7 @@ export const linkTelegram = async (req: Request, res: Response) => {
         const linkTokenHeader = req.headers['x-bot-link-token'] as string | undefined;
         const expectedToken = process.env.BOT_LINK_TOKEN;
 
-        if (!expectedToken || linkTokenHeader !== expectedToken) {
+        if (!expectedToken || !timingSafeEqualString(linkTokenHeader, expectedToken)) {
             return res.status(403).json({ message: 'Forbidden' });
         }
 
@@ -305,12 +296,7 @@ export const startTelegramLink = async (req: Request, res: Response) => {
             return res.status(401).json({ message: 'Unauthorized' });
         }
 
-        // 6-razryadli harf/raqamli kod
-        const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-        let linkCode = '';
-        for (let i = 0; i < 6; i++) {
-            linkCode += alphabet[Math.floor(Math.random() * alphabet.length)];
-        }
+        const linkCode = generateTelegramLinkCode();
 
         await pool.query('UPDATE users SET telegram_link_code = $1 WHERE id = $2', [linkCode, userId]);
 
@@ -477,10 +463,13 @@ export const verifyRegistrationPhone = async (req: Request, res: Response) => {
             user.surname
         );
 
+        const csrfToken = setSessionCookies(res, accessToken);
+
         return res.json({
             success: true,
             token: accessToken,
             refreshToken,
+            csrfToken,
             user: {
                 id: user.id,
                 phone: user.phone,
@@ -579,12 +568,13 @@ export const refresh = async (req: Request, res: Response) => {
 
         let decoded: any;
         try {
-            decoded = jwt.verify(refreshToken, refreshTokenSecret);
+            decoded = jwt.verify(refreshToken, refreshTokenSecret, JWT_VERIFY_OPTS);
         } catch (err) {
             return res.status(403).json({ message: 'Invalid refresh token' });
         }
 
-        const user = await UserModel.findById(decoded.id);
+        const userId = decoded.sub || decoded.id;
+        const user = await UserModel.findById(userId);
         if (!user || !user.refresh_token) {
             return res.status(403).json({ message: 'Token expired or invalid' });
         }
@@ -596,12 +586,49 @@ export const refresh = async (req: Request, res: Response) => {
 
         const tokens = await generateTokens(user.id, user.phone, user.role, user.is_expert, user.name, user.surname);
 
+        const csrfToken = setSessionCookies(res, tokens.accessToken);
+
         res.json({
             accessToken: tokens.accessToken,
-            refreshToken: tokens.refreshToken
+            refreshToken: tokens.refreshToken,
+            csrfToken,
         });
     } catch (error) {
         console.error('Refresh error:', error);
         res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+/** Clear HttpOnly session cookies; invalidate refresh when a valid access token is present. */
+export const logout = async (req: Request, res: Response) => {
+    try {
+        const token = extractAccessToken(req);
+        let auditUserId: string | null = null;
+        if (token) {
+            try {
+                const decoded = jwt.verify(token, getJwtSecrets().accessTokenSecret, JWT_VERIFY_OPTS) as {
+                    sub?: string;
+                    id?: string;
+                };
+                const userId = userIdFromToken(decoded);
+                if (userId) {
+                    auditUserId = userId;
+                    await UserModel.update(userId, { refresh_token: null });
+                }
+            } catch {
+                // expired/invalid token — still clear cookies
+            }
+        }
+        clearSessionCookies(res);
+        recordSecurityAudit(req, {
+            event: 'logout',
+            userId: auditUserId,
+            success: true,
+        });
+        return res.json({ success: true });
+    } catch (error) {
+        console.error('Logout error:', error);
+        clearSessionCookies(res);
+        return res.status(500).json({ message: 'Internal server error' });
     }
 };

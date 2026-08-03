@@ -12,6 +12,7 @@ import {
     getPlatformSettings,
     updatePlatformSettings,
     getAdminLoginAudit,
+    getSecurityEventAudit,
     getDisputedDeals,
     resolveDispute,
     verifyUserPhone,
@@ -34,6 +35,7 @@ router.post('/users/verify', verifyUserPhone);
 router.get('/transactions', getAllTransactions);
 
 router.get('/logins', getAdminLoginAudit);
+router.get('/security-events', getSecurityEventAudit);
 
 router.get('/experts/pending', getPendingExperts);
 router.get('/experts/verified', getVerifiedExperts);

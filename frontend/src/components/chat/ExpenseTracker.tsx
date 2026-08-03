@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLanguage } from '@/context/LanguageContext';
-import { translations } from '@/lib/translations';
 import { GlassCard } from '../ui/GlassCard';
 import { AnimatedModal } from '../ui/AnimatedModal';
+import { apiFetch } from '@/lib/api';
 import {
     Plus,
     Trash2,
@@ -57,27 +57,18 @@ export default function ExpenseTracker() {
 
     const fetchExpenses = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
             // Format dates for the month
             const startStr = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1).toISOString().split('T')[0];
             const endStr = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0).toISOString().split('T')[0];
 
-            const res = await fetch(`${API_URL}/api/expenses?startDate=${startStr}&endDate=${endStr}`, {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
+            const res = await apiFetch(`/api/expenses?startDate=${startStr}&endDate=${endStr}`);
             if (res.ok) setExpenses(await res.json());
         } catch (e) { console.error(e); }
     }, [viewDate]);
 
     const fetchStats = useCallback(async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(API_URL + '/api/expenses/stats', {
-                headers: { 'Authorization': 'Bearer ' + token }
-            });
+            const res = await apiFetch('/api/expenses/stats');
             if (res.ok) setStats(await res.json());
         } catch (e) { console.error(e); }
     }, []);
@@ -92,11 +83,8 @@ export default function ExpenseTracker() {
         if (!formData.amount) return;
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(API_URL + '/api/expenses', {
+            const res = await apiFetch('/api/expenses', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + token },
                 body: JSON.stringify({ ...formData, amount: parseFloat(formData.amount) })
             });
             if (res.ok) {
@@ -115,11 +103,8 @@ export default function ExpenseTracker() {
     const confirmDelete = async () => {
         if (!confirmModal.id) return;
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(API_URL + '/api/expenses/' + confirmModal.id, {
+            const res = await apiFetch('/api/expenses/' + confirmModal.id, {
                 method: 'DELETE',
-                headers: { 'Authorization': 'Bearer ' + token }
             });
             if (res.ok) {
                 fetchExpenses();

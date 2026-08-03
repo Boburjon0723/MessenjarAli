@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { GlassCard } from '../ui/GlassCard';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { getUser, setUser } from '@/lib/auth-storage';
+import { apiFetch } from '@/lib/api';
 
 interface ProfileEditorProps {
     onClose: () => void;
@@ -22,7 +22,6 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
     const { socket } = useSocket();
     const { showSuccess, showError } = useNotification();
     const { t } = useLanguage();
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
     // Basic Info
     const [name, setName] = useState("");
@@ -81,19 +80,13 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
         };
 
         // 1) Tez yuklanish uchun localStorage
-        const cachedUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const cachedUser = getUser() || {};
         applyProfile(cachedUser);
 
         // 2) Eng so'nggi ma'lumotni backenddan olish
         const fetchProfile = async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) return;
-                const res = await fetch(`${API_URL}/api/users/me`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
+                const res = await apiFetch('/api/users/me');
                 if (!res.ok) return;
                 const data = await res.json();
                 applyProfile(data);
@@ -105,7 +98,7 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
         };
 
         fetchProfile();
-    }, [API_URL]);
+    }, []);
 
     // Socket orqali real-time profil yangilanishi (masalan, admin tasdiqlaganda)
     useEffect(() => {
@@ -113,13 +106,7 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
 
         const handleProfileUpdated = async () => {
             try {
-                const token = localStorage.getItem('token');
-                if (!token) return;
-                const res = await fetch(`${API_URL}/api/users/me`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
+                const res = await apiFetch('/api/users/me');
                 if (!res.ok) return;
                 const data = await res.json();
                 const oldUser = getUser() || {};
@@ -164,7 +151,7 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
         return () => {
             socket.off('profile_updated', handleProfileUpdated);
         };
-    }, [socket, API_URL, onSave]);
+    }, [socket, onSave]);
 
     const handleSave = async () => {
         setError(null);
@@ -226,13 +213,8 @@ export default function ProfileEditor({ onClose, onSave }: ProfileEditorProps) {
         };
 
         try {
-            const token = localStorage.getItem('token');
-            const res = await fetch(`${API_URL}/api/users/me`, {
+            const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(payload)
             });
 

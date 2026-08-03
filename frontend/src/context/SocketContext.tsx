@@ -62,6 +62,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
             /** Faqat `websocket` ba’zi proxy / CDN da ulanishni sindiradi; server `polling` ni ham qo‘llab-quvvatlaydi */
             transports: ['polling', 'websocket'],
             autoConnect: true,
+            withCredentials: true,
+            // Explicit token for mobile/Electron; HttpOnly cookie is a server-side fallback.
             auth: { token },
             reconnection: true,
             reconnectionDelay: 1000,

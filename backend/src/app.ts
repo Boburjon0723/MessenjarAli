@@ -29,8 +29,10 @@ import reviewRoutes from './api/routes/review.routes';
 import desktopRoutes from './api/routes/desktop.routes';
 import botRoutes from './api/routes/bot.routes';
 import botApiRoutes from './api/routes/botApi.routes';
+import settlementRoutes from './api/routes/settlement.routes';
+import proxyRoutes from './api/routes/proxy.routes';
 import { setupSwagger } from './config/swagger';
-
+import { csrfProtect } from './middleware/csrf.middleware';
 
 const app = express();
 
@@ -41,64 +43,79 @@ const parseOriginList = (raw: string | undefined): string[] =>
         .filter(Boolean);
 
 const httpCorsOrigins = parseOriginList(process.env.CORS_ORIGINS);
+const isProd = process.env.NODE_ENV === 'production';
 
 const isOriginAllowed = (origin: string): boolean => {
     if (httpCorsOrigins.length === 0) {
-        // In dev/test we allow browser origins by default for easier local setup.
-        return process.env.NODE_ENV !== 'production';
+        // Dev only — production requires explicit CORS_ORIGINS (boot-validated)
+        return !isProd;
     }
-    
-    // Direct match
-    if (httpCorsOrigins.includes(origin)) return true;
-    
-    // Allow any Vercel deployment (previews, branches, etc.)
-    if (origin.endsWith('.vercel.app')) return true;
-    
-    return false;
+    return httpCorsOrigins.includes(origin);
 };
 
-
-// Behind Railway / reverse proxy: trust X-Forwarded-* headers
 app.set('trust proxy', 1);
 
-// Middleware
-app.use(express.json({ limit: '32mb' }));
-app.use(express.urlencoded({ extended: true, limit: '32mb' }));
-app.use(cors({
-    origin: (origin, callback) => {
-        // Non-browser clients (no Origin header) are allowed.
-        if (!origin) return callback(null, true);
-        if (isOriginAllowed(origin)) return callback(null, true);
-        
-        console.warn(`[CORS REJECTED] Origin: "${origin}" is not in the allowed list:`, httpCorsOrigins);
-        
-        return callback(new Error('CORS origin is not allowed'));
-    },
+app.use(express.json({ limit: '2mb' }));
+app.use(express.urlencoded({ extended: true, limit: '2mb' }));
+app.use(
+    cors({
+        origin: (origin, callback) => {
+            if (!origin) return callback(null, true);
+            if (isOriginAllowed(origin)) return callback(null, true);
+            console.warn(`[CORS REJECTED] Origin: "${origin}"`);
+            return callback(new Error('CORS origin is not allowed'));
+        },
+        credentials: true,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+        allowedHeaders: [
+            'Content-Type',
+            'Authorization',
+            'X-Requested-With',
+            'Accept',
+            'X-Bot-Token',
+            'X-Bot-Link-Token',
+            'X-Bot-Control-Token',
+            'X-CSRF-Token',
+        ],
+    })
+);
 
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-Bot-Token']
-}));
-
-app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-    contentSecurityPolicy: false,
-    crossOriginEmbedderPolicy: false,
-}));
+app.use(
+    helmet({
+        crossOriginResourcePolicy: { policy: 'cross-origin' },
+        contentSecurityPolicy: {
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'", "'unsafe-inline'"],
+                styleSrc: ["'self'", "'unsafe-inline'"],
+                imgSrc: ["'self'", 'data:'],
+                connectSrc: ["'self'"],
+                objectSrc: ["'none'"],
+                baseUri: ["'none'"],
+                frameAncestors: ["'none'"],
+            },
+        },
+        crossOriginEmbedderPolicy: false,
+        hsts: isProd ? { maxAge: 31536000, includeSubDomains: true, preload: true } : false,
+    })
+);
+app.use((_req, res, next) => {
+    res.setHeader('Permissions-Policy', 'geolocation=(), payment=(), usb=()');
+    next();
+});
+app.use(csrfProtect);
 app.use(globalLimiter);
-app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'dev'));
+app.use(morgan(isProd ? 'tiny' : 'dev'));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
-// Swagger Documentation
-setupSwagger(app);
+if (!isProd || process.env.SWAGGER_ENABLED === 'true') {
+    setupSwagger(app);
+}
 
-
-// Diagnostic Route
 app.get('/api/ping', (req, res) => {
     res.json({ status: 'ok', time: new Date().toISOString() });
 });
 
-// Routes
 app.use('/api', healthRoutes);
 app.use('/api', authRoutes);
 app.use('/api/token', tokenRoutes);
@@ -124,8 +141,9 @@ app.use('/api/reviews', reviewRoutes);
 app.use('/api', desktopRoutes);
 app.use('/api', botRoutes);
 app.use('/api', botApiRoutes);
+app.use('/api/settlement/v1', settlementRoutes);
+app.use('/api', proxyRoutes);
 
-// 404 handler
 app.use((req, res) => {
     res.status(404).json({ message: 'Route not found' });
 });

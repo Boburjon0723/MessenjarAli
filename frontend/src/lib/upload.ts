@@ -1,4 +1,4 @@
-import { getToken } from './auth-storage';
+import { getToken, getCsrfToken } from './auth-storage';
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
 
@@ -16,10 +16,15 @@ export const uploadFileWithProgress = (
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
         const token = typeof window !== 'undefined' ? getToken() : null;
+        const csrf = getCsrfToken();
 
         xhr.open('POST', `${API_URL}${endpoint}`, true);
+        xhr.withCredentials = true;
         if (token) {
             xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+        }
+        if (csrf) {
+            xhr.setRequestHeader('X-CSRF-Token', csrf);
         }
 
         xhr.upload.onprogress = (event) => {
@@ -28,7 +33,7 @@ export const uploadFileWithProgress = (
                 onProgress({
                     loaded: event.loaded,
                     total: event.total,
-                    percent
+                    percent,
                 });
             }
         };
@@ -37,7 +42,7 @@ export const uploadFileWithProgress = (
             if (xhr.status >= 200 && xhr.status < 300) {
                 try {
                     resolve(JSON.parse(xhr.responseText));
-                } catch (e) {
+                } catch {
                     resolve(xhr.responseText);
                 }
             } else {
@@ -51,5 +56,3 @@ export const uploadFileWithProgress = (
         xhr.send(formData);
     });
 };
-
-

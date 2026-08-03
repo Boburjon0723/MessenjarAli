@@ -5,11 +5,12 @@ import { MessageModel } from '../../models/postgres/Message';
 import { pool } from '../../config/database';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import { bucket } from '../../config/firebase';
 
 async function uploadToFirebase(file: any): Promise<string> {
-    const fileExt = path.extname(file.originalname);
-    const fileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}${fileExt}`;
+    const fileExt = path.extname(file.originalname).toLowerCase().slice(0, 16);
+    const fileName = `${crypto.randomUUID()}${fileExt}`;
     const filePath = fileName;
 
     const fileUpload = bucket.file(filePath);
@@ -201,8 +202,13 @@ export const uploadFile = async (req: Request, res: Response): Promise<void> => 
 
 export const streamFile = async (req: Request, res: Response): Promise<void> => {
     try {
+        const { safeUploadPath } = await import('../../middleware/upload.middleware');
         const filename = req.params.filename as string;
-        const filePath = path.join(__dirname, '../../../../uploads', filename);
+        const filePath = safeUploadPath(filename);
+        if (!filePath) {
+            res.status(400).json({ error: 'Invalid filename' });
+            return;
+        }
 
         if (!fs.existsSync(filePath)) {
             res.status(404).json({ error: 'File not found' });

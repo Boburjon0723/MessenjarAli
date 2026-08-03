@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { X, Eraser, Trash2, Pen, ChevronUp, ChevronRight, ZoomIn, ZoomOut, Move } from 'lucide-react';
 import { useNotification } from '@/context/NotificationContext';
+import { apiFetch } from '@/lib/api';
 
 interface LiveWhiteboardProps {
     socket: any;
@@ -345,9 +346,8 @@ export function LiveWhiteboard({ socket, sessionId, isMentor, onClose, isOverlay
                                         if (!canvasRef.current) return;
                                         const dataUrl = canvasRef.current.toDataURL('image/png');
                                         try {
-                                            await fetch('/api/specialists/whiteboard/snapshot', {
+                                            await apiFetch('/api/specialists/whiteboard/snapshot', {
                                                 method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({
                                                     session_id: sessionId,
                                                     snapshot_data: dataUrl,

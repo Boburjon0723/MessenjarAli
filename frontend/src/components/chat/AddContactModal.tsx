@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { AnimatedModal } from '../ui/AnimatedModal';
 import { X, User, Phone } from 'lucide-react';
+import { apiFetch } from '@/lib/api';
 
 interface AddContactModalProps {
     open: boolean;
@@ -37,13 +38,8 @@ export default function AddContactModal({ open, onClose, onStartChat }: AddConta
         setError('');
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
             // 1. Search for user BY PHONE STRICTLY
-            const searchRes = await fetch(`${API_URL}/api/users/search?phone=${encodeURIComponent(phoneNumber)}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const searchRes = await apiFetch(`/api/users/search?phone=${encodeURIComponent(phoneNumber)}`);
 
             if (!searchRes.ok) throw new Error('Qidiruvda xato');
             const users = await searchRes.json();
@@ -57,12 +53,8 @@ export default function AddContactModal({ open, onClose, onStartChat }: AddConta
             const foundUser = users[0];
 
             // 2. Add to contacts
-            const saveRes = await fetch(`${API_URL}/api/users/contacts`, {
+            const saveRes = await apiFetch('/api/users/contacts', {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({
                     contactUserId: foundUser.id,
                     name: name,

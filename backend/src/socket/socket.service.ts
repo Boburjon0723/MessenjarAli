@@ -7,6 +7,7 @@ import { UserModel } from '../models/postgres/User';
 import { pool } from '../config/database';
 import { NotificationService } from '../services/notification.service';
 import { safeDelCache, addUserToOnline, removeUserFromOnline } from '../config/redis';
+import { authCookieName, getCookieFromHeader } from '../config/authCookies';
 
 
 async function getJoinerProfileForSession(userId: string | undefined) {
@@ -102,7 +103,10 @@ export class SocketService {
     private initialize() {
         this.io.use((socket: Socket, next) => {
             try {
-                const token = socket.handshake.auth.token || socket.handshake.query.token;
+                const explicitToken = socket.handshake.auth.token || socket.handshake.query.token;
+                const cookieToken = getCookieFromHeader(socket.handshake.headers.cookie, authCookieName());
+                // Explicit token keeps mobile/Electron compatibility; browser can rely on HttpOnly cookie.
+                const token = explicitToken || cookieToken;
                 if (!token) {
                     return next(new Error('Authentication error: Token required'));
                 }
@@ -110,9 +114,11 @@ export class SocketService {
                 const secret = process.env.JWT_SECRET;
                 if (!secret) return next(new Error('Server configuration error'));
 
-                jwt.verify(token as string, secret, (err: any, decoded: any) => {
+                jwt.verify(token as string, secret, { algorithms: ['HS256'] }, (err: any, decoded: any) => {
                     if (err) return next(new Error('Authentication error: Invalid token'));
-                    (socket as AuthenticatedSocket).user = decoded;
+                    const id = decoded?.sub || decoded?.id;
+                    if (!id) return next(new Error('Authentication error: Invalid token payload'));
+                    (socket as AuthenticatedSocket).user = { ...decoded, id };
                     next();
                 });
             } catch (error) {
@@ -1016,25 +1022,9 @@ export class SocketService {
                 // Assuming TokenBalance interface aligns with response
                 responseContent = `Your balance:\nAvailable: ${balance.balance} MALI\nLocked: ${balance.locked_balance} MALI`;
             } else if (command === '/transfer') {
-                // Usage: /transfer <receiverId> <amount>
-                if (args.length < 3) {
-                    responseContent = 'Usage: /transfer <receiverId> <amount>';
-                } else {
-                    const receiverId = args[1];
-                    const amount = parseFloat(args[2]);
-                    if (isNaN(amount)) {
-                        responseContent = 'Invalid amount. Usage: /transfer <receiverId> <amount>';
-                    } else {
-                        // Assuming Service method returns transaction details
-                        await TokenService.transferTokens({
-                            senderId: userId,
-                            receiverId: receiverId,
-                            amount: amount,
-                            note: 'Via Bot'
-                        });
-                        responseContent = `Successfully transferred ${amount} MALI to ${receiverId}.`;
-                    }
-                }
+                // PIN-protected HTTP /api/token/transfer only — socket bypass removed
+                responseContent =
+                    'Socket orqali transfer o‘chirilgan. PIN bilan /api/token/transfer dan foydalaning.';
             } else if (command === '/book') {
                 const services = await ServiceModel.findAll(5);
                 const serviceList = services.map(s => `- ${s.title} (${s.price_mali} MALI) ID: ${s.id}`).join('\n');

@@ -9,6 +9,7 @@ import { TranslationKeys } from "@/lib/translations";
 
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
 import { setAuth } from "@/lib/auth-storage";
+import { toFullPhone, validateRegisterInput } from "@/lib/auth-validation";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 
@@ -117,30 +118,23 @@ export default function RegisterPage() {
     setError("");
     setSuccess("");
 
-    if (!name || !surname || !phone || !password || !confirmPassword || !age) {
-      setError(t('filling_all_fields_req') as TranslationKeys);
-      return;
-    }
-
-    if (password.length < 6) {
-      setError(t('error_password_min') as TranslationKeys);
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      setError(t('error_passwords_not_match') as TranslationKeys);
-      return;
-    }
-
-    const parsedAge = parseInt(age, 10);
-    if (Number.isNaN(parsedAge) || parsedAge < 12) {
-      setError(t('error_age_invalid') as TranslationKeys);
+    const registerError = validateRegisterInput({
+      name,
+      surname,
+      phone,
+      password,
+      confirmPassword,
+      age,
+    });
+    if (registerError) {
+      setError(t(registerError) as TranslationKeys);
       return;
     }
 
     setLoading(true);
 
-    const fullPhone = `${countryCode}${phone.replace(/\D/g, "")}`;
+    const fullPhone = toFullPhone(countryCode, phone);
+    const parsedAge = Number.parseInt(age, 10);
 
     try {
       const res = await fetch(`${API_URL}/api/auth/register`, {
@@ -192,6 +186,7 @@ export default function RegisterPage() {
           phone: registeredPhone,
           code: otpCode.trim(),
         }),
+        credentials: "include",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -199,7 +194,7 @@ export default function RegisterPage() {
         return;
       }
       if (data.token && data.refreshToken && data.user) {
-        setAuth(data.token, data.refreshToken, data.user as Record<string, unknown>, true);
+        setAuth(data.token, data.refreshToken, data.user as Record<string, unknown>, true, data.csrfToken);
         router.push("/messages");
       }
     } catch {

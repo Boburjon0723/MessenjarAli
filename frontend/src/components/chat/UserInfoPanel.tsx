@@ -16,9 +16,8 @@ interface UserInfoPanelProps {
 }
 
 export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
-    const { t, language } = useLanguage();
+    const { t } = useLanguage();
     const { showError, showSuccess } = useNotification();
-    const [loading, setLoading] = useState(false);
     const [fullUserDetails, setFullUserDetails] = useState<any>(null);
     const [stats, setStats] = useState({ linksCount: 0, voiceCount: 0, commonGroupsCount: 0 });
     const [isBlocked, setIsBlocked] = useState(false);
@@ -74,7 +73,6 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                 lastFetchKeyRef.current = key;
                 setListingIntro(true);
                 setFullUserDetails({ ...chat.otherUser });
-                setLoading(false);
                 setImgError(false);
                 setEditForm({
                     name: chat.otherUser.name || '',
@@ -110,16 +108,11 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
 
     const fetchUserDetails = async () => {
         if (!chat) return;
-        setLoading(true);
         setImgError(false);
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
-            const res = await fetch(`${API_URL}/api/users/${targetId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/users/${targetId}`);
             if (res.ok) {
                 const data = await res.json();
                 setFullUserDetails(data);
@@ -128,19 +121,13 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
             }
         } catch (err) {
             console.error("Failed to fetch user details:", err);
-        } finally {
-            setLoading(false);
         }
     };
 
     const fetchChatStats = async () => {
         if (!chat?.id || chat.type !== 'private') return;
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/users/chat-stats/${chat.id}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/users/chat-stats/${chat.id}`);
             if (res.ok) {
                 const data = await res.json();
                 setStats(data);
@@ -153,16 +140,10 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     const handleBlock = async () => {
         setActionLoading('block');
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
-            const res = await fetch(`${API_URL}/api/users/${isBlocked ? 'unblock' : 'block'}`, {
+            const res = await apiFetch(`/api/users/${isBlocked ? 'unblock' : 'block'}`, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                },
                 body: JSON.stringify({ targetId })
             });
             if (res.ok) {
@@ -215,13 +196,10 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         if (!ok) return;
         setActionLoading('delete');
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
             const targetId = getPrivateChatPeerUserId(chat);
             if (!targetId) return;
-            const res = await fetch(`${API_URL}/api/users/contacts/${targetId}`, {
+            const res = await apiFetch(`/api/users/contacts/${targetId}`, {
                 method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 onClose?.();

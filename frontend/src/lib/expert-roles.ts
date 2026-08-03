@@ -9,6 +9,19 @@ export const MENTOR_PROFESSIONS = new Set([
   'Dasturchi mentor',
 ]);
 
+const MENTOR_PROFESSION_PATTERN =
+  /\boqituvchi\b|mentor|teacher|tutor|ustoz|ustoz\s|repetitor|professor|препод|наставник|репетитор/;
+const MENTOR_SPECIALTY_PATTERN = /dasturchi\s*mentor|startap\s*mentor/;
+const LEGAL_PROFESSION_PATTERN = /advok|yurist|huquq|jurist|notarius|lawyer|attorne|advocate/;
+const PSYCHOLOGY_TEXT_PATTERN =
+  /psixolog|psixoterap|psycholog|klinik psix|oila psix|bolalar psix|terapevt|psixiatr|psixosomat|mental|depressiya|\bstress\b|trevoga|anxiety/i;
+const LEGAL_TEXT_PATTERN =
+  /advokat|advakat|yurist|lawyer|huquqshunos|jurist|notarius|soliq maslahatchi|migratsiya|mehnat huquqi|advocate|attorney|legal\b|compliance|адвокат|юрист/i;
+const MENTOR_TEXT_PATTERN =
+  /o['']?qituvchi|mentor|teacher|tutor|startap|dasturchi\s*mentor|\blesson\b|\bustoz\b|repetitor|professor|препод|наставник|репетитор/i;
+const CONSULT_TEXT_PATTERN =
+  /maslahat|career coach|dietolog|shifokor|nutrient|reabilitatsiya|konferans|biznes maslahat|consultant|consulting/i;
+
 export function isMentorProfession(prof: string | undefined | null): boolean {
   if (!prof || typeof prof !== 'string') return false;
   const t = prof.trim();
@@ -16,12 +29,8 @@ export function isMentorProfession(prof: string | undefined | null): boolean {
   const k = professionKey(t);
   if (!k) return false;
   /** DBda turli apostrof / dash: "O‘qituvchi", "Matematika o‘qituvchisi" */
-  if (
-    /\boqituvchi\b|mentor|teacher|tutor|ustoz|ustoz\s|repetitor|professor|препод|наставник|репетитор/.test(k)
-  ) {
-    return true;
-  }
-  if (/dasturchi\s*mentor|startap\s*mentor/.test(k)) return true;
+  if (MENTOR_PROFESSION_PATTERN.test(k)) return true;
+  if (MENTOR_SPECIALTY_PATTERN.test(k)) return true;
   return false;
 }
 
@@ -53,7 +62,7 @@ export function isLegalProfession(prof: string | undefined | null): boolean {
   const k = professionKey(prof);
   if (!k) return false;
   if (LEGAL_PROFESSION_KEYS.has(k)) return true;
-  if (/advok|yurist|huquq|jurist|notarius|lawyer|attorne|advocate/.test(k)) return true;
+  if (LEGAL_PROFESSION_PATTERN.test(k)) return true;
   return false;
 }
 
@@ -184,36 +193,20 @@ export function getExpertPanelMode(expert: {
   const bio = (expert.bio_expert || expert.specialty_desc || '').toLowerCase();
   const text = `${p} ${bio}`;
 
-  if (
-    /psixolog|psixoterap|psycholog|klinik psix|oila psix|bolalar psix|terapevt|psixiatr|psixosomat|mental|depressiya|\bstress\b|trevoga|anxiety/i.test(
-      text
-    )
-  ) {
+  if (PSYCHOLOGY_TEXT_PATTERN.test(text)) {
     return 'psychology';
   }
 
-  if (
-    /advokat|advakat|yurist|lawyer|huquqshunos|jurist|notarius|soliq maslahatchi|migratsiya|mehnat huquqi|advocate|attorney|legal\b|compliance|адвокат|юрист/i.test(
-      text
-    )
-  ) {
+  if (LEGAL_TEXT_PATTERN.test(text)) {
     return 'legal';
   }
 
   /** Mentor konteksti: "coach" qo'shilmagan — "career coach" konsultatsiyada qolishi kerak */
-  if (
-    /o['']?qituvchi|mentor|teacher|tutor|startap|dasturchi\s*mentor|\blesson\b|\bustoz\b|repetitor|professor|препод|наставник|репетитор/i.test(
-      text
-    )
-  ) {
+  if (MENTOR_TEXT_PATTERN.test(text)) {
     return 'mentor';
   }
 
-  if (
-    /maslahat|career coach|dietolog|shifokor|nutrient|reabilitatsiya|konferans|biznes maslahat|consultant|consulting/i.test(
-      text
-    )
-  ) {
+  if (CONSULT_TEXT_PATTERN.test(text)) {
     return 'consult';
   }
 

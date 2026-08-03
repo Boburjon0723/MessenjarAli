@@ -1,10 +1,8 @@
-import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { GlassCard } from '../ui/GlassCard';
-import { MessageBubble } from './MessageBubble';
 import SendCoinModal from './SendCoinModal';
 import MediaUploadModal from './MediaUploadModal';
 import MediaViewerOverlay from './MediaViewerOverlay';
-import LiveKitRoomWrapper from './LiveKitRoomWrapper';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
@@ -15,6 +13,13 @@ import { getUser } from '@/lib/auth-storage';
 import { getExpertPanelMode } from '@/lib/expert-roles';
 import { getExpertComplianceNotice } from '@/lib/expert-compliance-copy';
 import ListingDealBar from './ListingDealBar';
+import ChatForwardModal from './ChatForwardModal';
+import ChatPreCallModal from './ChatPreCallModal';
+import ChatWindowHeader from './ChatWindowHeader';
+import ChatComposer from './ChatComposer';
+import ChatCallOverlay from './ChatCallOverlay';
+import ChatMessageList from './ChatMessageList';
+import ChatWindowBanners from './ChatWindowBanners';
 import { summarizeChat } from '@/lib/summarize';
 import { maliDB, OfflineMessage } from '@/lib/indexeddb';
 import {
@@ -23,7 +28,6 @@ import {
     mapApiMessagesToLocal,
     sortChatMessagesLocal,
     mergeFetchedChatMessages,
-    parseCreatedToMs,
     normalizeChatMessage,
     mergeIncomingSocketMessage,
     socketMessageTargetsChat,
@@ -31,27 +35,9 @@ import {
     normalizeMessageType,
 } from '@/lib/chat-message-cache';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
-import { computeMessageContinuation } from '@/lib/chat-continuation';
 import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage } from '@/types/chat-message';
-
-/** Vaqtinchalik: `send_message` emit — merge loglari bilan birga lifecycle */
-function logChatEmitSend(payload: {
-    roomId?: unknown;
-    clientSideId?: unknown;
-    type?: unknown;
-    content?: unknown;
-}) {
-    const c = payload.content;
-    const contentPreview =
-        typeof c === 'string' ? (c.length > 100 ? `${c.slice(0, 100)}…` : c) : String(c ?? '');
-    chatDebug('emit send_message', {
-        roomId: payload.roomId,
-        clientSideId: payload.clientSideId ?? '(none)',
-        type: payload.type ?? 'text',
-        contentPreview,
-    });
-}
+import { logChatEmitSend, inferMessageTypeFromFile, parseMessageDate } from './chatWindowHelpers';
 import type {
     ChatRoom,
     ContactListItem,
@@ -63,29 +49,10 @@ import type {
 
 const INITIAL_MESSAGES: ChatMessage[] = [];
 
-/** Pastga avtomatik scroll: foydalanuvchi shu px dan yaqinroqda bo‘lsa */
+/** Pastga avtomatik scroll: foydalanuvchi shu px dan yaqinroqda boвЂlsa */
 const CHAT_NEAR_BOTTOM_PX = 72;
-/** Chat ichidagi calllar o‘chiq: faqat xizmat paneli orqali. */
+/** Chat ichidagi calllar oвЂchiq: faqat xizmat paneli orqali. */
 const CHAT_CALLS_ALLOWED = false;
-
-function inferMessageTypeFromFile(name?: string, mime?: string): 'image' | 'video' | 'voice' | 'file' {
-    const m = String(mime || '').toLowerCase();
-    if (m.startsWith('image/')) return 'image';
-    if (m.startsWith('video/')) return 'video';
-    if (m.startsWith('audio/')) return 'voice';
-
-    const n = String(name || '').toLowerCase();
-    if (/\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(n)) return 'image';
-    if (/\.(mp4|mov|webm|mkv|avi|m4v)$/.test(n)) return 'video';
-    if (/\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(n)) return 'voice';
-    return 'file';
-}
-
-function parseMessageDate(msg: { created_at?: unknown; createdAt?: unknown }): Date | null {
-    const ms = parseCreatedToMs(msg?.created_at ?? msg?.createdAt);
-    if (ms == null) return null;
-    return new Date(ms);
-}
 
 interface ChatWindowProps {
     chat?: ChatRoom;
@@ -95,7 +62,7 @@ interface ChatWindowProps {
     onMarkAsRead?: (chatId: string) => void;
     /** ChatCarouselPanel: karusel siljishi bilan ildiz fade ustma-ust tushmasin */
     suppressRootFade?: boolean;
-    /** Ikkita ChatWindow bir vaqtda (exit + active) bo‘lsa, faqat bittasiga socket obuna */
+    /** Ikkita ChatWindow bir vaqtda (exit + active) boвЂlsa, faqat bittasiga socket obuna */
     subscribeSocket?: boolean;
 }
 
@@ -654,7 +621,7 @@ export default function ChatWindow({
 
                 try {
                     if (sig.candidate !== undefined) {
-                        // ICE candidate — avval tekshirish (offer/answer dan keyin qo‘shiladi)
+                        // ICE candidate — avval tekshirish (offer/answer dan keyin qoвЂshiladi)
                         if (pcRef.current.remoteDescription?.type) {
                             await pcRef.current.addIceCandidate(
                                 new RTCIceCandidate(sig as RTCIceCandidateInit)
@@ -930,7 +897,7 @@ export default function ChatWindow({
     }, []);
 
     const messagesScrollRef = useRef<HTMLDivElement>(null);
-    /** State — UI; ref — messages effect dependency bo‘lmasin (aks holda tepaga scroll qilinsa effect qayta ishlab !hasAppended bilan pastga tortadi) */
+    /** State — UI; ref — messages effect dependency boвЂlmasin (aks holda tepaga scroll qilinsa effect qayta ishlab !hasAppended bilan pastga tortadi) */
     const [isNearBottom, setIsNearBottom] = useState(true);
     const isNearBottomRef = useRef(true);
     const [newMessagesWhileUp, setNewMessagesWhileUp] = useState(0);
@@ -979,7 +946,7 @@ export default function ChatWindow({
                 setNewMessagesWhileUp((c) => c + (messages.length - prevLen));
             }
         } else if (near) {
-            // Uzunlik o‘zgarmagan/yetakchi patch (o‘qilgan, optimistic): faqat foydalanuvchi allaqachon pastda bo‘lsa
+            // Uzunlik oвЂzgarmagan/yetakchi patch (oвЂqilgan, optimistic): faqat foydalanuvchi allaqachon pastda boвЂlsa
             scrollToBottom('auto');
             setNewMessagesWhileUp(0);
         }
@@ -999,7 +966,7 @@ export default function ChatWindow({
             clientSideId: m.clientSideId,
             created_at: m.created_at,
             sender: m.sender,
-            text: (m.text || '').length > 40 ? `${(m.text || '').slice(0, 40)}…` : (m.text || ''),
+            text: (m.text || '').length > 40 ? `${(m.text || '').slice(0, 40)}вЂ¦` : (m.text || ''),
         }));
         const key = JSON.stringify(items);
         if (key === lastDebugLast10KeyRef.current) return;
@@ -1168,7 +1135,7 @@ export default function ChatWindow({
         };
     }, [socket, chat?.id, subscribeSocket, markAsRead, showError, handleReceiveMessage]);
 
-    /** Bir xil tickda ikki marta chaqirish (masalan, g‘ayriixtiyoriy re-entrancy) oldini olish */
+    /** Bir xil tickda ikki marta chaqirish (masalan, gвЂayriixtiyoriy re-entrancy) oldini olish */
     const sendMessageReentrantGuardRef = useRef(false);
 
     const sendMessageRef = useRef<(textOverride?: string) => void | Promise<void>>(() => {});
@@ -1440,13 +1407,13 @@ export default function ChatWindow({
                 if (!text.includes(searchQuery.toLowerCase())) return false;
             }
 
-            // Type filter (legacy `img` → `image` bilan bir xil)
+            // Type filter (legacy `img` в†’ `image` bilan bir xil)
             const nt = normalizeMessageType(m.type);
             if (searchType === 'text' && nt !== 'text') return false;
             if (searchType === 'media' && !['image', 'video', 'voice'].includes(nt)) return false;
             if (searchType === 'files' && nt !== 'file') return false;
 
-            // Date filter — vaqt parse bo‘lmasa, san oralig‘ida xabarni yo‘qotmaymiz
+            // Date filter — vaqt parse boвЂlmasa, san oraligвЂida xabarni yoвЂqotmaymiz
             const created = parseMessageDate(m);
             if (searchDateFrom) {
                 if (!created) return true;
@@ -1552,385 +1519,95 @@ export default function ChatWindow({
             className={`flex-1 flex flex-col min-h-0 h-full overflow-hidden relative lg:glass-premium lg:rounded-3xl lg:border lg:border-white/10 ${suppressRootFade ? '' : 'animate-fade-in'}`}
         >
             {/* Header — tepada qotib turadi */}
-            <header className={`flex items-center justify-between border-b border-white/10 z-20 shrink-0 backdrop-blur-xl bg-white/5 transition-all duration-200 ${inputFocused ? 'py-2 px-3 lg:py-4 lg:px-4 lg:pt-4 pt-[max(1.25rem,env(safe-area-inset-top))]' : 'p-4 lg:pt-4 pt-[max(2rem,env(safe-area-inset-top))]'}`}>
-                {debugError && (
-                    <div className="absolute top-full left-0 right-0 bg-red-500/80 text-white text-[10px] p-1 text-center animate-shake">
-                        {debugError}
-                    </div>
-                )}
-                {isSelecting ? (
-                    <div className="flex items-center justify-between w-full">
-                        <div className="flex items-center gap-3">
-                            <button onClick={() => { setIsSelecting(false); setSelectedMessageIds([]); }} className="p-2 hover:bg-white/10 rounded-full transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                            <span className="text-white font-medium">{selectedMessageIds.length} {t('delete_messages')}</span>
-                        </div>
-                        {selectedMessageIds.length > 0 && (
-                            <button onClick={handleDeleteSelected} className="p-2 text-red-400 hover:bg-red-500/10 rounded-full transition-colors flex items-center gap-2 px-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                <span className="text-sm font-bold hidden sm:block">{t('delete_messages')}</span>
-                            </button>
-                        )}
-                    </div>
-                ) : (
-                    <>
-                        <div className="flex items-center gap-2">
-                            {onBack && (
-                                <button
-                                    onClick={onBack}
-                                    className="lg:hidden p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 hover:text-white transition-all active:scale-95"
-                                    aria-label="Back"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                                    </svg>
-                                </button>
-                            )}
-                            <div className="flex items-center gap-2 cursor-pointer group min-w-0 flex-1" onClick={onToggleInfo}>
-                                <div className="relative flex-shrink-0">
-                                    <div className={`rounded-full border-2 border-white/10 flex items-center justify-center text-white font-bold overflow-hidden transition-transform group-hover:scale-105 ${inputFocused ? 'w-8 h-8 lg:w-10 lg:h-10' : 'w-10 h-10'} ${isTrade ? 'bg-emerald-500' : 'bg-blue-600'}`}>
-                                        {(() => {
-                                            const avatar = chat.avatar || chat.avatar_url || chat.otherUser?.avatar || chat.otherUser?.avatar_url;
-                                            if (avatar && avatar !== 'null' && avatar !== '' && !headerImageError) {
-                                                const src = avatar.startsWith('http') || avatar.startsWith('data:')
-                                                    ? avatar
-                                                    : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
-                                                return <img src={src} className="w-full h-full object-cover" onError={() => setHeaderImageError(true)} alt="" />;
-                                            }
-                                            return displayName ? displayName[0].toUpperCase() : '?';
-                                        })()}
-                                    </div>
-                                    <div className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-[#1a1c20] ${isOnlineHeader ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-zinc-500'}`}></div>
-                                </div>
-                                <div>
-                                    <h3 className="text-white font-bold leading-tight truncate max-w-[120px] sm:max-w-[300px] group-hover:text-blue-400 transition-colors">{displayName}</h3>
-                                    <p className={`text-white/40 uppercase tracking-widest font-bold ${inputFocused ? 'hidden lg:block text-[10px]' : 'text-[10px]'}`}>
-                                        {isTrade ? t('trade_dialog') : (isOnlineHeader ? t('online') : t('offline'))}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
+            <ChatWindowHeader
+                chat={chat}
+                displayName={displayName || ''}
+                isTrade={!!isTrade}
+                isOnlineHeader={!!isOnlineHeader}
+                inputFocused={inputFocused}
+                debugError={debugError}
+                isSelecting={isSelecting}
+                selectedCount={selectedMessageIds.length}
+                headerImageError={headerImageError}
+                onHeaderImageError={() => setHeaderImageError(true)}
+                showSearch={showSearch}
+                searchQuery={searchQuery}
+                searchType={searchType}
+                searchDateFrom={searchDateFrom}
+                searchDateTo={searchDateTo}
+                showMoreMenu={showMoreMenu}
+                isSummarizing={isSummarizing}
+                onBack={onBack}
+                onToggleInfo={onToggleInfo}
+                onCancelSelecting={() => { setIsSelecting(false); setSelectedMessageIds([]); }}
+                onDeleteSelected={handleDeleteSelected}
+                onSearchQueryChange={setSearchQuery}
+                onSearchTypeChange={setSearchType}
+                onSearchDateFromChange={setSearchDateFrom}
+                onSearchDateToChange={setSearchDateTo}
+                onToggleSearch={() => setShowSearch(!showSearch)}
+                onStartAudioCall={() => { setPendingCallType('audio'); setShowPreCallModal(true); }}
+                onStartVideoCall={() => { setPendingCallType('video'); setShowPreCallModal(true); }}
+                onToggleMoreMenu={() => setShowMoreMenu(!showMoreMenu)}
+                onCloseMoreMenu={() => setShowMoreMenu(false)}
+                onStartSelecting={() => { setIsSelecting(true); setShowMoreMenu(false); }}
+                onSummarize={() => { handleSummarizeChat(); setShowMoreMenu(false); }}
+                onExportHistory={() => { handleExportHistory(); setShowMoreMenu(false); }}
+                onClearHistory={() => { handleClearHistory(); setShowMoreMenu(false); }}
+                onDeleteChat={() => { handleDeleteChat(); setShowMoreMenu(false); }}
+            />
 
-                        <div className="flex items-center gap-1 sm:gap-2">
-                            {showSearch && (
-                                <div className="hidden md:flex items-center gap-2 animate-scale-in">
-                                    <input
-                                        autoFocus
-                                        className="bg-white/5 border border-white/10 rounded-full px-3 py-1.5 text-xs text-white outline-none w-40"
-                                        placeholder={t('search_messages') as string}
-                                        value={searchQuery}
-                                        onChange={e => setSearchQuery(e.target.value)}
-                                    />
-                                    <select
-                                        className="bg-white/5 border border-white/10 rounded-full px-2 py-1 text-[11px] text-white outline-none"
-                                        value={searchType}
-                                        onChange={(e) =>
-                                            setSearchType(e.target.value as 'all' | 'text' | 'media' | 'files')
-                                        }
-                                    >
-                                        <option value="all">{t('all')}</option>
-                                        <option value="text">{t('file')}</option>
-                                        <option value="media">{t('image')}/{t('video')}</option>
-                                        <option value="files">{t('file')}</option>
-                                    </select>
-                                    <input
-                                        type="date"
-                                        className="bg-white/5 border border-white/10 rounded-full px-2 py-1 text-[11px] text-white outline-none"
-                                        value={searchDateFrom}
-                                        onChange={e => setSearchDateFrom(e.target.value)}
-                                        title={t('start_date') as string}
-                                    />
-                                    <input
-                                        type="date"
-                                        className="bg-white/5 border border-white/10 rounded-full px-2 py-1 text-[11px] text-white outline-none"
-                                        value={searchDateTo}
-                                        onChange={e => setSearchDateTo(e.target.value)}
-                                        title={t('end_date') as string}
-                                    />
-                                </div>
-                            )}
-                            <button
-                                onClick={() => setShowSearch(!showSearch)}
-                                className={`p-2 rounded-full transition-all ${showSearch ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}
-                                title="Qidiruv"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-                            </button>
-                            {!isTrade && CHAT_CALLS_ALLOWED && (
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => {
-                                            setPendingCallType('audio');
-                                            setShowPreCallModal(true);
-                                        }}
-                                        className="p-2 text-white/60 hover:text-blue-400 hover:bg-blue-500/10 rounded-full transition-colors"
-                                        title="Ovozli chaqiruv"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setPendingCallType('video');
-                                            setShowPreCallModal(true);
-                                        }}
-                                        className="p-2 text-white/60 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-full transition-colors"
-                                        title="Videochaqiruv"
-                                    >
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                                    </button>
-                                </div>
-                            )}
-                            {!isTrade && !CHAT_CALLS_ALLOWED && (
-                                <div className="hidden sm:flex items-center rounded-full border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-                                    {t('service_session')}
-                                </div>
-                            )}
-                            <div className="relative">
-                                <button onClick={() => setShowMoreMenu(!showMoreMenu)} className={`p-2 rounded-full transition-all ${showMoreMenu ? 'bg-white/10 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'}`}>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" /></svg>
-                                </button>
+            <ChatWindowBanners
+                t={t}
+                chatSummary={chatSummary}
+                setChatSummary={setChatSummary}
+                summaryError={summaryError}
+                setSummaryError={setSummaryError}
+                chatCompliance={chatCompliance}
+                isTrade={!!isTrade}
+                isComplianceDismissed={isComplianceDismissed}
+                setIsComplianceDismissed={setIsComplianceDismissed}
+                isContact={!!isContact}
+                handleAddContact={handleAddContact}
+                isAddingContact={isAddingContact}
+                handleBlockUser={handleBlockUser}
+                tradeData={tradeData}
+                activeSession={activeSession}
+            />
 
-                                {showMoreMenu && (
-                                    <>
-                                        <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
-                                        <div className="absolute top-full right-0 mt-2 w-64 glass-premium border border-white/10 rounded-2xl shadow-2xl py-2 z-40 animate-scale-in">
-                                            <button onClick={() => { setIsSelecting(true); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 hover:text-white transition-colors">
-                                                <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                                <span>{t('select_messages')}</span>
-                                            </button>
-                                            <button onClick={() => { handleSummarizeChat(); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 hover:text-white transition-colors">
-                                                {isSummarizing ? (
-                                                    <svg className="h-5 w-5 animate-spin opacity-60" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                                                ) : (
-                                                    <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                                )}
-                                                <span>{isSummarizing ? t('translating') : t('ai_summary')}</span>
-                                            </button>
-                                            <div className="h-px bg-white/5 my-1" />
-                                            <button onClick={() => { onToggleInfo?.(); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 hover:text-white transition-colors">
-                                                <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                                                <span>{t('show_profile')}</span>
-                                            </button>
-                                            <button onClick={() => { handleExportHistory(); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 hover:text-white transition-colors">
-                                                <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" /></svg>
-                                                <span>{t('export_history')}</span>
-                                            </button>
-                                            <button onClick={() => { handleClearHistory(); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-white/80 hover:bg-white/5 hover:text-white transition-colors">
-                                                <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                <span>{t('clear_history')}</span>
-                                            </button>
-                                            <button onClick={() => { handleDeleteChat(); setShowMoreMenu(false); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 transition-colors">
-                                                <svg className="h-5 w-5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                                <span>{t('delete_chat')}</span>
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </>
-                )}
-            </header>
-
-            {/* AI Summary Banner */}
-            {chatSummary && (
-                <div className="z-10 px-4 mt-2">
-                    <div className="bg-purple-900/40 backdrop-blur-xl border border-purple-500/30 rounded-2xl p-4 shadow-lg animate-slide-down relative">
-                        <button onClick={() => setChatSummary(null)} className="absolute top-2 right-2 p-1 text-white/50 hover:text-white bg-white/5 rounded-full">
-                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                        </button>
-                        <div className="flex items-center gap-2 mb-2">
-                            <svg className="w-5 h-5 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                            <span className="text-sm font-bold text-purple-200">{t('ai_summary')} {t('ai_summary_desc')}</span>
-                        </div>
-                        <p className="text-sm text-white/90 leading-relaxed pl-7">{chatSummary}</p>
-                    </div>
-                </div>
-            )}
-
-            {summaryError && (
-                <div className="z-10 px-4 mt-2">
-                    <div className="bg-red-900/40 backdrop-blur-xl border border-red-500/30 rounded-2xl p-3 shadow-lg flex justify-between items-center animate-slide-down">
-                        <span className="text-xs text-red-200">{summaryError}</span>
-                        <button onClick={() => setSummaryError(null)} className="text-white/50 hover:text-white p-1 ml-2"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
-                    </div>
-                </div>
-            )}
-
-            {/* Special Banners Container */}
-            <div className="z-10 px-4 space-y-2 mt-2">
-                {chatCompliance && !isTrade && !isComplianceDismissed && (
-                    <div className="bg-amber-900/30 backdrop-blur-xl border border-amber-400/30 rounded-2xl p-3 shadow-lg text-[11px] text-amber-50/95 leading-snug">
-                        <p className="font-bold text-amber-100 mb-1">{chatCompliance.title}</p>
-                        <ul className="list-disc list-inside space-y-0.5 text-amber-50/90 mb-3">
-                            {chatCompliance.lines.map((ln, i) => (
-                                <li key={i}>{ln}</li>
-                            ))}
-                        </ul>
-                        <button
-                            onClick={() => setIsComplianceDismissed(true)}
-                            className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/30 rounded-xl text-amber-100 font-bold transition-all active:scale-[0.98]"
-                        >
-                            {t('i_have_read')}
-                        </button>
-                    </div>
-                )}
-                {/* Unknown Contact Bar */}
-                {!isContact && !isTrade && (
-                    <div className="bg-[#1e293b]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-3 flex items-center justify-between shadow-lg animate-slide-up">
-                        <div className="flex items-center gap-3 pl-2">
-                            <div className="text-blue-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            </div>
-                            <p className="text-white/80 text-xs font-medium">{t('not_in_contacts')}</p>
-                        </div>
-                        <div className="flex gap-2">
-                            <button
-                                onClick={handleAddContact}
-                                disabled={isAddingContact}
-                                className="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[10px] font-bold transition-all disabled:opacity-50"
-                            >
-                                {isAddingContact ? t('adding') : t('add')}
-                            </button>
-                            <button onClick={handleBlockUser} className="px-4 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-[10px] font-bold transition-all">{t('block')}</button>
-                        </div>
-                    </div>
-                )}
-
-                {/* P2P Trade Banner */}
-                {isTrade && tradeData && (
-                    <div className="bg-emerald-600/10 backdrop-blur-xl border border-emerald-500/20 rounded-2xl p-4 flex justify-between items-center shadow-lg animate-fade-in relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-[0.03] group-hover:opacity-[0.07] transition-opacity">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center text-emerald-400 border border-emerald-500/20">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg>
-                            </div>
-                            <div>
-                                <h4 className="text-white font-bold text-sm">
-                                    {t('p2p_trade')} #{String(tradeData.id ?? '').slice(0, 8)}
-                                </h4>
-                                <p className="text-emerald-400/70 text-[10px] font-medium uppercase tracking-wider">
-                                    {tradeData.status} • {(Number(tradeData.amount_uzs) || 0).toLocaleString()} UZS
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Service Escrow Banner */}
-                {activeSession && (
-                    <div className="bg-blue-600/10 backdrop-blur-xl border border-blue-500/20 rounded-2xl p-4 flex justify-between items-center shadow-lg animate-fade-in">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                            </div>
-                            <div>
-                                <h4 className="text-white font-bold text-sm">{t('service_session')}</h4>
-                                <p className="text-blue-400/70 text-[10px] font-medium uppercase tracking-wider">{activeSession.status} • {activeSession.amount_mali} MALI {t('in_escrow')}</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            {/* Messages Area — min-h-0 klaviatura ochilganda qisqaradi, xabarlar + input birga ko'tariladi */}
-            <div
-                ref={messagesScrollRef}
-                className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 py-3 sm:p-4 space-y-1 custom-scrollbar relative pb-4 ${isDragging ? 'bg-blue-500/10' : ''}`}
-                onScroll={handleMessagesScroll}
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-            >
-                {isDragging && (
-                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/20 backdrop-blur-sm pointer-events-none">
-                        <div className="bg-[#1e293b] border-2 border-dashed border-blue-500 p-8 rounded-3xl flex flex-col items-center gap-4 animate-scale-in">
-                            <div className="w-16 h-16 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-                            </div>
-                            <span className="text-white font-bold">{t('drop_files')}</span>
-                        </div>
-                    </div>
-                )}
-                {renderStartIndex > 0 && (
-                    <div className="flex items-center justify-center my-2">
-                        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-wider text-white/50">
-                            Tepaga chiqing: yana {renderStartIndex} ta eski xabar yuklanadi
-                        </div>
-                    </div>
-                )}
-                {renderedMessages.map((msg, i) => {
-                    /** To‘liq ro‘yxatdagi indeks — virtual oyna boshidagi xabar uchun ham oldingi xabar `filteredMessages` dan olinadi. */
-                    const absoluteIdx = renderStartIndex + i;
-                    const prevMsg = absoluteIdx > 0 ? filteredMessages[absoluteIdx - 1] : undefined;
-                    const msgDate = parseMessageDate(msg);
-                    const prevMsgDate = prevMsg ? parseMessageDate(prevMsg) : null;
-                    const isContinuation = computeMessageContinuation(prevMsg, msg, continuationOpts);
-                    const isNewDay = Boolean(
-                        msgDate &&
-                        (!prevMsgDate || msgDate.toDateString() !== prevMsgDate.toDateString())
-                    );
-
-                    const formatDateLabel = (d: Date) => {
-                        const today = new Date();
-                        const yesterday = new Date();
-                        yesterday.setDate(today.getDate() - 1);
-                        if (d.toDateString() === today.toDateString()) return t('today');
-                        if (d.toDateString() === yesterday.toDateString()) return t('yesterday');
-                        return d.toLocaleDateString(language === 'uz' ? 'uz-UZ' : (language === 'ru' ? 'ru-RU' : 'en-US'), { day: '2-digit', month: 'short', year: 'numeric' });
-                    };
-
-                    return (
-                        <React.Fragment key={msg.id || `msg-${absoluteIdx}`}>
-                            {isNewDay && msgDate && (
-                                <div className="flex items-center justify-center my-4">
-                                    <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-wider text-white/50">
-                                        {formatDateLabel(msgDate)}
-                                    </div>
-                                </div>
-                            )}
-                            <div ref={(node) => observeMessage(node, msg)}>
-                                <MessageBubble
-                                    message={msg}
-                                    chatId={chat?.id ? String(chat.id) : undefined}
-                                    onImageLoad={() => {
-                                        if (isNearBottomRef.current) {
-                                            requestAnimationFrame(() => scrollToBottom('auto'));
-                                        }
-                                    }}
-                                    onReply={setReplyTo}
-                                    isSelecting={isSelecting}
-                                    isSelected={selectedMessageIds.includes(msg.id)}
-                                    onSelect={() => toggleSelection(msg.id)}
-                                    uploadProgress={uploadProgresses[msg.id]}
-                                    onMediaClick={(url, type) => setViewerMedia({ url, type })}
-                                    onForward={handleForwardMessage}
-                                    onDelete={handleDeleteMessage}
-                                    isContinuation={isContinuation}
-                                    onReplyClick={handleReplyClick}
-                                    activeAudioId={activeAudioId}
-                                    onAudioPlay={setActiveAudioId}
-                                />
-                            </div>
-                        </React.Fragment>
-                    );
-                })}
-                {!isNearBottom && newMessagesWhileUp > 0 && (
-                    <div className="sticky bottom-3 z-30 flex justify-end pr-1 pointer-events-none">
-                        <button
-                            type="button"
-                            onClick={jumpToLatestMessage}
-                            className="pointer-events-auto rounded-full bg-blue-500/90 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 shadow-lg border border-white/20 backdrop-blur animate-pulse"
-                        >
-                            {t('new_messages')} ({newMessagesWhileUp}) ↓
-                        </button>
-                    </div>
-                )}
-                <div ref={messagesEndRef} />
-            </div>
+            <ChatMessageList
+                t={t}
+                language={language}
+                messagesScrollRef={messagesScrollRef}
+                messagesEndRef={messagesEndRef}
+                isDragging={isDragging}
+                handleMessagesScroll={handleMessagesScroll}
+                handleDragOver={handleDragOver}
+                handleDragLeave={handleDragLeave}
+                handleDrop={handleDrop}
+                renderStartIndex={renderStartIndex}
+                renderedMessages={renderedMessages}
+                filteredMessages={filteredMessages}
+                continuationOpts={continuationOpts}
+                observeMessage={observeMessage}
+                chatId={chat?.id ? String(chat.id) : undefined}
+                isNearBottomRef={isNearBottomRef}
+                scrollToBottom={scrollToBottom}
+                setReplyTo={setReplyTo}
+                isSelecting={isSelecting}
+                selectedMessageIds={selectedMessageIds}
+                toggleSelection={toggleSelection}
+                uploadProgresses={uploadProgresses}
+                setViewerMedia={setViewerMedia}
+                handleForwardMessage={handleForwardMessage}
+                handleDeleteMessage={handleDeleteMessage}
+                handleReplyClick={handleReplyClick}
+                activeAudioId={activeAudioId}
+                setActiveAudioId={setActiveAudioId}
+                isNearBottom={isNearBottom}
+                newMessagesWhileUp={newMessagesWhileUp}
+                jumpToLatestMessage={jumpToLatestMessage}
+            />
 
             {/* Input Area — kanalda faqat yaratuvchi xabar/fayl qo'yadi; boshqalar faqat ko'radi */}
             <div className="shrink-0 w-full z-30 px-4 pt-0 pb-[max(1rem,calc(env(safe-area-inset-bottom,0px)+1rem))]">
@@ -1946,265 +1623,58 @@ export default function ChatWindow({
                     </div>
                 )}
                 {(!chat || chat.type !== 'channel' || isChannelCreator) && (
-                <>
-                {isSomeoneTyping && (
-                    <div className="flex items-center gap-2 px-1 pb-1 text-[11px] text-white/60">
-                        <div className="flex gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/80 animate-bounce" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:120ms]" />
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:240ms]" />
-                        </div>
-                        <span>{t('typing')}</span>
-                    </div>
-                )}
-                <div className="flex items-center gap-2 p-2 rounded-[25px] border border-white/10 bg-white/5 backdrop-blur-xl shadow-lg">
-                    <input type="file" ref={fileInputRef} className="hidden" multiple accept="*" onChange={handleFileUpload} />
-                    <input
-                        type="file"
-                        ref={folderInputRef}
-                        className="hidden"
-                        multiple
-                        {...({ webkitdirectory: '' } as React.InputHTMLAttributes<HTMLInputElement>)}
-                        onChange={(e) => handleFileUpload(e, true)}
-                    />
-
-                    {replyTo && (
-                        <div className="absolute bottom-full left-4 right-4 mb-2 animate-slide-up">
-                            <div className="glass-premium border border-white/10 rounded-2xl p-3 flex items-center gap-3 shadow-2xl overflow-hidden min-h-[50px] bg-[#1a1c20]/80 backdrop-blur-3xl">
-                                <div className="w-1 h-full bg-blue-500 rounded-full absolute left-0 top-0 bottom-0" />
-                                <div className="flex-1 min-w-0 ml-1">
-                                    <p className="text-[11px] font-bold text-blue-400 uppercase tracking-wider mb-0.5">
-                                        {replyTo.sender === 'me' ? t('me') : (replyTo.senderName || t('interlocutor'))} {t('reply_to')}
-                                    </p>
-                                    <p className="text-xs text-white/60 truncate italic font-medium">
-                                        {replyTo.type === 'text' ? replyTo.text : (replyTo.type === 'image' ? `🖼️ ${t('image')}` : (replyTo.type === 'video' ? `🎥 ${t('video')}` : `📄 ${t('file')}`))}
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setReplyTo(null)}
-                                    className="p-1.5 hover:bg-white/5 rounded-full text-white/40 hover:text-white transition-colors"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                                </button>
-                            </div>
-                        </div>
-                    )}
-
-                    <div className="flex items-center gap-1">
-                        <button onClick={() => fileInputRef.current?.click()} className="p-2 text-white/50 hover:text-blue-400 transition-colors" title={t('send_file') as string}>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
-                        </button>
-                        <button onClick={() => folderInputRef.current?.click()} className="p-2 text-white/50 hover:text-amber-400 transition-colors" title={t('send_folder') as string}>
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>
-                        </button>
-                    </div>
-                    <div className="flex-1 flex items-center bg-transparent border-none outline-none text-white text-sm min-h-[40px]">
-                        {isRecording ? (
-                            <div className="flex items-center gap-3 w-full animate-pulse text-red-400 font-bold">
-                                <div className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
-                                <span>{t('recording')} {formatCallTime(recordingTime)}</span>
-                                <button onClick={() => {
-                                    setIsRecording(false);
-                                    if (timerRef.current) clearInterval(timerRef.current);
-                                    if (mediaRecorderRef.current) mediaRecorderRef.current.ondataavailable = null;
-                                    mediaRecorderRef.current?.stop();
-                                }} className="ml-auto text-[10px] uppercase tracking-widest text-white/40 hover:text-white">{t('cancel')}</button>
-                            </div>
-                        ) : (
-                            <input
-                                ref={chatInputRef}
-                                className="w-full bg-transparent border-none outline-none text-white placeholder-white/40"
-                                placeholder={t('message_placeholder') as string}
-                                style={{ fontSize: '16px' }}
-                                value={inputValue}
-                                onChange={e => {
-                                    setInputValue(e.target.value);
-                                    if (socket && chat) {
-                                        socket.emit('typing', { roomId: chat.id });
-                                        if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-                                        typingTimeoutRef.current = setTimeout(() => {
-                                            socket.emit('stop_typing', { roomId: chat.id });
-                                        }, 2000);
-                                    }
-                                }}
-                                onFocus={() => {
-                                    setInputFocused(true);
-                                    setTimeout(() => {
-                                        const el = messagesScrollRef.current;
-                                        if (!el) return;
-                                        if (el.scrollHeight - el.scrollTop - el.clientHeight < CHAT_NEAR_BOTTOM_PX) {
-                                            scrollToBottom('auto');
-                                        }
-                                    }, 100);
-                                }}
-                                onBlur={() => setInputFocused(false)}
-                                onKeyDown={(e) => {
-                                    if (e.key !== 'Enter') return;
-                                    if (e.repeat) return;
-                                    if ((e.nativeEvent as KeyboardEvent & { isComposing?: boolean }).isComposing) return;
-                                    e.preventDefault();
-                                    void sendMessage();
-                                }}
-                            />
-                        )}
-                    </div>
-                    {inputValue.trim() || isRecording ? (
-                        <button
-                            type="button"
-                            onClick={isRecording ? stopRecording : () => sendMessage()}
-                            className={`p-2 rounded-full text-white transition-all ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-500'}`}
-                        >
-                            {isRecording ? (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1H9a1 1 0 01-1-1V7z" clipRule="evenodd" /></svg>
-                            ) : (
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
-                            )}
-                        </button>
-                    ) : (
-                        <button
-                            onClick={startRecording}
-                            className="p-2 bg-white/5 hover:bg-white/10 rounded-full text-white/60 hover:text-white transition-all"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                        </button>
-                    )}
-                </div>
-                </>
+                <ChatComposer
+                    t={t}
+                    isSomeoneTyping={isSomeoneTyping}
+                    fileInputRef={fileInputRef}
+                    folderInputRef={folderInputRef}
+                    chatInputRef={chatInputRef}
+                    handleFileUpload={handleFileUpload}
+                    replyTo={replyTo}
+                    setReplyTo={setReplyTo}
+                    isRecording={isRecording}
+                    recordingTime={recordingTime}
+                    formatCallTime={formatCallTime}
+                    setIsRecording={setIsRecording}
+                    timerRef={timerRef}
+                    mediaRecorderRef={mediaRecorderRef}
+                    inputValue={inputValue}
+                    setInputValue={setInputValue}
+                    socket={socket}
+                    chat={chat}
+                    typingTimeoutRef={typingTimeoutRef}
+                    setInputFocused={setInputFocused}
+                    messagesScrollRef={messagesScrollRef}
+                    nearBottomPx={CHAT_NEAR_BOTTOM_PX}
+                    scrollToBottom={scrollToBottom}
+                    sendMessage={sendMessage}
+                    stopRecording={stopRecording}
+                    startRecording={startRecording}
+                />
                 )}
             </div>
 
-            {/* Premium Call Interface */}
             {CHAT_CALLS_ALLOWED && (isIncomingCall || isCalling) && (
-                    <div className="absolute inset-0 z-[100] bg-[#0d0d0f]/90 backdrop-blur-2xl flex flex-col items-center justify-between py-4 sm:py-6 md:py-8 animate-fade-in shadow-2xl overflow-hidden min-h-0">
-                        {/* Remote audio — ovozli chaqiruvda sherik ovozini ijro qilish (ref doim overlayda) */}
-                        <audio ref={remoteAudioRef} autoPlay playsInline className="sr-only absolute opacity-0 w-0 h-0 pointer-events-none" aria-hidden />
-                        {/* Elegant floating background glow */}
-                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] max-w-[800px] max-h-[800px] bg-blue-500/10 rounded-full blur-[100px] pointer-events-none" />
-
-                        <div className="flex flex-col items-center z-10 w-full px-3 sm:px-6 md:px-8 flex-1 min-h-0 min-w-0">
-                            <div className="text-center mb-3 sm:mb-4 md:mb-6 animate-slide-down shrink-0">
-                                <h2 className="text-xl sm:text-2xl md:text-3xl font-extrabold text-white tracking-wide mb-1 sm:mb-2 truncate max-w-[90vw]">{callData?.fromName || displayName}</h2>
-                                {isIncomingCall ? (
-                                    <p className="text-blue-400 font-medium tracking-widest uppercase text-xs sm:text-sm animate-pulse flex items-center justify-center gap-2">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                        {t('incoming_call')}... ({callType === 'video' ? t('video_call') : t('voice_call')})
-                                    </p>
-                                ) : (
-                                    <div className="flex flex-col items-center gap-1 sm:gap-2">
-                                        <p className="text-white/40 text-[10px] sm:text-[11px] font-bold uppercase tracking-[0.2em] px-2 sm:px-3 py-0.5 sm:py-1 bg-white/5 rounded-full">{callType === 'video' ? t('video_call') : t('voice_call')}</p>
-                                        <p className="text-blue-400 font-mono text-lg sm:text-xl md:text-2xl tracking-widest font-light">{formatCallTime(callTimer)}</p>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="relative group flex-1 min-h-0 w-full max-w-4xl flex flex-col min-w-0">
-                                {callType === 'video' ? (
-                                    <div className="relative w-full flex-1 min-h-[180px] sm:min-h-[200px] max-h-[40vh] sm:max-h-[50vh] md:max-h-[55vh] bg-black/60 rounded-xl sm:rounded-2xl overflow-hidden border border-white/10 shadow-2xl ring-2 ring-white/5 mali-video-call-container">
-                                        <LiveKitRoomWrapper
-                                            sessionId={String(chat?.id ?? 'demo-room')}
-                                            onDisconnected={handleEndCall}
-                                        />
-                                    </div>
-                                ) : (
-                                    <div className="relative shrink-0">
-                                        <div className="absolute inset-0 rounded-full animate-ping-slow bg-blue-500/20" />
-                                        <div className="absolute -inset-2 sm:-inset-4 rounded-full animate-ping-slower bg-blue-500/10" />
-                                        <div className="w-24 h-24 sm:w-32 sm:h-32 md:w-40 md:h-40 rounded-full glass-premium border-2 border-white/20 flex items-center justify-center text-3xl sm:text-4xl md:text-5xl font-bold text-white shadow-[0_0_50px_rgba(59,130,246,0.5)] overflow-hidden relative z-10">
-                                            {(() => {
-                                                const avatarRaw =
-                                                    chat?.avatar ??
-                                                    chat?.otherUser?.avatar ??
-                                                    chat?.otherUser?.avatar_url ??
-                                                    callData?.fromAvatar;
-                                                const avatar =
-                                                    typeof avatarRaw === 'string'
-                                                        ? avatarRaw
-                                                        : avatarRaw != null
-                                                          ? String(avatarRaw)
-                                                          : '';
-                                                if (avatar && avatar !== 'null' && avatar !== '') {
-                                                    const src = avatar.startsWith('http')
-                                                        ? avatar
-                                                        : avatar.startsWith('data:')
-                                                          ? avatar
-                                                          : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
-                                                    return <img src={src} className="w-full h-full object-cover" />;
-                                                }
-                                                return String(displayName || callData?.fromName || '?')[0].toUpperCase();
-                                            })()}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-center w-full z-10 pt-2 sm:pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-[max(1rem,calc(env(safe-area-inset-bottom)+0.5rem))] shrink-0">
-                            {isIncomingCall ? (
-                                <div className="flex items-center gap-6 sm:gap-8 md:gap-10">
-                                    <div className="flex flex-col items-center gap-1.5 sm:gap-2">
-                                        <button onClick={handleRejectCall} className="min-w-[48px] min-h-[48px] w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-red-500 hover:bg-red-400 active:bg-red-600 text-white flex items-center justify-center shadow-[0_0_20px_rgba(239,68,68,0.4)] hover:scale-105 active:scale-95 transition-all duration-300 touch-manipulation" aria-label={t('reject') as string}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-7 sm:w-7 rotate-[135deg]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15.46l-5.27-.61-2.52 2.52c-2.83-1.44-5.15-3.75-6.59-6.59l2.53-2.53L8.54 3H3.03C2.45 13.15 10.85 21.56 21 21v-5.54z" /></svg>
-                                        </button>
-                                        <span className="text-white/60 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">{t('reject')}</span>
-                                    </div>
-                                    <div className="flex flex-col items-center gap-1.5 sm:gap-2">
-                                        <div className="relative">
-                                            <div className="absolute inset-0 rounded-full animate-ping bg-emerald-500/40" />
-                                            <button onClick={handleAcceptCall} className="relative min-w-[48px] min-h-[48px] w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-600 text-white flex items-center justify-center shadow-[0_0_20px_rgba(16,185,129,0.4)] hover:scale-105 active:scale-95 transition-all duration-300 touch-manipulation" aria-label={t('accept') as string}>
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-7 sm:w-7 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
-                                            </button>
-                                        </div>
-                                        <span className="text-white/60 text-[9px] sm:text-[10px] font-bold uppercase tracking-wider">{t('accept')}</span>
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="glass-premium px-3 py-2.5 sm:px-5 sm:py-3 rounded-full border border-white/10 flex items-center gap-3 sm:gap-5 shadow-2xl bg-black/40">
-                                    <div className="flex flex-col items-center gap-1">
-                                        <button
-                                            onClick={async () => {
-                                                const newType = callType === 'video' ? 'audio' : 'video';
-                                                setCallType(newType);
-                                                if (isCalling && !isIncomingCall) {
-                                                    const stream = await startLocalStream(newType === 'video');
-                                                    if (stream && pcRef.current) {
-                                                        const videoTrack = stream.getVideoTracks()[0];
-                                                        const sender = pcRef.current.getSenders().find(s => s.track?.kind === 'video');
-                                                        if (sender && videoTrack) {
-                                                            sender.replaceTrack(videoTrack);
-                                                        } else if (videoTrack) {
-                                                            pcRef.current.addTrack(videoTrack, stream);
-                                                        }
-                                                    }
-                                                }
-                                            }}
-                                            className={`min-w-[44px] min-h-[44px] w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white transition-all shadow-xl hover:scale-105 active:scale-95 touch-manipulation ${callType === 'video' ? 'bg-blue-500 shadow-blue-500/50' : 'bg-white/10 hover:bg-white/20 border border-white/10'}`}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-5 sm:w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                                        </button>
-                                        <span className="text-white/50 text-[8px] sm:text-[9px] uppercase font-bold tracking-wider">{t('camera')}</span>
-                                    </div>
-
-                                    <div className="flex flex-col items-center gap-1">
-                                        <button onClick={handleEndCall} className="min-w-[52px] min-h-[52px] w-14 h-14 rounded-full bg-red-500 hover:bg-red-400 active:bg-red-600 text-white flex items-center justify-center shadow-[0_0_24px_rgba(239,68,68,0.4)] hover:scale-105 active:scale-95 transition-all duration-300 touch-manipulation" aria-label={t('exit') as string}>
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 sm:h-7 sm:w-7 rotate-[135deg]" fill="currentColor" viewBox="0 0 24 24"><path d="M21 15.46l-5.27-.61-2.52 2.52c-2.83-1.44-5.15-3.75-6.59-6.59l2.53-2.53L8.54 3H3.03C2.45 13.15 10.85 21.56 21 21v-5.54z" /></svg>
-                                        </button>
-                                    </div>
-
-                                    <div className="flex flex-col items-center gap-1">
-                                        <button
-                                            onClick={toggleMute}
-                                            className={`min-w-[44px] min-h-[44px] w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center text-white transition-all shadow-xl hover:scale-105 active:scale-95 touch-manipulation ${
-                                                isMuted ? 'bg-red-500/80 border-red-400 shadow-red-500/40' : 'bg-white/10 hover:bg-white/20 border border-white/10'
-                                            }`}
-                                        >
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
-                                        </button>
-                                        <span className="text-white/50 text-[8px] sm:text-[9px] uppercase font-bold tracking-wider">{isMuted ? t('mic_off') : t('mic_on')}</span>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    </div>
+                <ChatCallOverlay
+                    t={t}
+                    remoteAudioRef={remoteAudioRef}
+                    callData={callData}
+                    displayName={displayName || ''}
+                    isIncomingCall={isIncomingCall}
+                    isCalling={isCalling}
+                    callType={callType}
+                    callTimer={callTimer}
+                    formatCallTime={formatCallTime}
+                    chat={chat}
+                    handleEndCall={handleEndCall}
+                    handleRejectCall={handleRejectCall}
+                    handleAcceptCall={handleAcceptCall}
+                    setCallType={setCallType}
+                    startLocalStream={startLocalStream}
+                    pcRef={pcRef}
+                    toggleMute={toggleMute}
+                    isMuted={isMuted}
+                />
             )}
 
             <MediaUploadModal
@@ -2214,137 +1684,31 @@ export default function ChatWindow({
                 onSend={handleConfirmUpload}
             />
 
-            {/* Pre-call modal */}
-            {CHAT_CALLS_ALLOWED && showPreCallModal && (
-                <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4">
-                    <div className="w-full max-w-md glass-premium border border-white/10 rounded-3xl p-6 space-y-4">
-                        <div className="flex items-center justify-between">
-                            <h2 className="text-lg font-bold text-white">
-                                {pendingCallType === 'video' ? t('video_call') : t('voice_call')}
-                            </h2>
-                            <button
-                                onClick={() => setShowPreCallModal(false)}
-                                className="p-1.5 rounded-full bg-white/5 text-white/60 hover:text-white hover:bg-white/10"
-                            >
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <p className="text-xs text-white/60 leading-relaxed">
-                            {t('expert_mode_desc')}
-                        </p>
-
-                        <div className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-2xl px-4 py-3">
-                            <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-300 font-bold">
-                                {(displayName || 'U')[0].toUpperCase()}
-                            </div>
-                            <div className="flex-1">
-                                <p className="text-sm text-white font-semibold truncate">{displayName}</p>
-                                <p className="text-[11px] text-white/40 uppercase tracking-widest">
-                                    {pendingCallType === 'video' ? t('video_call') : t('voice_call')}
-                                </p>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between bg-black/40 border border-white/10 rounded-2xl px-4 py-3">
-                            <div>
-                                <p className="text-sm text-white font-semibold">{t('low_bandwidth')}</p>
-                                <p className="text-[11px] text-white/40">
-                                    {t('low_bandwidth_desc')}
-                                </p>
-                            </div>
-                            <button
-                                onClick={() => setLowBandwidth(prev => !prev)}
-                                className={`w-11 h-6 rounded-full flex items-center px-1 transition-all ${
-                                    lowBandwidth ? 'bg-emerald-500' : 'bg-white/20'
-                                }`}
-                            >
-                                <span
-                                    className={`w-4 h-4 rounded-full bg-white shadow transform transition-transform ${
-                                        lowBandwidth ? 'translate-x-5' : 'translate-x-0'
-                                    }`}
-                                />
-                            </button>
-                        </div>
-
-                        {pendingCallType === 'video' && lowBandwidth && (
-                            <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/40 rounded-2xl px-3 py-2">
-                                {t('low_bandwidth_warning')}
-                            </div>
-                        )}
-
-                        <div className="flex items-center justify-end gap-3 pt-2">
-                            <button
-                                onClick={() => setShowPreCallModal(false)}
-                                className="px-4 py-2 rounded-full text-xs font-semibold text-white/70 bg-white/5 hover:bg-white/10 border border-white/10"
-                            >
-                                {t('cancel')}
-                            </button>
-                            <button
-                                onClick={async () => {
-                                    setShowPreCallModal(false);
-                                    await handleCall(pendingCallType);
-                                }}
-                                className="px-5 py-2 rounded-full text-xs font-semibold text-white bg-emerald-500 hover:bg-emerald-400 shadow-lg shadow-emerald-500/40"
-                            >
-                                {t('start')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            {CHAT_CALLS_ALLOWED && (
+                <ChatPreCallModal
+                    open={showPreCallModal}
+                    pendingCallType={pendingCallType}
+                    displayName={displayName || ''}
+                    lowBandwidth={lowBandwidth}
+                    onLowBandwidthChange={setLowBandwidth}
+                    onClose={() => setShowPreCallModal(false)}
+                    onStart={async () => {
+                        setShowPreCallModal(false);
+                        await handleCall(pendingCallType);
+                    }}
+                />
             )}
 
-            {/* Forward to chat modal */}
             {forwardMessage && (
-                <div className="fixed inset-0 z-[95] bg-black/70 backdrop-blur-sm flex items-center justify-center px-4" onClick={() => { setForwardMessage(null); setForwardAvatarErrors({}); }}>
-                    <div className="w-full max-w-md max-h-[70vh] overflow-hidden glass-premium border border-white/10 rounded-3xl flex flex-col" onClick={e => e.stopPropagation()}>
-                        <div className="flex items-center justify-between p-4 border-b border-white/10">
-                            <h2 className="text-lg font-bold text-white">{t('forward_to')}</h2>
-                            <button onClick={() => { setForwardMessage(null); setForwardAvatarErrors({}); }} className="p-1.5 rounded-full bg-white/5 text-white/60 hover:text-white hover:bg-white/10">
-                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <div className="overflow-y-auto flex-1 p-2">
-                            {chats.filter((c) => c.id !== chat?.id).length === 0 ? (
-                                <p className="text-white/50 text-sm py-6 text-center">{t('no_messages')}</p>
-                            ) : (
-                                chats.filter((c) => c.id !== chat?.id).map((c) => {
-                                    const displayName = c.type === 'group' ? c.name : (c.otherUser ? `${c.otherUser.name || ''} ${c.otherUser.surname || ''}`.trim() || c.name : c.name) || 'Chat';
-                                    const avatar = c.avatar || c.otherUser?.avatar || c.otherUser?.avatar_url;
-                                    const avatarSrc = avatar && avatar !== 'null' && avatar !== '' && avatar !== 'use_initials'
-                                        ? (avatar.startsWith('http') || avatar.startsWith('data:') ? avatar : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${avatar.startsWith('/') ? '' : '/'}${avatar}`)
-                                        : null;
-                                    return (
-                                        <button
-                                            key={c.id}
-                                            onClick={() => handleForwardToChat(c)}
-                                            className="w-full flex items-center gap-3 p-3 rounded-2xl hover:bg-white/10 transition-colors text-left"
-                                        >
-                                            <div className="w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white font-bold shrink-0 overflow-hidden">
-                                                {avatarSrc && !forwardAvatarErrors[c.id] ? (
-                                                    <img
-                                                        src={avatarSrc}
-                                                        alt=""
-                                                        className="w-full h-full object-cover"
-                                                        onError={() => setForwardAvatarErrors(prev => ({ ...prev, [c.id]: true }))}
-                                                    />
-                                                ) : (
-                                                    (displayName || '?')[0].toUpperCase()
-                                                )}
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-white font-medium truncate">{displayName}</p>
-                                                <p className="text-[11px] text-white/40 truncate">{c.message || ''}</p>
-                                            </div>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </div>
-                    </div>
-                </div>
+                <ChatForwardModal
+                    forwardMessage={forwardMessage}
+                    chats={chats}
+                    currentChatId={chat?.id}
+                    avatarErrors={forwardAvatarErrors}
+                    onAvatarError={(id) => setForwardAvatarErrors(prev => ({ ...prev, [id]: true }))}
+                    onClose={() => { setForwardMessage(null); setForwardAvatarErrors({}); }}
+                    onForward={handleForwardToChat}
+                />
             )}
 
             {isUploadingMedia && (

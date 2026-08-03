@@ -333,6 +333,38 @@ export const getAdminLoginAudit = async (req: Request, res: Response) => {
     }
 };
 
+export const getSecurityEventAudit = async (req: Request, res: Response) => {
+    try {
+        const requestedLimit = Number.parseInt(String(req.query.limit || '200'), 10);
+        const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 && requestedLimit <= 1000
+            ? requestedLimit
+            : 200;
+        const event = String(req.query.event || '').trim();
+        const values: unknown[] = [];
+        let where = '';
+        if (event) {
+            values.push(event);
+            where = `WHERE sea.event = $${values.length}`;
+        }
+        values.push(limit);
+        const result = await pool.query(
+            `SELECT sea.id, sea.event, sea.ip_address, sea.user_agent, sea.success,
+                    sea.reason, sea.metadata, sea.created_at, sea.user_id,
+                    u.name, u.surname, u.phone, u.role
+             FROM security_event_audit sea
+             LEFT JOIN users u ON u.id = sea.user_id
+             ${where}
+             ORDER BY sea.created_at DESC
+             LIMIT $${values.length}`,
+            values
+        );
+        res.status(200).json(result.rows);
+    } catch (error: any) {
+        console.error('Admin Fetch Security Audit Error:', error.message);
+        res.status(500).json({ message: 'Failed to fetch security audit' });
+    }
+};
+
 // Escrow Dispute Management
 export const getDisputedDeals = async (req: Request, res: Response) => {
     try {

@@ -8,6 +8,7 @@ export interface User {
     surname: string;
     age: number;
     role: string;
+    is_active?: boolean;
     created_at: Date;
     avatar_url: string | null;
     email: string | null;

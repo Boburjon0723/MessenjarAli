@@ -28,13 +28,31 @@ export class WalletController {
     static async bookSession(req: Request, res: Response) {
         try {
             const studentId = (req as any).user!.id;
-            const { expertId, amount } = req.body;
+            const { expertId, amount: clientAmount } = req.body;
 
-            if (!expertId || amount === undefined || amount === null || isNaN(amount) || amount < 0) {
-                return res.status(400).json({ success: false, message: 'Expert ID and valid amount (>= 0) are required' });
+            if (!expertId) {
+                return res.status(400).json({ success: false, message: 'Expert ID is required' });
             }
 
-            const transaction = await TokenService.bookSession(studentId, expertId, parseFloat(amount));
+            // Server-side price: ignore client amount when expert has a listed rate
+            const priceRes = await pool.query(
+                `SELECT COALESCE(p.hourly_rate, p.service_price, 0) AS rate
+                 FROM user_profiles p
+                 WHERE p.user_id = $1`,
+                [expertId]
+            );
+            let amount = parseFloat(priceRes.rows[0]?.rate);
+            if (!Number.isFinite(amount) || amount <= 0) {
+                amount = parseFloat(clientAmount);
+            }
+            if (!Number.isFinite(amount) || amount <= 0) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Expert narxi topilmadi — amount yoki expert hourly_rate kerak',
+                });
+            }
+
+            const transaction = await TokenService.bookSession(studentId, expertId, amount);
             res.json({ success: true, data: transaction });
         } catch (error: any) {
             res.status(400).json({ success: false, message: error.message });
@@ -50,7 +68,7 @@ export class WalletController {
             }
 
             const ld = await pool.query(
-                `SELECT id, status, client_id FROM listing_service_deals WHERE transaction_id = $1::uuid LIMIT 1`,
+                `SELECT id, status, client_id, expert_id FROM listing_service_deals WHERE transaction_id = $1::uuid LIMIT 1`,
                 [transactionId]
             );
             const deal = ld.rows[0];
@@ -60,6 +78,22 @@ export class WalletController {
                         success: false,
                         message:
                             "E'londan escrow: mablag‘ni faqat mijoz tasdiqlagach chiqariladi (chatdagi escrow paneli).",
+                    });
+                }
+            } else {
+                // No listing deal: only the payer (sender) may complete / confirm receipt
+                const txRes = await pool.query(
+                    `SELECT sender_id, receiver_id, status FROM transactions WHERE id = $1::uuid`,
+                    [transactionId]
+                );
+                const tx = txRes.rows[0];
+                if (!tx) {
+                    return res.status(404).json({ success: false, message: 'Transaction not found' });
+                }
+                if (String(tx.sender_id) !== String(userId)) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Faqat to‘lovchi (mijoz) sessiyani tasdiqlashi mumkin',
                     });
                 }
             }

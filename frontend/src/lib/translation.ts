@@ -1,6 +1,9 @@
+import { getPublicApiUrl } from './public-origin';
+
 export const translateText = async (text: string, targetLanguage: string = 'uz'): Promise<string | null> => {
     try {
-        const response = await fetch('/api/translate', {
+        const apiUrl = getPublicApiUrl();
+        const response = await fetch(`${apiUrl}/api/translate`, {
             method: 'POST',
             body: JSON.stringify({
                 text: text,

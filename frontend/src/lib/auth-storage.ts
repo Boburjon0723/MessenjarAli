@@ -62,7 +62,8 @@ export function setAuth(
   token: string,
   refreshToken: string,
   user: Record<string, unknown>,
-  remember: boolean
+  remember: boolean,
+  csrfToken?: string | null
 ): void {
   if (typeof window === 'undefined') return;
   const persist = effectiveRemember(remember);
@@ -94,12 +95,37 @@ export function setAuth(
   clearOther.removeItem('token');
   clearOther.removeItem('refreshToken');
   clearOther.removeItem('user');
+  if (csrfToken) {
+    setCsrfToken(csrfToken);
+  }
   notifyUserUpdated(user);
   try {
     window.dispatchEvent(new CustomEvent(AUTH_TOKEN_CHANGED_EVENT));
   } catch {
     /* ignore */
   }
+}
+
+/** Cross-origin CSRF (API Set-Cookie JS ga ko‘rinmas) — login/refresh JSON dan. */
+export function setCsrfToken(token: string): void {
+  if (typeof window === 'undefined') return;
+  try {
+    sessionStorage.setItem('csrf_token', token);
+  } catch {
+    /* ignore */
+  }
+}
+
+export function getCsrfToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const fromStore = sessionStorage.getItem('csrf_token');
+    if (fromStore) return fromStore;
+  } catch {
+    /* ignore */
+  }
+  const match = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function clearAuth(): void {
@@ -111,6 +137,7 @@ export function clearAuth(): void {
   sessionStorage.removeItem('token');
   sessionStorage.removeItem('refreshToken');
   sessionStorage.removeItem('user');
+  sessionStorage.removeItem('csrf_token');
 }
 
 /** Token/user o‘qishda qaysi storage dan o‘qilishini bilish uchun (masalan refresh keyingi yozishda). */

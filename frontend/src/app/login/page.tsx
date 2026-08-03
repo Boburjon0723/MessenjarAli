@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Phone, Eye, EyeOff, Loader2, AlertCircle } from "lucide-react";
 import { setAuth } from "@/lib/auth-storage";
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
+import { toFullPhone, validateLoginInput } from "@/lib/auth-validation";
 
 const API_URL =
   process.env.NEXT_PUBLIC_API_URL ||
@@ -99,33 +100,28 @@ function Login() {
     setJustRegistered(false);
     setLoading(true);
 
-    if (!phone || !password) {
-      setError(t('error_phone_pass_req') as TranslationKeys);
+    const loginError = validateLoginInput({ phone, password });
+    if (loginError) {
+      setError(t(loginError) as TranslationKeys);
       setLoading(false);
       return;
     }
 
-    const numericPhone = phone.replace(/\D/g, "");
-    if (numericPhone.length < 9) {
-      setError(t('error_phone_full_req') as TranslationKeys);
-      setLoading(false);
-      return;
-    }
-
-    const fullPhone = `${countryCode}${numericPhone}`;
+    const fullPhone = toFullPhone(countryCode, phone);
 
     try {
       const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: fullPhone, password }),
+        credentials: "include",
       });
 
       const data = await res.json();
 
       if (res.ok) {
         if (typeof window !== "undefined") {
-          setAuth(data.token, data.refreshToken || "", data.user || {}, rememberMe);
+          setAuth(data.token, data.refreshToken || "", data.user || {}, rememberMe, data.csrfToken);
         }
         router.push("/messages");
       } else {

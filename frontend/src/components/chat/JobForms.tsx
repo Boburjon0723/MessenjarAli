@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { useNotification } from '@/context/NotificationContext';
 import { GlassCard } from '../ui/GlassCard';
-import { X, User, Briefcase, DollarSign, Book, FileText, Building2, MapPin, Clock, Users, ShieldCheck, CheckCircle2, Monitor } from 'lucide-react';
+import { X, DollarSign, MapPin, CheckCircle2, Monitor } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
+import { apiFetch } from '@/lib/api';
 
 interface JobFormsProps {
     subType: 'seeker' | 'employer';
@@ -54,9 +55,6 @@ export default function JobForms({ subType, categories, onClose, onSuccess }: Jo
     const handleSubmit = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-
             const payload = {
                 sub_type: subType,
                 category_id: categoryId,
@@ -67,12 +65,8 @@ export default function JobForms({ subType, categories, onClose, onSuccess }: Jo
                 requirements_json: subType === 'employer' ? { list: employerData.requirements.split(',') } : undefined,
             };
 
-            const res = await fetch(`${API_URL}/api/jobs`, {
+            const res = await apiFetch('/api/jobs', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
                 body: JSON.stringify(payload)
             });
 

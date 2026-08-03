@@ -1,128 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { GlassButton } from '../ui/GlassButton';
-import { AnimatedModal } from '../ui/AnimatedModal';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
 import { useLanguage } from '@/context/LanguageContext';
-
-function WalletHistoryCard({ transactions }: { transactions: any[] }) {
-    const { t, language } = useLanguage();
-    return (
-        <GlassCard className="!p-3 lg:!p-5 !rounded-[1.25rem] lg:!rounded-[25px] border border-amber-500/15 bg-gradient-to-br from-[rgba(var(--glass-rgb),0.55)] to-[rgba(var(--glass-rgb),0.35)] backdrop-blur-xl shadow-lg">
-            <div className="flex items-center justify-between gap-2 mb-2 lg:mb-3 pb-2 border-b border-white/10">
-                <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-9 h-9 lg:w-10 lg:h-10 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 lg:h-5 lg:w-5 text-amber-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </div>
-                    <div className="min-w-0">
-                        <h3 className="text-white font-bold text-sm lg:text-base tracking-tight">{t('transaction_history')}</h3>
-                        <p className="text-white/40 text-[10px] lg:text-xs">{t('transaction_history_sub')}</p>
-                    </div>
-                </div>
-                {transactions.length > 0 && (
-                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-100/90 bg-amber-500/20 px-2 py-1 rounded-lg border border-amber-400/25 shrink-0 tabular-nums">
-                        {transactions.length}
-                    </span>
-                )}
-            </div>
-            {transactions.length === 0 ? (
-                <div className="text-center py-7 lg:py-9 border border-dashed border-white/10 rounded-2xl bg-white/[0.02]">
-                    <p className="text-white/35 text-xs lg:text-sm">{t('no_transactions')}</p>
-                </div>
-            ) : (
-                <div className="max-h-[min(42vh,280px)] sm:max-h-[300px] lg:max-h-[420px] overflow-y-auto overscroll-y-contain custom-scrollbar space-y-2 pr-0.5 -mr-0.5">
-                    {transactions.map((tx) => {
-                        const currentUser = JSON.parse(typeof window !== 'undefined' ? localStorage.getItem('user') || '{}' : '{}');
-                        const userId = currentUser.id || currentUser.userId;
-                        const isSender = tx.sender_id === userId;
-                        const otherName = isSender ? (tx.receiver_name || t('system')) : (tx.sender_name || t('system'));
-                        const otherAvatar = isSender ? tx.receiver_avatar : tx.sender_avatar;
-
-                        return (
-                            <div
-                                key={tx.id}
-                                className="p-3 lg:p-4 rounded-xl lg:rounded-2xl border border-white/10 bg-white/[0.04] hover:bg-white/[0.07] hover:border-white/15 transition-all relative overflow-hidden group"
-                            >
-                                <div className="absolute top-0 left-0 w-0.5 h-full bg-gradient-to-b from-transparent via-amber-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                                <div className="flex justify-between items-center gap-2 relative z-10">
-                                    <div className="flex items-center gap-2.5 lg:gap-3 min-w-0 flex-1">
-                                        <div className="w-10 h-10 lg:w-11 lg:h-11 rounded-xl bg-white/5 p-0.5 border border-white/10 shrink-0">
-                                            {otherAvatar ? (
-                                                <img src={otherAvatar} alt="" className="w-full h-full object-cover rounded-[10px] lg:rounded-[12px]" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-white/10 to-transparent rounded-[10px] lg:rounded-[12px]">
-                                                    <span className="text-white text-xs lg:text-sm font-bold">{otherName[0]}</span>
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="min-w-0">
-                                            <p className="text-white font-bold text-xs lg:text-sm truncate">
-                                                {isSender ? `${t('sent')}: ` : `${t('received')}: `}
-                                                {otherName}
-                                            </p>
-                                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                                                <span className={`text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md ${isSender ? 'bg-amber-500/15 text-amber-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
-                                                    {isSender ? t('outgoing') : t('incoming')}
-                                                </span>
-                                                <span className="text-[9px] text-white/30 font-bold">
-                                                    {new Date(tx.created_at).toLocaleString(language === 'uz' ? 'uz-UZ' : (language === 'ru' ? 'ru-RU' : 'en-US'), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    <div className="text-right shrink-0">
-                                        <p className={`text-base lg:text-lg font-black tabular-nums ${isSender ? 'text-white/90' : 'text-emerald-400'}`}>
-                                            {isSender ? '-' : '+'}
-                                            {Number(tx.amount).toLocaleString()}
-                                        </p>
-                                        <p className="text-[9px] text-white/25 font-black uppercase tracking-widest">MALI</p>
-                                    </div>
-                                </div>
-                                {tx.note && (
-                                    <p className="mt-2 pt-2 border-t border-white/5 text-[10px] lg:text-[11px] text-white/40 italic truncate relative z-10">{tx.note}</p>
-                                )}
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </GlassCard>
-    );
-}
-
-/** Mobil hamyonda modallar glass-premium orqasidan fon “ko‘rinib” qolmasin */
-const WALLET_MODAL_SOLID_STYLE: React.CSSProperties = {
-    background: '#151820',
-    backdropFilter: 'none',
-    WebkitBackdropFilter: 'none',
-};
-
-/** Mobil pastki tab bar + safe-area: modal tug‘malari yashirinmasin */
-const WALLET_MODAL_FOOTER_CLASS =
-    'shrink-0 border-t border-white/10 bg-[#151820] px-4 sm:px-6 pt-2.5 pb-[max(0.75rem,calc(72px+env(safe-area-inset-bottom,0px)+0.35rem))]';
-
-function walletDigitsOnly(s: string): string {
-    return s.replace(/\D/g, '');
-}
-
-function walletPhonesMatch(input: string, contactPhone: string): boolean {
-    const a = walletDigitsOnly(input);
-    const b = walletDigitsOnly(contactPhone);
-    if (!a || !b) return false;
-    if (a === b) return true;
-    const tail = (x: string) => x.slice(-9);
-    return tail(a) === tail(b);
-}
-
-function walletResolveRecipientFromPhone(phone: string, list: any[]): string {
-    const matches = list.filter((c) => walletPhonesMatch(phone, String(c.phone || '')));
-    if (matches.length === 1) return String(matches[0].id);
-    return '';
-}
+import { apiFetch } from '@/lib/api';
+import { getUser } from '@/lib/auth-storage';
+import { WalletHistoryCard } from './wallet/WalletHistoryCard';
+import { WalletTopUpModal } from './wallet/WalletTopUpModal';
+import { WalletWithdrawModal } from './wallet/WalletWithdrawModal';
+import { WalletSendModal } from './wallet/WalletSendModal';
+import { WalletPinSetupCard } from './wallet/WalletPinSetupCard';
+import { walletResolveRecipientFromPhone } from './wallet/walletHelpers';
 
 export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: any) => void }) {
     const { t, language } = useLanguage();
@@ -179,12 +69,8 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     // Fetch Ads
     const fetchAds = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
             const typeToFetch = marketTab === 'buy' ? 'sell' : 'buy';
-            const res = await fetch(`${API_URL}/api/p2p?type=${typeToFetch}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/p2p?type=${typeToFetch}`);
             if (res.ok) {
                 const data = await res.json();
                 setP2pAds(data);
@@ -194,11 +80,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchMyAds = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/my-ads`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/p2p/my-ads`);
             if (res.ok) {
                 const data = await res.json();
                 setMyAds(data);
@@ -220,12 +102,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
             return;
         }
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
+            const res = await apiFetch(`/api/p2p`, { method: 'POST', body: JSON.stringify({
                     type: marketTab,
                     amount: parseFloat(createAdData.amount),
                     price: parseFloat(createAdData.price)
@@ -247,12 +124,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const handleUpdateAd = async () => {
         if (!editingAd) return;
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({
+            const res = await apiFetch(`/api/p2p`, { method: 'PUT', body: JSON.stringify({
                     adId: editingAd.id,
                     price: parseFloat(editingAd.price_uzs),
                     amount: parseFloat(editingAd.amount_mali),
@@ -283,12 +155,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!ok) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/${adId}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/p2p/${adId}`, { method: 'DELETE' });
             if (res.ok) {
                 showSuccess(t('p2p_ad_deleted'));
                 fetchMyAds();
@@ -302,11 +169,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchTransactions = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/transactions`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/token/transactions`);
             if (res.ok) {
                 const data = await res.json();
                 setTransactions(data);
@@ -317,11 +180,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const fetchBalance = async () => {
         // ... (existing code kept same)
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/balance`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/token/balance`);
             if (res.ok) {
                 const data = await res.json();
                 setBalance({
@@ -337,11 +196,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchWalletConfig = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/config`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/token/config`);
             if (!res.ok) return;
             const data = await res.json();
             setWalletConfig({
@@ -355,11 +210,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchPendingRequests = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/topup`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/token/topup`);
             if (res.ok) {
                 const data = await res.json();
                 setPendingRequests(data.filter((r: any) => r.status === 'pending'));
@@ -369,11 +220,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchMyTrades = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/trades`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/p2p/trades`);
             if (res.ok) {
                 const data = await res.json();
                 setMyTrades(data);
@@ -383,11 +230,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const fetchContacts = async () => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/users/contacts`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/users/contacts`);
             if (res.ok) {
                 const data = await res.json();
                 setContacts(Array.isArray(data) ? data : []);
@@ -402,12 +245,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!amount || isNaN(Number(amount))) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/trade`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ adId: ad.id, amount: parseFloat(amount) })
+            const res = await apiFetch(`/api/p2p/trade`, { method: 'POST', body: JSON.stringify({ adId: ad.id, amount: parseFloat(amount) })
             });
 
             if (res.ok) {
@@ -423,11 +261,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
     const handleTradeChat = async (tradeId: string) => {
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/trade-chat/${tradeId}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            const res = await apiFetch(`/api/p2p/trade-chat/${tradeId}`);
             if (res.ok) {
                 const chat = await res.json();
                 if (onChatSelect) onChatSelect(chat);
@@ -446,12 +280,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!ok) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/trade/confirm`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ tradeId })
+            const res = await apiFetch(`/api/p2p/trade/confirm`, { method: 'POST', body: JSON.stringify({ tradeId })
             });
             if (res.ok) {
                 showSuccess(t('p2p_payment_confirmed'));
@@ -474,12 +303,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!ok) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/p2p/trade/cancel`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ tradeId })
+            const res = await apiFetch(`/api/p2p/trade/cancel`, { method: 'POST', body: JSON.stringify({ tradeId })
             });
             if (res.ok) {
                 showSuccess(t('p2p_trade_cancelled'));
@@ -546,12 +370,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (newPin.length !== 4 || isNaN(Number(newPin))) { setPinError(t('pin_error_digits')); return; }
         if (newPin !== confirmPin) { setPinError(t('pin_error_match')); return; }
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/setup`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ pin: newPin })
+            const res = await apiFetch(`/api/token/setup`, { method: 'POST', body: JSON.stringify({ pin: newPin })
             });
             if (res.ok) {
                 showSuccess(t('success_update'));
@@ -571,11 +390,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         if (!ok) return;
 
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            await fetch(`${API_URL}/api/token/recovery`, {
-                method: 'POST', headers: { 'Authorization': `Bearer ${token}` }
-            });
+            await apiFetch(`/api/token/recovery`, { method: 'POST' });
             showSuccess("Tiklash so'rovi yuborildi.");
         } catch (e) { showError("Xatolik"); }
     };
@@ -597,12 +412,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setTopUpError('');
         setTopUpStatus('loading');
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/topup`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ amount: parseFloat(topUpAmount) })
+            const res = await apiFetch(`/api/token/topup`, { method: 'POST', body: JSON.stringify({ amount: parseFloat(topUpAmount) })
             });
 
             if (res.ok) {
@@ -668,12 +478,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setSendStatus('loading');
         setSendError('');
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const res = await fetch(`${API_URL}/api/token/transfer`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
+            const res = await apiFetch(`/api/token/transfer`, { method: 'POST', body: JSON.stringify({
                     receiverId,
                     amount: numericAmount,
                     pin: sendPin,
@@ -729,11 +534,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
         setWithdrawStatus('loading');
         setWithdrawError('');
         try {
-            const token = localStorage.getItem('token');
-            const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const usersRes = await fetch(`${API_URL}/api/users`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const usersRes = await apiFetch(`/api/users`);
             if (!usersRes.ok) {
                 setWithdrawStatus('error');
                 setWithdrawError("Admin foydalanuvchisi topilmadi. Keyinroq urinib ko'ring.");
@@ -747,10 +548,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                 return;
             }
 
-            const transferRes = await fetch(`${API_URL}/api/token/transfer`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({
+            const transferRes = await apiFetch(`/api/token/transfer`, { method: 'POST', body: JSON.stringify({
                     receiverId: admin.id,
                     amount: numericAmount,
                     pin: withdrawPin,
@@ -811,18 +609,15 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                         )}
 
                         {showPinSetup && (
-                            <GlassCard className="p-6 border-amber-500/20 bg-amber-900/10">
-                                <h3 className="text-white font-bold mb-4">{t('setup_pin')}</h3>
-                                <div className="space-y-4 max-w-xs">
-                                    <input type="password" maxLength={4} placeholder={t('new_pin')} className="w-full p-3 rounded-lg bg-black/20 border border-white/10 text-white text-center tracking-widest" value={newPin} onChange={e => setNewPin(e.target.value)} />
-                                    <input type="password" maxLength={4} placeholder={t('confirm_pin_label')} className="w-full p-3 rounded-lg bg-black/20 border border-white/10 text-white text-center tracking-widest" value={confirmPin} onChange={e => setConfirmPin(e.target.value)} />
-                                    {pinError && <p className="text-red-400 text-xs">{pinError}</p>}
-                                    <div className="flex gap-2">
-                                        <GlassButton onClick={handleSetPin} variant="premium" className="flex-1 py-2 !rounded-lg text-sm">{t('save')}</GlassButton>
-                                        <GlassButton onClick={() => setShowPinSetup(false)} variant="secondary" className="px-4 py-2 !rounded-lg text-sm">{t('cancel')}</GlassButton>
-                                    </div>
-                                </div>
-                            </GlassCard>
+                            <WalletPinSetupCard
+                                newPin={newPin}
+                                confirmPin={confirmPin}
+                                pinError={pinError}
+                                onNewPinChange={setNewPin}
+                                onConfirmPinChange={setConfirmPin}
+                                onSave={handleSetPin}
+                                onCancel={() => setShowPinSetup(false)}
+                            />
                         )}
 
                         <GlassCard className="p-4 lg:p-8 relative overflow-hidden border-white/10 bg-gradient-to-br from-[rgba(var(--glass-rgb),0.8)] to-[rgba(var(--glass-rgb),0.6)] backdrop-blur-xl !rounded-[1.25rem] lg:!rounded-[25px]">
@@ -992,6 +787,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
 
                         <WalletHistoryCard transactions={transactions} />
 
+
                         {/* TRADE MONITORING & HISTORY */}
                         {myTrades.length > 0 && (
                             <div className="animate-fade-in space-y-3 lg:space-y-6 rounded-[1.25rem] lg:rounded-[24px] bg-white/5 border border-white/10 p-3 lg:p-0 lg:bg-transparent lg:border-0">
@@ -1009,7 +805,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                         </div>
                                         <div className="grid grid-cols-1 gap-3">
                                             {myTrades.filter(t => t.status === 'pending').map((trade: any) => {
-                                                const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                                                const currentUser = getUser() || {};
                                                 const isSeller = trade.seller_id === (currentUser.id || currentUser.userId);
                                                 return (
                                                     <GlassCard key={trade.id} className="p-5 border-amber-500/10 bg-gradient-to-br from-amber-500/5 to-transparent hover:border-amber-500/30 transition-all duration-300">
@@ -1081,7 +877,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                     <h3 className="text-white/70 font-bold text-sm px-1">{t('trade_history')}</h3>
                                     <div className="grid grid-cols-1 gap-2">
                                         {myTrades.filter(t => t.status !== 'pending').slice(0, 5).map((trade: any) => {
-                                            const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+                                            const currentUser = getUser() || {};
                                             const isSeller = trade.seller_id === (currentUser.id || currentUser.userId);
                                             const isCompleted = trade.status === 'completed';
 
@@ -1290,6 +1086,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                             </div>
                         )}
 
+        
                         <div className="text-center pt-4">
                             <button onClick={handleRecovery} className="text-white/30 text-xs hover:text-white hover:underline transition-colors">
                                 {t('forgot_pin_recovery')}
@@ -1298,312 +1095,48 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                     </div>
             </div>
 
-            <AnimatedModal
+            <WalletTopUpModal
                 open={showTopUpModal}
-                zClass="z-[130]"
-                className="overflow-y-auto overscroll-y-contain bg-[#040507]/95 backdrop-blur-2xl p-3 sm:p-6"
-            >
-                    <GlassCard
-                        style={WALLET_MODAL_SOLID_STYLE}
-                        className="w-full max-w-[min(100%,22rem)] sm:max-w-md !p-0 overflow-hidden relative shadow-2xl my-auto max-h-[min(90dvh,calc(100dvh-1rem))] flex flex-col !backdrop-blur-none border border-white/15"
-                    >
-                        <div className="shrink-0 bg-gradient-to-r from-emerald-900/50 to-teal-900/50 px-4 py-3 sm:p-4 border-b border-white/10">
-                            <h2 className="text-base sm:text-lg font-bold text-white">{t('top_up')}</h2>
-                            <p className="text-white/55 text-[11px] sm:text-xs">{t('admin_approval_wait')}</p>
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 sm:p-5 space-y-4">
-                            <div className="bg-gradient-to-br from-blue-900 to-indigo-900 p-4 rounded-xl shadow-xl relative overflow-hidden border border-white/10">
-                                <div className="absolute top-0 right-0 w-28 h-28 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                                <div className="flex justify-between items-start mb-4">
-                                    <span className="text-white/80 text-sm font-medium tracking-wider">UZCARD</span>
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-7 w-7 text-white/50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" /></svg>
-                                </div>
-                                <div className="space-y-1 text-center py-1">
-                                    <p className="text-xl sm:text-2xl font-mono text-white tracking-[0.12em] drop-shadow-md">
-                                        {walletConfig.adminCard || t('pin_error_digits')}
-                                    </p>
-                                    <p className="text-white/55 text-[10px] sm:text-xs uppercase tracking-widest mt-1.5">MALI ADMIN</p>
-                                </div>
-                            </div>
-                            {topUpStatus === 'success' ? (
-                                <div className="text-center py-4 space-y-2">
-                                    <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center mx-auto text-white">
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
-                                    </div>
-                                    <h3 className="text-white font-bold text-sm sm:text-base">{t('topup_success')}</h3>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    <div className="space-y-1.5">
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('amount_mali_label')}</label>
-                                        <div className="relative">
-                                            <input
-                                                type="number"
-                                                value={topUpAmount}
-                                                onChange={(e) => setTopUpAmount(e.target.value)}
-                                                placeholder="0.00"
-                                                className="w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2.5 text-white text-sm font-mono placeholder:text-white/30 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 transition-all"
-                                            />
-                                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-emerald-400 font-bold text-xs">MALI</span>
-                                        </div>
-                                    </div>
-                                    {topUpError && (
-                                        <p className="text-[11px] text-red-200 bg-red-500/15 border border-red-500/35 rounded-lg px-2.5 py-2">
-                                            {topUpError}
-                                        </p>
-                                    )}
-                                    <p className="text-[10px] text-white/40 text-center leading-snug">
-                                        To&apos;g&apos;ridan-to&apos;g&apos;ri MALI summasini kiriting.
-                                    </p>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {[50, 100, 200].map((preset) => (
-                                            <button
-                                                key={preset}
-                                                type="button"
-                                                onClick={() => setTopUpAmount(String(preset))}
-                                                className="py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/85 text-[10px] sm:text-xs border border-white/10"
-                                            >
-                                                {preset} MALI
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                        {topUpStatus !== 'success' && (
-                            <div className={WALLET_MODAL_FOOTER_CLASS}>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowTopUpModal(false)}
-                                        className="py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium border border-white/10 transition-all"
-                                    >
-                                        {t('cancel')}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={transformTopUp}
-                                        disabled={topUpStatus === 'loading'}
-                                        className="py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold shadow-lg shadow-emerald-900/30 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
-                                    >
-                                        {topUpStatus === 'loading' ? t('adding') : t('accept')}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </GlassCard>
-            </AnimatedModal>
-            <AnimatedModal
+                onClose={() => setShowTopUpModal(false)}
+                adminCard={walletConfig.adminCard}
+                amount={topUpAmount}
+                onAmountChange={setTopUpAmount}
+                status={topUpStatus}
+                error={topUpError}
+                onSubmit={transformTopUp}
+            />
+            <WalletWithdrawModal
                 open={showWithdrawModal}
-                zClass="z-[130]"
-                className="overflow-y-auto overscroll-y-contain bg-[#040507]/95 backdrop-blur-2xl p-3 sm:p-6"
-            >
-                    <GlassCard
-                        style={WALLET_MODAL_SOLID_STYLE}
-                        className="w-full max-w-[min(100%,22rem)] sm:max-w-md !p-0 overflow-hidden relative shadow-2xl my-auto max-h-[min(90dvh,calc(100dvh-1rem))] flex flex-col !backdrop-blur-none border border-white/15"
-                    >
-                        <div className="shrink-0 bg-gradient-to-r from-rose-900/50 to-orange-900/50 px-4 py-3 sm:p-4 border-b border-white/10">
-                            <h2 className="text-base sm:text-lg font-bold text-white">{t('withdraw')}</h2>
-                            <p className="text-white/55 text-[11px] sm:text-xs">{t('withdraw_desc')}</p>
-                        </div>
-                        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain p-4 sm:p-5 space-y-3">
-                            {withdrawStatus === 'success' ? (
-                                <div className="text-center py-4 space-y-2">
-                                    <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center mx-auto text-white">✓</div>
-                                    <h3 className="text-white font-bold text-sm sm:text-base">{t('withdraw_success')}</h3>
-                                </div>
-                            ) : (
-                                <>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('amount_mali_label')}</label>
-                                        <input
-                                            type="number"
-                                            value={withdrawAmount}
-                                            onChange={(e) => setWithdrawAmount(e.target.value)}
-                                            placeholder="0.00"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-rose-500/40 focus:ring-1 focus:ring-rose-500/20"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('confirm_pin_label')}</label>
-                                        <input
-                                            type="text"
-                                            value={withdrawCard}
-                                            onChange={(e) => setWithdrawCard(e.target.value.replace(/\D/g, '').slice(0, 16))}
-                                            placeholder="8600 0000 0000 0000"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-rose-500/40 focus:ring-1 focus:ring-rose-500/20"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">PIN (4)</label>
-                                        <input
-                                            type="password"
-                                            maxLength={4}
-                                            value={withdrawPin}
-                                            onChange={(e) => setWithdrawPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                            placeholder="••••"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-rose-500/40 focus:ring-1 focus:ring-rose-500/20"
-                                        />
-                                    </div>
-                                    <p className="text-[10px] text-white/45 leading-snug">
-                                        Balans: {balance.available.toLocaleString()} MALI · min {MIN_WITHDRAW} MALI
-                                    </p>
-                                    {withdrawError && (
-                                        <p className="text-[11px] text-red-200 bg-red-500/15 border border-red-500/35 rounded-lg px-2.5 py-2">
-                                            {withdrawError}
-                                        </p>
-                                    )}
-                                </>
-                            )}
-                        </div>
-                        {withdrawStatus !== 'success' && (
-                            <div className={WALLET_MODAL_FOOTER_CLASS}>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setShowWithdrawModal(false)}
-                                        className="py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium border border-white/10"
-                                    >
-                                        {t('cancel')}
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={handleWithdraw}
-                                        disabled={withdrawStatus === 'loading'}
-                                        className="py-2.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold disabled:opacity-60"
-                                    >
-                                        {withdrawStatus === 'loading' ? t('adding') : t('create_chat')}
-                                    </button>
-                                </div>
-                            </div>
-                        )}
-                    </GlassCard>
-            </AnimatedModal>
-            <AnimatedModal
+                onClose={() => setShowWithdrawModal(false)}
+                amount={withdrawAmount}
+                onAmountChange={setWithdrawAmount}
+                card={withdrawCard}
+                onCardChange={setWithdrawCard}
+                pin={withdrawPin}
+                onPinChange={setWithdrawPin}
+                status={withdrawStatus}
+                error={withdrawError}
+                availableBalance={balance.available}
+                minWithdraw={MIN_WITHDRAW}
+                onSubmit={handleWithdraw}
+            />
+            <WalletSendModal
                 open={showSendModal}
-                zClass="z-[130]"
-                className="overflow-y-auto overscroll-y-contain bg-[#040507]/95 backdrop-blur-2xl p-3 sm:p-6"
-            >
-                    <GlassCard
-                        style={WALLET_MODAL_SOLID_STYLE}
-                        className="w-full max-w-[min(100%,22rem)] sm:max-w-md !p-0 overflow-hidden relative shadow-2xl my-auto max-h-[min(90dvh,calc(100dvh-1rem))] flex flex-col !backdrop-blur-none border border-white/15"
-                    >
-                        <div className="shrink-0 bg-gradient-to-r from-blue-900/50 to-indigo-900/50 px-4 py-3 sm:p-4 border-b border-white/10">
-                            <h2 className="text-base sm:text-lg font-bold text-white leading-tight">{t('send_mali')}</h2>
-                            <p className="text-white/55 text-[11px] sm:text-xs mt-0.5">{t('send_desc')}</p>
-                        </div>
-                        {sendStatus === 'success' ? (
-                            <div className="p-5 text-center space-y-2">
-                                <div className="w-10 h-10 bg-emerald-500 rounded-full flex items-center justify-center mx-auto text-white text-sm">✓</div>
-                                <h3 className="text-white font-bold text-sm sm:text-base">
-                                    {language === 'uz' ? 'Yuborildi' : language === 'ru' ? 'Отправлено' : 'Sent'}
-                                </h3>
-                            </div>
-                        ) : (
-                            <>
-                                <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain px-4 py-3 sm:px-5 sm:py-4 space-y-3">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('phone_number')}</label>
-                                        <input
-                                            type="tel"
-                                            inputMode="numeric"
-                                            autoComplete="tel"
-                                            value={sendPhone}
-                                            onChange={(e) => {
-                                                const v = e.target.value;
-                                                setSendPhone(v);
-                                                setSendRecipientId(walletResolveRecipientFromPhone(v, contacts));
-                                            }}
-                                            placeholder="+998 …"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('contacts')}</label>
-                                        <select
-                                            value={sendRecipientId}
-                                            onChange={(e) => {
-                                                const id = e.target.value;
-                                                setSendRecipientId(id);
-                                                const c = contacts.find((x: any) => String(x.id) === id);
-                                                setSendPhone(c?.phone != null ? String(c.phone) : '');
-                                            }}
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20"
-                                        >
-                                            <option value="">{language === 'uz' ? '— Tanlang —' : language === 'ru' ? '— Выберите —' : '— Select —'}</option>
-                                            {contacts.map((c: any) => (
-                                                <option key={c.id} value={c.id} className="bg-[#151820] text-white">
-                                                    {(c.name || '')} {(c.surname || '')}
-                                                    {c.phone ? ` · ${c.phone}` : ''}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                    {sendPhone.trim() &&
-                                        walletDigitsOnly(sendPhone).length >= 8 &&
-                                        contacts.filter((c) => walletPhonesMatch(sendPhone, String(c.phone || ''))).length > 1 && (
-                                            <p className="text-[10px] text-amber-200/90 leading-snug">
-                                                {language === 'uz'
-                                                    ? 'Bir nechta kontakt mos keldi — ro‘yxatdan aniqini tanlang.'
-                                                    : language === 'ru'
-                                                      ? 'Несколько контактов подходят — выберите нужный в списке.'
-                                                      : 'Multiple contacts match — pick the right one in the list.'}
-                                            </p>
-                                        )}
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('amount_mali_label')}</label>
-                                        <input
-                                            type="number"
-                                            value={sendAmount}
-                                            onChange={(e) => setSendAmount(e.target.value)}
-                                            placeholder="0.00"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">PIN (4)</label>
-                                        <input
-                                            type="password"
-                                            maxLength={4}
-                                            value={sendPin}
-                                            onChange={(e) => setSendPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                                            placeholder="••••"
-                                            className="mt-1 w-full bg-[#0c0f14] border border-white/15 rounded-lg px-3 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/40 focus:ring-1 focus:ring-blue-500/20"
-                                        />
-                                    </div>
-                                    {sendError && (
-                                        <p className="text-[11px] text-red-200 bg-red-500/15 border border-red-500/35 rounded-lg px-2.5 py-2 leading-snug">
-                                            {sendError}
-                                        </p>
-                                    )}
-                                    <p className="text-[10px] text-white/45">
-                                        {language === 'uz' ? 'Balans:' : language === 'ru' ? 'Баланс:' : 'Balance:'}{' '}
-                                        {balance.available.toLocaleString()} MALI
-                                    </p>
-                                </div>
-                                <div className={WALLET_MODAL_FOOTER_CLASS}>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowSendModal(false)}
-                                            className="py-2.5 rounded-lg bg-white/5 hover:bg-white/10 text-white text-sm font-medium border border-white/10"
-                                        >
-                                            {t('cancel')}
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={submitSend}
-                                            disabled={sendStatus === 'loading'}
-                                            className="py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold disabled:opacity-60"
-                                        >
-                                            {sendStatus === 'loading' ? t('adding') : t('send_mali')}
-                                        </button>
-                                    </div>
-                                </div>
-                            </>
-                        )}
-                    </GlassCard>
-            </AnimatedModal>
+                onClose={() => setShowSendModal(false)}
+                contacts={contacts}
+                phone={sendPhone}
+                onPhoneChange={setSendPhone}
+                recipientId={sendRecipientId}
+                onRecipientIdChange={setSendRecipientId}
+                amount={sendAmount}
+                onAmountChange={setSendAmount}
+                pin={sendPin}
+                onPinChange={setSendPin}
+                status={sendStatus}
+                error={sendError}
+                availableBalance={balance.available}
+                onSubmit={submitSend}
+            />
         </div>
     );
 }

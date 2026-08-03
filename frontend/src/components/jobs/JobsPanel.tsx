@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Search, ShieldCheck } from 'lucide-react';
 import { GlassCard } from '../ui/GlassCard';
+import { apiFetch } from '@/lib/api';
 
 const CATEGORIES = [
   { id: 'it', label: 'IT va Dasturlash', icon: '💻', type: 'online' },
@@ -50,10 +51,9 @@ export default function JobsPanel() {
     const fetchExperts = async () => {
       if (!searchTerm && activeTab !== 'online') return; // Only fetch experts if searching or in online tab (experts be mostly online)
       try {
-        const url = `${API_URL}/api/users/search?expert=true${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ''}`;
-        const res = await fetch(url, {
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
+        const res = await apiFetch(
+          `/api/users/search?expert=true${searchTerm ? `&q=${encodeURIComponent(searchTerm)}` : ''}`
+        );
         if (res.ok) {
           const data = await res.json();
           setExperts(data);

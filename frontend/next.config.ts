@@ -9,6 +9,8 @@ const configDir = path.dirname(fileURLToPath(import.meta.url));
 const isProd = process.env.NODE_ENV === 'production';
 
 const nextConfig: NextConfig = {
+  // Vercel/Turbopack ildizini bir xil qilish (build warning)
+  outputFileTracingRoot: configDir,
   turbopack: {
     root: configDir,
   },

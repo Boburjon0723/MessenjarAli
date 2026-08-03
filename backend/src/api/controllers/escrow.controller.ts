@@ -1,18 +1,41 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { EscrowService } from '../../services/escrow.service';
 import { NotificationService } from '../../services/notification.service';
-import { AuthRequest } from '../../middleware/auth.middleware';
+import { AuthRequest, userIdFromToken } from '../../middleware/auth.middleware';
+import { UserModel } from '../../models/postgres/User';
+import { pool } from '../../config/database';
+
+async function isAdminUser(userId: string): Promise<boolean> {
+    const u = await UserModel.findById(userId);
+    return u?.role === 'admin';
+}
+
+/** Prefer server-side service price when serviceId is provided. */
+async function resolveHoldAmount(body: {
+    amount?: unknown;
+    serviceId?: string;
+}): Promise<number> {
+    if (body.serviceId) {
+        const res = await pool.query('SELECT price FROM services WHERE id = $1', [body.serviceId]);
+        const price = parseFloat(res.rows[0]?.price);
+        if (Number.isFinite(price) && price > 0) return price;
+    }
+    const amount = parseFloat(String(body.amount));
+    if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error('Amount is required (or provide a valid serviceId)');
+    }
+    return amount;
+}
 
 export const holdFunds = async (req: AuthRequest, res: Response) => {
     try {
-        const userId = req.user.id;
-        const { serviceId, amount, bookingId, sessionId } = req.body;
+        const userId = userIdFromToken(req.user);
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
-        if (!amount) {
-            return res.status(400).json({ message: 'Amount is required' });
-        }
+        const { serviceId, bookingId, sessionId } = req.body;
+        const amount = await resolveHoldAmount(req.body);
 
-        const escrow = await EscrowService.holdFunds(userId, parseFloat(amount), { serviceId, bookingId, sessionId });
+        const escrow = await EscrowService.holdFunds(userId, amount, { serviceId, bookingId, sessionId });
         res.status(201).json({ message: 'Funds held in escrow', escrow });
     } catch (error: any) {
         console.error('Hold funds error:', error);
@@ -22,30 +45,19 @@ export const holdFunds = async (req: AuthRequest, res: Response) => {
 
 export const releaseFunds = async (req: AuthRequest, res: Response) => {
     try {
-        // In a real app, only the provider (after completion verification) or admin should call this.
-        // For MVP/Demo, we might allow the user (buyer) to "confirm receipt" thus releasing funds,
-        // or the provider to "claim" if automated.
-        // Let's assume the BUYER releases the funds upon satisfaction.
-        const userId = req.user.id;
-        const { escrowId } = req.body;
+        const userId = userIdFromToken(req.user);
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
 
+        const { escrowId } = req.body;
         if (!escrowId) return res.status(400).json({ message: 'Escrow ID required' });
 
-        // TODO: Verify that the caller is the owner of the escrow (the buyer)
-        // For now, we proceed to call the service.
+        const admin = await isAdminUser(userId);
+        await EscrowService.assertEscrowActor(escrowId, userId, 'release', admin);
 
         const updatedEscrow = await EscrowService.releaseFunds(escrowId);
 
         const io = req.app.get('io');
         if (io) {
-            // Notify provider
-            // escrow.user_id is the payer, but we need providerId
-            // The EscrowService.releaseFunds already knows the provider.
-            // For now, let's just emit to everyone involved or fetch providerId here.
-
-            // To be more precise, let's fetch the escrow record again to get details
-            // But EscrowService handles the logic. I'll just send general notification if I have access.
-
             await NotificationService.createNotification(
                 updatedEscrow.user_id,
                 'funds_released',
@@ -59,15 +71,21 @@ export const releaseFunds = async (req: AuthRequest, res: Response) => {
         res.json({ message: 'Funds released successfully', escrow: updatedEscrow });
     } catch (error: any) {
         console.error('Release funds error:', error);
-        res.status(400).json({ message: error.message || 'Failed to release funds' });
+        const status = String(error.message || '').includes('Faqat') ? 403 : 400;
+        res.status(status).json({ message: error.message || 'Failed to release funds' });
     }
 };
 
 export const refundFunds = async (req: AuthRequest, res: Response) => {
     try {
-        // Only Admin or Provider (cancelling) should be able to refund.
+        const userId = userIdFromToken(req.user);
+        if (!userId) return res.status(401).json({ message: 'Unauthorized' });
+
         const { escrowId } = req.body;
         if (!escrowId) return res.status(400).json({ message: 'Escrow ID required' });
+
+        const admin = await isAdminUser(userId);
+        await EscrowService.assertEscrowActor(escrowId, userId, 'refund', admin);
 
         const updatedEscrow = await EscrowService.refundFunds(escrowId);
 
@@ -86,6 +104,7 @@ export const refundFunds = async (req: AuthRequest, res: Response) => {
         res.json({ message: 'Funds refunded successfully', escrow: updatedEscrow });
     } catch (error: any) {
         console.error('Refund funds error:', error);
-        res.status(400).json({ message: error.message || 'Failed to refund funds' });
+        const status = String(error.message || '').includes('Faqat') ? 403 : 400;
+        res.status(status).json({ message: error.message || 'Failed to refund funds' });
     }
 };

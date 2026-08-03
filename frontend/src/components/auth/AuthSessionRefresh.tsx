@@ -29,11 +29,13 @@ export default function AuthSessionRefresh() {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ refreshToken: rt }),
+                    credentials: "include",
                 });
                 if (!res.ok) return;
                 const data = (await res.json()) as {
                     accessToken?: string;
                     refreshToken?: string;
+                    csrfToken?: string;
                 };
                 if (!data.accessToken) return;
                 const user = getUser();
@@ -43,7 +45,8 @@ export default function AuthSessionRefresh() {
                     data.accessToken,
                     data.refreshToken || rt,
                     (user || {}) as Record<string, unknown>,
-                    remember
+                    remember,
+                    data.csrfToken
                 );
                 lastRun.current = Date.now();
             } catch {

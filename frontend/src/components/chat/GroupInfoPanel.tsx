@@ -5,6 +5,7 @@ import { X } from 'lucide-react';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
 import { apiFetch } from '@/lib/api';
+import { getUser } from '@/lib/auth-storage';
 import { getPublicApiUrl } from '@/lib/public-origin';
 
 interface GroupInfoPanelProps {
@@ -33,7 +34,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
     const lastFetchedGroupIdRef = useRef<string | null>(null);
 
     useEffect(() => {
-        const user = JSON.parse(localStorage.getItem('user') || '{}');
+        const user = getUser() || {};
         setCurrentUser(user);
     }, []);
 

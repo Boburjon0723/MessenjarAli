@@ -76,7 +76,7 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
         });
 
         const at = new AccessToken(apiKey, apiSecret, {
-            identity: user.id || `guest-${Math.random()}`,
+            identity: String(user.id),
             name: participantName,
             metadata,
         });

@@ -1,4 +1,4 @@
-import { getToken, getRefreshToken, getStorageForAuth, setAuth, clearAuth, getUser } from './auth-storage';
+import { getToken, getRefreshToken, getStorageForAuth, setAuth, clearAuth, getUser, getCsrfToken } from './auth-storage';
 import { getPublicApiUrl } from './public-origin';
 
 const API_URL = getPublicApiUrl();
@@ -7,18 +7,47 @@ interface FetchOptions extends RequestInit {
     headers?: Record<string, string>;
 }
 
-export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
+function withAuthHeaders(options: FetchOptions = {}): Record<string, string> {
     const token = typeof window !== 'undefined' ? getToken() : null;
-
-    const headers = {
+    const method = (options.method || 'GET').toUpperCase();
+    const csrf = method !== 'GET' && method !== 'HEAD' ? getCsrfToken() : null;
+    return {
         'Content-Type': 'application/json',
-        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(csrf ? { 'X-CSRF-Token': csrf } : {}),
         ...options.headers,
     };
+}
+
+/** Server cookie + refresh invalidate, so‘ng local storage tozalash. */
+export async function logoutSession(): Promise<void> {
+    if (typeof window === 'undefined') {
+        clearAuth();
+        return;
+    }
+    const token = getToken();
+    try {
+        await fetch(`${API_URL}/api/auth/logout`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            credentials: 'include',
+        });
+    } catch {
+        /* network — local clear still runs */
+    }
+    clearAuth();
+}
+
+export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
+    const headers = withAuthHeaders(options);
 
     let response = await fetch(`${API_URL}${endpoint}`, {
         ...options,
         headers,
+        credentials: 'include',
     });
 
     // If unauthorized or forbidden, try to refresh token
@@ -29,6 +58,7 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ refreshToken }),
+                credentials: 'include',
             });
 
             if (refreshResponse.ok) {
@@ -36,21 +66,31 @@ export async function apiFetch(endpoint: string, options: FetchOptions = {}) {
                 const user = getUser();
                 const storage = getStorageForAuth();
                 const remember = storage === localStorage;
-                setAuth(data.accessToken, data.refreshToken || refreshToken, (user || {}) as Record<string, unknown>, remember);
+                setAuth(
+                    data.accessToken,
+                    data.refreshToken || refreshToken,
+                    (user || {}) as Record<string, unknown>,
+                    remember,
+                    data.csrfToken
+                );
 
                 return fetch(`${API_URL}${endpoint}`, {
                     ...options,
-                    headers: {
-                        ...headers,
-                        'Authorization': `Bearer ${data.accessToken}`,
-                    },
+                    headers: withAuthHeaders({
+                        ...options,
+                        headers: {
+                            ...headers,
+                            Authorization: `Bearer ${data.accessToken}`,
+                        },
+                    }),
+                    credentials: 'include',
                 });
             }
             const st = refreshResponse.status;
             /** 5xx / tarmoq: sessiyani saqlab qolamiz — vaqtincha server xatosi uchun logout emas */
             if (st === 401 || st === 403) {
                 console.error('Refresh token invalid or expired, logging out...');
-                clearAuth();
+                await logoutSession();
                 window.location.href = '/login';
             } else {
                 console.warn('Token refresh failed (temporary?), status:', st);
@@ -74,9 +114,14 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refreshToken }),
+            credentials: 'include',
         });
         if (!refreshResponse.ok) return false;
-        const data = (await refreshResponse.json()) as { accessToken?: string; refreshToken?: string };
+        const data = (await refreshResponse.json()) as {
+            accessToken?: string;
+            refreshToken?: string;
+            csrfToken?: string;
+        };
         if (!data.accessToken) return false;
         const user = getUser();
         const storage = getStorageForAuth();
@@ -85,12 +130,11 @@ export async function tryRefreshAccessToken(): Promise<boolean> {
             data.accessToken,
             data.refreshToken || refreshToken,
             (user || {}) as Record<string, unknown>,
-            remember
+            remember,
+            data.csrfToken
         );
         return true;
     } catch {
         return false;
     }
 }
-
-
