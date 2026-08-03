@@ -33,11 +33,11 @@ import settlementRoutes from './api/routes/settlement.routes';
 import proxyRoutes from './api/routes/proxy.routes';
 import { setupSwagger } from './config/swagger';
 import { csrfProtect } from './middleware/csrf.middleware';
-import { isOriginAllowed, parseOriginList } from './config/corsOrigins';
+import { isOriginAllowed, buildCorsAllowlist } from './config/corsOrigins';
 
 const app = express();
 
-const httpCorsOrigins = parseOriginList(process.env.CORS_ORIGINS);
+const httpCorsOrigins = buildCorsAllowlist(process.env.CORS_ORIGINS);
 const isProd = process.env.NODE_ENV === 'production';
 
 app.set('trust proxy', 1);

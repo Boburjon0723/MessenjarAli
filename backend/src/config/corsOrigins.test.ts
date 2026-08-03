@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOriginAllowed, originMatchesPattern, parseOriginList } from './corsOrigins';
+import { buildCorsAllowlist, isOriginAllowed, originMatchesPattern, parseOriginList } from './corsOrigins';
 
 describe('corsOrigins', () => {
     it('parses comma list', () => {
@@ -49,5 +49,21 @@ describe('corsOrigins', () => {
                 allowInDevWhenEmpty: false,
             })
         ).toBe(true);
+    });
+
+    it('buildCorsAllowlist auto-adds *.vercel.app', () => {
+        const prev = process.env.CORS_ALLOW_VERCEL;
+        delete process.env.CORS_ALLOW_VERCEL;
+        const list = buildCorsAllowlist(
+            'https://messenjar-ali-onedays-projects-0a24a63d.vercel.app'
+        );
+        expect(list).toContain('*.vercel.app');
+        expect(
+            isOriginAllowed(
+                'https://messenjar-bspcrbj83-onedays-projects-0a24a63d.vercel.app',
+                list
+            )
+        ).toBe(true);
+        process.env.CORS_ALLOW_VERCEL = prev;
     });
 });

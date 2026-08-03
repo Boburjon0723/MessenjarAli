@@ -6,7 +6,7 @@ import { SocketService } from './socket/socket.service';
 import { pool } from './config/database';
 import { TokenService } from './services/token.service';
 import { validateSecretsAtBoot } from './config/security';
-import { isOriginAllowed, parseOriginList } from './config/corsOrigins';
+import { isOriginAllowed, buildCorsAllowlist } from './config/corsOrigins';
 
 import { createAdapter } from '@socket.io/redis-adapter';
 import { redisClient, subClient } from './config/redis';
@@ -16,7 +16,10 @@ validateSecretsAtBoot();
 const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 
-const socketCorsOrigins = parseOriginList(process.env.SOCKET_CORS_ORIGINS || process.env.CORS_ORIGINS);
+// SOCKET_CORS_ORIGINS bo‘sh bo‘lsa CORS_ORIGINS; Vercel previewlar avtomatik *.vercel.app
+const socketCorsOrigins = buildCorsAllowlist(
+    process.env.SOCKET_CORS_ORIGINS || process.env.CORS_ORIGINS
+);
 
 // Initialize Socket.IO
 const io = new Server(server, {
@@ -24,7 +27,8 @@ const io = new Server(server, {
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
             if (isOriginAllowed(origin, socketCorsOrigins)) return callback(null, true);
-            return callback(new Error('Socket.IO CORS origin is not allowed'));
+            console.warn(`[SOCKET CORS REJECTED] Origin: "${origin}"`);
+            return callback(null, false);
         },
         methods: ["GET", "POST"],
         credentials: true

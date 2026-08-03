@@ -6,12 +6,25 @@
  *   https://my-app.vercel.app
  *   *.vercel.app
  *   https://*.vercel.app
+ *
+ * Vercel preview URL har deployda o‘zgaradi — default holatda
+ * `*.vercel.app` avtomatik ruxsat etiladi (CORS_ALLOW_VERCEL=false bilan o‘chirish mumkin).
  */
 export function parseOriginList(raw: string | undefined): string[] {
     return String(raw || '')
         .split(',')
         .map((v) => v.trim())
         .filter(Boolean);
+}
+
+/** Runtime allowlist: env + ixtiyoriy Vercel preview wildcard. */
+export function buildCorsAllowlist(raw: string | undefined): string[] {
+    const list = parseOriginList(raw);
+    const allowVercel = process.env.CORS_ALLOW_VERCEL !== 'false';
+    if (allowVercel && !list.some((p) => p === '*.vercel.app' || p === 'https://*.vercel.app')) {
+        list.push('*.vercel.app');
+    }
+    return list;
 }
 
 function hostMatchesWildcard(hostname: string, hostPattern: string): boolean {
@@ -32,15 +45,13 @@ export function originMatchesPattern(origin: string, pattern: string): boolean {
     try {
         const { protocol, hostname } = new URL(origin);
 
-        // *.vercel.app  (any scheme)
         if (pattern.startsWith('*.')) {
             return hostMatchesWildcard(hostname, pattern);
         }
 
-        // https://*.vercel.app
         const schemeSep = pattern.indexOf('://');
         if (schemeSep !== -1) {
-            const scheme = pattern.slice(0, schemeSep); // https
+            const scheme = pattern.slice(0, schemeSep);
             if (protocol !== `${scheme}:`) return false;
             const hostPattern = pattern.slice(schemeSep + 3);
             return hostMatchesWildcard(hostname, hostPattern);
