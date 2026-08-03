@@ -33,25 +33,12 @@ import settlementRoutes from './api/routes/settlement.routes';
 import proxyRoutes from './api/routes/proxy.routes';
 import { setupSwagger } from './config/swagger';
 import { csrfProtect } from './middleware/csrf.middleware';
+import { isOriginAllowed, parseOriginList } from './config/corsOrigins';
 
 const app = express();
 
-const parseOriginList = (raw: string | undefined): string[] =>
-    String(raw || '')
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean);
-
 const httpCorsOrigins = parseOriginList(process.env.CORS_ORIGINS);
 const isProd = process.env.NODE_ENV === 'production';
-
-const isOriginAllowed = (origin: string): boolean => {
-    if (httpCorsOrigins.length === 0) {
-        // Dev only — production requires explicit CORS_ORIGINS (boot-validated)
-        return !isProd;
-    }
-    return httpCorsOrigins.includes(origin);
-};
 
 app.set('trust proxy', 1);
 
@@ -61,7 +48,7 @@ app.use(
     cors({
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
-            if (isOriginAllowed(origin)) return callback(null, true);
+            if (isOriginAllowed(origin, httpCorsOrigins)) return callback(null, true);
             console.warn(`[CORS REJECTED] Origin: "${origin}"`);
             return callback(new Error('CORS origin is not allowed'));
         },

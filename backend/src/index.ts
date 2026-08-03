@@ -6,6 +6,7 @@ import { SocketService } from './socket/socket.service';
 import { pool } from './config/database';
 import { TokenService } from './services/token.service';
 import { validateSecretsAtBoot } from './config/security';
+import { isOriginAllowed, parseOriginList } from './config/corsOrigins';
 
 import { createAdapter } from '@socket.io/redis-adapter';
 import { redisClient, subClient } from './config/redis';
@@ -15,27 +16,14 @@ validateSecretsAtBoot();
 const PORT = process.env.PORT || 4000;
 const server = http.createServer(app);
 
-const parseOriginList = (raw: string | undefined): string[] =>
-    String(raw || '')
-        .split(',')
-        .map((v) => v.trim())
-        .filter(Boolean);
-
 const socketCorsOrigins = parseOriginList(process.env.SOCKET_CORS_ORIGINS || process.env.CORS_ORIGINS);
-
-const isSocketOriginAllowed = (origin: string): boolean => {
-    if (socketCorsOrigins.length === 0) {
-        return process.env.NODE_ENV !== 'production';
-    }
-    return socketCorsOrigins.includes(origin);
-};
 
 // Initialize Socket.IO
 const io = new Server(server, {
     cors: {
         origin: (origin, callback) => {
             if (!origin) return callback(null, true);
-            if (isSocketOriginAllowed(origin)) return callback(null, true);
+            if (isOriginAllowed(origin, socketCorsOrigins)) return callback(null, true);
             return callback(new Error('Socket.IO CORS origin is not allowed'));
         },
         methods: ["GET", "POST"],

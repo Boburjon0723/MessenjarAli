@@ -1,0 +1,67 @@
+/**
+ * CORS allowlist helper.
+ * CORS_ORIGINS / SOCKET_CORS_ORIGINS: vergul bilan — exact origin yoki wildcard.
+ *
+ * Misollar:
+ *   https://my-app.vercel.app
+ *   *.vercel.app
+ *   https://*.vercel.app
+ */
+export function parseOriginList(raw: string | undefined): string[] {
+    return String(raw || '')
+        .split(',')
+        .map((v) => v.trim())
+        .filter(Boolean);
+}
+
+function hostMatchesWildcard(hostname: string, hostPattern: string): boolean {
+    const host = hostname.toLowerCase();
+    const pat = hostPattern.toLowerCase();
+    if (pat.startsWith('*.')) {
+        const suffix = pat.slice(1); // .vercel.app
+        const apex = pat.slice(2); // vercel.app
+        return host === apex || host.endsWith(suffix);
+    }
+    return host === pat;
+}
+
+export function originMatchesPattern(origin: string, pattern: string): boolean {
+    if (pattern === origin) return true;
+    if (!pattern.includes('*')) return false;
+
+    try {
+        const { protocol, hostname } = new URL(origin);
+
+        // *.vercel.app  (any scheme)
+        if (pattern.startsWith('*.')) {
+            return hostMatchesWildcard(hostname, pattern);
+        }
+
+        // https://*.vercel.app
+        const schemeSep = pattern.indexOf('://');
+        if (schemeSep !== -1) {
+            const scheme = pattern.slice(0, schemeSep); // https
+            if (protocol !== `${scheme}:`) return false;
+            const hostPattern = pattern.slice(schemeSep + 3);
+            return hostMatchesWildcard(hostname, hostPattern);
+        }
+
+        return false;
+    } catch {
+        return false;
+    }
+}
+
+export function isOriginAllowed(
+    origin: string,
+    allowlist: string[],
+    opts?: { allowInDevWhenEmpty?: boolean }
+): boolean {
+    if (allowlist.length === 0) {
+        if (opts?.allowInDevWhenEmpty !== false) {
+            return process.env.NODE_ENV !== 'production';
+        }
+        return false;
+    }
+    return allowlist.some((pattern) => originMatchesPattern(origin, pattern));
+}
