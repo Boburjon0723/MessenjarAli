@@ -2,6 +2,12 @@ import { Request, Response } from 'express';
 import { AccessToken } from 'livekit-server-sdk';
 import dotenv from 'dotenv';
 import { pool } from '../../config/database';
+import {
+    buildParticipantDisplayName,
+    canJoinConsultLobby,
+    isConsultLobbyRoom,
+    resolveLiveKitRole,
+} from '../../services/livekit.access';
 dotenv.config();
 
 const getLivekitConfig = () => {
@@ -32,16 +38,9 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
         }
 
         const roomId = String(room);
-        /** Konsultant kutish xonasi — `consult-lobby-<ekspert_user_id>`; chat_id UUID emas, DB so'rovsiz */
-        const consultLobbyPrefix = 'consult-lobby-';
-        const isConsultLobbyRoom = roomId.startsWith(consultLobbyPrefix);
-        const lobbyOwnerId = isConsultLobbyRoom ? roomId.slice(consultLobbyPrefix.length) : null;
-        const isOwnConsultLobby =
-            isConsultLobbyRoom &&
-            lobbyOwnerId != null &&
-            String(userId).toLowerCase() === String(lobbyOwnerId).toLowerCase();
+        const isOwnConsultLobby = canJoinConsultLobby(roomId, userId);
 
-        if (isConsultLobbyRoom && !isOwnConsultLobby) {
+        if (isConsultLobbyRoom(roomId) && !isOwnConsultLobby) {
             res.status(403).json({
                 error: "Bu konsultatsiya kutish xonasiga kirish mumkin emas.",
             });
@@ -63,16 +62,16 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
 
         const { apiKey, apiSecret, wsUrl } = getLivekitConfig();
 
-        const fullName = user?.name ? `${user.name}${user.surname ? ' ' + user.surname : ''}` : null;
-        const participantName = fullName || user?.username || `User-${user?.id.substring(0, 4)}`;
-        const isMentor = user?.isExpert || user?.role === 'expert' || user?.is_expert || false;
+        const participantName = buildParticipantDisplayName(user);
+        const role = resolveLiveKitRole(user);
+        const isMentor = role === 'mentor';
         const avatarUrl = user?.avatar_url || user?.avatar || null;
         const metadata = JSON.stringify({
             avatar_url: avatarUrl,
             avatar: avatarUrl,
             displayName: participantName,
             /** LiveKit client: talaba faqat mentor + o‘zini video rejimida ko‘rsatishi uchun */
-            lkRole: isMentor ? 'mentor' : 'student',
+            lkRole: role,
         });
 
         const at = new AccessToken(apiKey, apiSecret, {
@@ -90,22 +89,20 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
         });
 
         const token = await at.toJwt();
-        // Notify group members about session activity via Socket.IO
         const io = req.app.get('io');
         if (io && room && isMentor) {
-            // Mentor started — broadcast to the group room so students see join button
             io.to(room as string).emit('group_session_started', {
                 roomId: room,
                 mentorId: user.id,
                 mentorName: participantName,
-                startedAt: new Date().toISOString()
+                startedAt: new Date().toISOString(),
             });
         }
 
         res.status(200).json({
             token,
             wsUrl,
-            role: isMentor ? 'mentor' : 'student'
+            role,
         });
     } catch (error) {
         console.error('Failed to generate LiveKit Token:', error);
@@ -113,7 +110,6 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
     }
 };
 
-// Endpoint to mark session as ended (called when mentor clicks End Session)
 const endSession = async (req: Request, res: Response): Promise<void> => {
     const { room } = req.query;
     const io = req.app.get('io');
