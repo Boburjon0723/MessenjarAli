@@ -439,83 +439,19 @@ export class SocketService {
                 async (data: {
                     sessionId: string;
                     mentorName: string;
-                    /** frontend: getExpertPanelMode !== mentor */
                     sessionStyle?: 'mentor' | 'consult';
                 }) => {
                 try {
-                    const { sessionId, mentorName, sessionStyle } = data;
-                    const userId = authSocket.user.id;
-                    console.log(`[Socket] lesson_start received: sessionId=${sessionId}, mentorName=${mentorName}, userId=${userId}`);
-
-                    const { MessageModel } = await import('../models/postgres/Message');
-                    const { pool } = await import('../config/database');
-
-                    // 1. IMPROVED LOOKUP: Find group chat where this mentor is a participant and the chat name or ID matches session
-                    let chatId: string | null = null;
-                    // Option A: Check if sessionId is a valid chatId (UUID)
-                    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                    if (uuidRegex.test(sessionId)) {
-                        const checkDirect = await pool.query(
-                            'SELECT chat_id FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
-                            [sessionId, userId]
-                        );
-
-                        if ((checkDirect.rowCount ?? 0) > 0) {
-                            chatId = sessionId;
-                            console.log(`[Socket] Found direct chatId match: ${chatId}`);
-                        }
-                    }
-
-                    // Option B: Search for a group chat where the name matches the sessionId (fallback)
-                    if (!chatId) {
-                        const checkByName = await pool.query(`
-                            SELECT c.id FROM chats c
-                            JOIN chat_participants cp ON c.id = cp.chat_id
-                            WHERE c.type = 'group' AND cp.user_id = $1 AND c.name = $2
-                            LIMIT 1
-                        `, [userId, sessionId]);
-
-                        if ((checkByName.rowCount ?? 0) > 0) {
-                            chatId = checkByName.rows[0].id;
-                            console.log(`[Socket] Found chatId by name match: ${chatId}`);
-                        }
-                    }
-
-                    if (!chatId) {
-                        console.warn(`[Socket] lesson_start: No chatId found for expert ${userId} with sessionId ${sessionId}`);
-                    }
-
-                    if (chatId) {
-                        const mentor = await UserModel.findById(userId);
-                        const mentorAvatar = mentor?.avatar_url || authSocket.user?.avatar_url || null;
-                        const startContent = lessonNotifyChatContent(mentorName, 'start', sessionStyle);
-
-                        const startMeta = { sessionId: sessionId, sessionStyle: sessionStyle ?? 'mentor' };
-                        const newMessage = await MessageModel.create(
-                            chatId,
-                            userId,
-                            startContent,
-                            'lesson_start',
-                            startMeta
-                        );
-                        console.log(`[Socket] Created DB message:`, newMessage.id);
-
-                        this.io.to(chatId).emit('receive_message', {
-                            id: newMessage.id,
-                            chat_id: chatId,
-                            roomId: chatId,
-                            sender_id: userId,
-                            sender_name: mentorName,
-                            sender_avatar: mentorAvatar,
-                            content: startContent,
-                            type: 'lesson_start',
-                            metadata: startMeta,
-                            created_at: new Date().toISOString()
-                        });
-
-                        console.log(`[Socket] Lesson started for session ${sessionId}, notified chat ${chatId}`);
-                    } else {
-                        console.warn(`[Socket] Could not determine chatId for session: ${sessionId}. User ${userId} is not in a matching group.`);
+                    const { sendLessonStartNotify } = await import('../services/consultPanel.service');
+                    const result = await sendLessonStartNotify({
+                        expertId: authSocket.user.id,
+                        sessionId: data.sessionId,
+                        mentorName: data.mentorName,
+                        sessionStyle: data.sessionStyle,
+                        io: this.io,
+                    });
+                    if (!result) {
+                        console.warn(`[Socket] lesson_start: No chatId for ${data.sessionId}`);
                     }
                 } catch (error) {
                     console.error('[Socket] lesson_start error:', error);
@@ -532,99 +468,14 @@ export class SocketService {
                     isPaymentRequest?: boolean;
                 }) => {
                     try {
-                        const { expertName, sessionStyle, isPaymentRequest } = data;
-                        const chatId = String(data.chatId || '').trim().toLowerCase();
-                        const userId = authSocket.user.id;
-                        if (!chatId || !expertName) return;
-
-                        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                        if (!uuidRegex.test(String(chatId))) return;
-
-                        const { pool } = await import('../config/database');
-                        const { MessageModel } = await import('../models/postgres/Message');
-
-                        const part = await pool.query(
-                            'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 LIMIT 1',
-                            [chatId, userId]
-                        );
-                        if ((part.rowCount ?? 0) === 0) {
-                            console.warn('[Socket] consult_panel_invite: not a participant', chatId, userId);
-                            return;
-                        }
-
-                        /** Har bir «Qabul xabari» yuborilishi kerak; avtomatik taklif frontendda yo‘q */
-                        const style: 'mentor' | 'consult' | 'legal' | 'psychology' =
-                            sessionStyle === 'mentor'
-                                ? 'mentor'
-                                : sessionStyle === 'legal'
-                                  ? 'legal'
-                                  : sessionStyle === 'psychology'
-                                    ? 'psychology'
-                                    : 'consult';
-                        
-                        let content = consultPanelInviteChatContent(expertName, style);
-                        let kind: string = 'panel_open';
-
-                        if (isPaymentRequest) {
-                            content = `💳 **${expertName}** bilan sessiyani boshlash uchun xizmat haqqini to'lashingiz lozim. To'lovdan so'ng sessiyaga ulanish tugmasi faollashadi.`;
-                            kind = 'payment_request';
-                        }
-
-                        let serviceAmountMali: number | null = null;
-                        if (style !== 'mentor') {
-                            const sr = await pool.query(
-                                `SELECT amount_mali, status::text AS status FROM service_sessions
-                                 WHERE chat_id = $1 AND expert_id = $2::uuid
-                                 ORDER BY id DESC LIMIT 1`,
-                                [chatId, userId]
-                            );
-                            if (sr.rows.length > 0) {
-                                const amt = parseFloat(String(sr.rows[0].amount_mali ?? '0'));
-                                const st = String(sr.rows[0].status || '');
-                                if (Number.isFinite(amt) && amt > 0) {
-                                    const amtStr = amt.toLocaleString('uz-UZ', {
-                                        minimumFractionDigits: 2,
-                                        maximumFractionDigits: 4,
-                                    });
-                                    if (st === 'initiated') {
-                                        content += `\n\n💰 **${amtStr} MALI** xizmat uchun hisobingizdan kafillik (escrow) qilib olingan. Ulanish orqali xizmatdan foydalanishni davom ettirasiz.`;
-                                        serviceAmountMali = amt;
-                                    } else if (st === 'ongoing') {
-                                        content += `\n\n💰 Faol xizmat: **${amtStr} MALI** (kafillikda).`;
-                                        serviceAmountMali = amt;
-                                    }
-                                }
-                            }
-                        }
-
-                        const meta = {
-                            sessionId: chatId,
-                            sessionStyle: style,
-                            kind,
-                            ...(serviceAmountMali != null ? { serviceAmountMali } : {}),
-                        };
-                        const mentor = await UserModel.findById(userId);
-                        const mentorAvatar = mentor?.avatar_url || authSocket.user?.avatar_url || null;
-
-                        const newMessage = await MessageModel.create(
-                            chatId,
-                            userId,
-                            content,
-                            'consult_panel_invite',
-                            meta
-                        );
-
-                        this.io.to(chatId).emit('receive_message', {
-                            id: newMessage.id,
-                            chat_id: chatId,
-                            roomId: chatId,
-                            sender_id: userId,
-                            sender_name: expertName,
-                            sender_avatar: mentorAvatar,
-                            content,
-                            type: 'consult_panel_invite',
-                            metadata: meta,
-                            created_at: new Date().toISOString(),
+                        const { sendConsultPanelInvite } = await import('../services/consultPanel.service');
+                        await sendConsultPanelInvite({
+                            expertId: authSocket.user.id,
+                            chatId: data.chatId,
+                            expertName: data.expertName,
+                            sessionStyle: data.sessionStyle,
+                            isPaymentRequest: data.isPaymentRequest,
+                            io: this.io,
                         });
                     } catch (e) {
                         console.error('[Socket] consult_panel_invite error:', e);

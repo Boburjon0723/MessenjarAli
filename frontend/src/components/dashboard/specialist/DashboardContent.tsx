@@ -269,33 +269,40 @@ export function DashboardContent({
     } | null>(null);
 
     const sendConsultAcceptNotice = useCallback(
-        (chatId: string, isPaymentRequest = false) => {
+        async (chatId: string, isPaymentRequest = false) => {
             const id = String(chatId || '').trim();
             if (!id) return;
-            if (!socket?.connected) {
-                showError(t('socket_realtime_offline'));
-                return;
-            }
             const expertName =
-                [user?.name, user?.surname].filter(Boolean).join(' ').trim() || user?.name || t('expert_role_consult');
+                [user?.name, user?.surname].filter(Boolean).join(' ').trim() ||
+                user?.name ||
+                t('expert_role_consult');
             setConsultAcceptSendingId(id);
             try {
-                /** Backend `consult_panel_invite` — DB ga type bilan yozadi, mijozda «Uchrashuvga ulanish» tugmasi chiqadi */
-                socket.emit('consult_panel_invite', {
-                    chatId: id,
-                    expertName,
-                    sessionStyle: getConsultPanelInviteSessionStyle(expertPanelMode),
-                    isPaymentRequest,
+                /** HTTP asosiy yo‘l — Socket CORS uzilsa ham xabar DB ga yoziladi */
+                const res = await apiFetch('/api/specialists/consult/panel-invite', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        chatId: id,
+                        expertName,
+                        sessionStyle: getConsultPanelInviteSessionStyle(expertPanelMode),
+                        isPaymentRequest,
+                    }),
                 });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    showError(data?.message || t('network_error'));
+                    return;
+                }
+                showSuccess(t('invite_sent_success'));
                 onConsultSessionChat?.(id);
             } catch (e) {
                 console.error('consult_panel_invite', e);
                 showError(t('network_error'));
             } finally {
-                window.setTimeout(() => setConsultAcceptSendingId((cur) => (cur === id ? null : cur)), 1200);
+                window.setTimeout(() => setConsultAcceptSendingId((cur) => (cur === id ? null : cur)), 800);
             }
         },
-        [socket, onConsultSessionChat, user?.name, user?.surname, expertPanelMode, showError, t]
+        [onConsultSessionChat, user?.name, user?.surname, expertPanelMode, showError, showSuccess, t]
     );
 
     const openConsultAcceptFinancialModal = useCallback(
@@ -1911,6 +1918,105 @@ export function DashboardContent({
                     onSave={handleCreateQuiz}
                 />
             )}
+
+            {consultAcceptModal ? (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+                    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12151e] p-4 shadow-2xl space-y-3">
+                        <div className="flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="text-sm font-bold text-white">{t('accept_invite_btn')}</h3>
+                                <p className="text-[11px] text-slate-400 mt-1">
+                                    {t('consult_accept_modal_client')}{' '}
+                                    <span className="text-white font-semibold">
+                                        {consultAcceptModal.displayName}
+                                    </span>
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                className="text-slate-400 hover:text-white text-xs"
+                                onClick={() => setConsultAcceptModal(null)}
+                            >
+                                {t('cancel')}
+                            </button>
+                        </div>
+
+                        {consultAcceptModal.loading ? (
+                            <div className="py-8 flex justify-center">
+                                <div className="w-6 h-6 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                            </div>
+                        ) : consultAcceptModal.error ? (
+                            <p className="text-xs text-red-300">{consultAcceptModal.error}</p>
+                        ) : consultAcceptModal.prep ? (
+                            <div className="space-y-2 text-[11px] text-slate-300">
+                                <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1.5">
+                                    <div className="flex justify-between gap-2">
+                                        <span className="text-slate-500">{t('consult_accept_modal_locked_balance')}</span>
+                                        <span className="font-bold text-white">
+                                            {formatMaliUi(consultAcceptModal.prep.clientLockedBalance, language)} MALI
+                                        </span>
+                                    </div>
+                                    <div className="flex justify-between gap-2">
+                                        <span className="text-slate-500">{t('consult_accept_modal_your_listing_price')}</span>
+                                        <span className="font-bold text-white">
+                                            {consultAcceptModal.prep.expertServicePrice != null
+                                                ? `${formatMaliUi(consultAcceptModal.prep.expertServicePrice, language)} MALI`
+                                                : '—'}
+                                        </span>
+                                    </div>
+                                    {consultAcceptModal.prep.session ? (
+                                        <div className="flex justify-between gap-2">
+                                            <span className="text-slate-500">{t('status_ongoing')}</span>
+                                            <span className="font-bold text-emerald-300">
+                                                {consultAcceptModal.prep.session.status} ·{' '}
+                                                {formatMaliUi(consultAcceptModal.prep.session.amountMali, language)} MALI
+                                            </span>
+                                        </div>
+                                    ) : null}
+                                </div>
+                                <p className="text-slate-500 leading-relaxed">
+                                    {panelLabels.consultInviteTooltip || t('send_invite_tooltip')}
+                                </p>
+                            </div>
+                        ) : null}
+
+                        <div className="flex flex-col gap-2 pt-1">
+                            <button
+                                type="button"
+                                disabled={
+                                    !!consultAcceptModal.loading ||
+                                    !!consultAcceptModal.error ||
+                                    consultAcceptSendingId === consultAcceptModal.chatId
+                                }
+                                onClick={async () => {
+                                    const id = consultAcceptModal.chatId;
+                                    setConsultAcceptModal(null);
+                                    await sendConsultAcceptNotice(id, false);
+                                }}
+                                className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white disabled:opacity-50"
+                            >
+                                {t('accept_invite_btn')}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={
+                                    !!consultAcceptModal.loading ||
+                                    !!consultAcceptModal.error ||
+                                    consultAcceptSendingId === consultAcceptModal.chatId
+                                }
+                                onClick={async () => {
+                                    const id = consultAcceptModal.chatId;
+                                    setConsultAcceptModal(null);
+                                    await sendConsultAcceptNotice(id, true);
+                                }}
+                                className="w-full py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-xs font-bold text-amber-100 disabled:opacity-50"
+                            >
+                                {t('request_payment')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
 
         </div>
     );

@@ -7,6 +7,10 @@ import {
     getConsultChatFinancialPrepForExpert,
     completeConsultation,
 } from '../../services/consultSession.service';
+import {
+    sendConsultPanelInvite,
+    sendLessonStartNotify,
+} from '../../services/consultPanel.service';
 
 export const initiateSession = async (req: Request, res: Response) => {
     const client_id = (req as any).user.id;
@@ -173,6 +177,58 @@ export const startOngoingConsult = async (req: Request, res: Response) => {
             return res.status(400).json({ message: error.message });
         }
         res.status(400).json({ message: error.message || 'Xatolik' });
+    }
+};
+
+/** Mijoz chatiga «Uchrashuvga ulanish» taklifi (Socket o‘rniga HTTP — ishonchli). */
+export const postConsultPanelInvite = async (req: Request, res: Response) => {
+    try {
+        const expertId = (req as any).user.id;
+        const { chatId, expertName, sessionStyle, isPaymentRequest } = req.body || {};
+        const name =
+            String(expertName || '').trim() ||
+            [ (req as any).user?.name, (req as any).user?.surname ].filter(Boolean).join(' ').trim() ||
+            'Mutaxassis';
+        const result = await sendConsultPanelInvite({
+            expertId,
+            chatId: String(chatId || ''),
+            expertName: name,
+            sessionStyle,
+            isPaymentRequest: !!isPaymentRequest,
+            io: req.app.get('io'),
+        });
+        res.status(201).json({ ok: true, ...result });
+    } catch (error: any) {
+        const code = error?.statusCode || 400;
+        res.status(code).json({ message: error?.message || 'Xatolik' });
+    }
+};
+
+/** Mentor «Darsni boshlash» — chatga lesson_start xabari (HTTP). */
+export const postLessonStartNotify = async (req: Request, res: Response) => {
+    try {
+        const expertId = (req as any).user.id;
+        const { sessionId, mentorName, sessionStyle } = req.body || {};
+        const name =
+            String(mentorName || '').trim() ||
+            [ (req as any).user?.name, (req as any).user?.surname ].filter(Boolean).join(' ').trim() ||
+            'Ustoz';
+        const result = await sendLessonStartNotify({
+            expertId,
+            sessionId: String(sessionId || ''),
+            mentorName: name,
+            sessionStyle: sessionStyle === 'consult' ? 'consult' : 'mentor',
+            io: req.app.get('io'),
+        });
+        if (!result) {
+            return res.status(404).json({
+                message: 'Guruh/chat topilmadi yoki ishtirokchi emassiz',
+            });
+        }
+        res.status(201).json({ ok: true, ...result });
+    } catch (error: any) {
+        const code = error?.statusCode || 400;
+        res.status(code).json({ message: error?.message || 'Xatolik' });
     }
 };
 

@@ -983,24 +983,48 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             return;
         }
         setSelectedGroupId(gid);
-        if (!socket) return;
-        socket.emit('lesson_start', {
-            sessionId: gid,
-            mentorName: specialistDisplayName,
-            sessionStyle: 'mentor',
-        });
+        try {
+            const res = await apiFetch('/api/specialists/lesson-start', {
+                method: 'POST',
+                body: JSON.stringify({
+                    sessionId: gid,
+                    mentorName: specialistDisplayName,
+                    sessionStyle: 'mentor',
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                /** HTTP yo‘q / eski deploy — socket zaxira */
+                if (socket?.connected) {
+                    socket.emit('lesson_start', {
+                        sessionId: gid,
+                        mentorName: specialistDisplayName,
+                        sessionStyle: 'mentor',
+                    });
+                } else {
+                    showError(data?.message || t('socket_realtime_offline'));
+                    return;
+                }
+            }
+        } catch {
+            if (socket?.connected) {
+                socket.emit('lesson_start', {
+                    sessionId: gid,
+                    mentorName: specialistDisplayName,
+                    sessionStyle: 'mentor',
+                });
+            } else {
+                showError(t('network_error_retry'));
+                return;
+            }
+        }
         const w = panelLabels.sessionNotifyWord;
-        /** `started_msg` ba’zi TS inferensiyalarida TranslationKeys dan tashqari chiqishi mumkin; `status_started` barqaror */
         showSuccess(`${w} ${t('status_started')}`);
         setIsLessonStarted(true);
         setShowStartLessonModal(false);
     };
 
     const handleStartLesson = () => {
-        if (!socket?.connected) {
-            showError(t('socket_realtime_offline'));
-            return;
-        }
         if (groups.length > 1) {
             setLessonPickGroupId(selectedGroupId || groups[0]?.id || '');
             setShowStartLessonModal(true);
