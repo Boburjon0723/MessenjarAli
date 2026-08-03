@@ -39,6 +39,9 @@ const app = express();
 
 const httpCorsOrigins = buildCorsAllowlist(process.env.CORS_ORIGINS);
 const isProd = process.env.NODE_ENV === 'production';
+if (isProd) {
+    console.log('[CORS] HTTP allowlist:', httpCorsOrigins.join(', ') || '(empty)');
+}
 
 app.set('trust proxy', 1);
 

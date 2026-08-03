@@ -750,6 +750,8 @@ export const translations = {
     group_created_success: "Guruh muvaffaqiyatli yaratildi!",
     group_create_error: "Guruh yaratishda xatolik.",
     network_error: "Tarmoq xatosi.",
+    socket_realtime_offline:
+      "Real-time ulanish yo‘q (Socket). Sahifani yangilang yoki internetni tekshiring — keyin qayta bosing.",
     quiz_delete_confirm_desc: "Bu viktorinani bazadan o‘chirishni tasdiqlaysizmi?",
     quiz_deleted_success: "Viktorina o'chirildi.",
     delete_failed_error: "O‘chirilmadi.",
@@ -1374,6 +1376,8 @@ export const translations = {
     group_created_success: "Группа успешно создана!",
     group_create_error: "Ошибка создания группы.",
     network_error: "Ошибка сети.",
+    socket_realtime_offline:
+      "Нет real-time соединения (Socket). Обновите страницу или проверьте интернет — затем нажмите снова.",
     quiz_delete_confirm_desc: "Вы подтверждаете удаление этой викторины из базы?",
     quiz_deleted_success: "Викторина удалена.",
     delete_failed_error: "Не удалось удалить.",
@@ -2083,6 +2087,8 @@ export const translations = {
     group_created_success: "Group created successfully!",
     group_create_error: "Error creating group.",
     network_error: "Network error.",
+    socket_realtime_offline:
+      "Realtime connection is down (Socket). Refresh the page or check your network, then try again.",
     quiz_delete_confirm_desc: "Are you sure you want to delete this quiz from the database?",
     quiz_deleted_success: "Quiz deleted.",
     delete_failed_error: "Delete failed.",

@@ -997,7 +997,10 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
     };
 
     const handleStartLesson = () => {
-        if (showMentorClassroomTools && !socket) return;
+        if (!socket?.connected) {
+            showError(t('socket_realtime_offline'));
+            return;
+        }
         if (groups.length > 1) {
             setLessonPickGroupId(selectedGroupId || groups[0]?.id || '');
             setShowStartLessonModal(true);

@@ -20,6 +20,7 @@ const server = http.createServer(app);
 const socketCorsOrigins = buildCorsAllowlist(
     process.env.SOCKET_CORS_ORIGINS || process.env.CORS_ORIGINS
 );
+console.log('[CORS] Socket.IO allowlist:', socketCorsOrigins.join(', ') || '(empty)');
 
 // Initialize Socket.IO
 const io = new Server(server, {

@@ -271,7 +271,11 @@ export function DashboardContent({
     const sendConsultAcceptNotice = useCallback(
         (chatId: string, isPaymentRequest = false) => {
             const id = String(chatId || '').trim();
-            if (!id || !socket) return;
+            if (!id) return;
+            if (!socket?.connected) {
+                showError(t('socket_realtime_offline'));
+                return;
+            }
             const expertName =
                 [user?.name, user?.surname].filter(Boolean).join(' ').trim() || user?.name || t('expert_role_consult');
             setConsultAcceptSendingId(id);
@@ -286,11 +290,12 @@ export function DashboardContent({
                 onConsultSessionChat?.(id);
             } catch (e) {
                 console.error('consult_panel_invite', e);
+                showError(t('network_error'));
             } finally {
                 window.setTimeout(() => setConsultAcceptSendingId((cur) => (cur === id ? null : cur)), 1200);
             }
         },
-        [socket, onConsultSessionChat, user?.name, user?.surname, expertPanelMode]
+        [socket, onConsultSessionChat, user?.name, user?.surname, expertPanelMode, showError, t]
     );
 
     const openConsultAcceptFinancialModal = useCallback(
