@@ -447,7 +447,10 @@ export class SocketService {
                 console.log(`[Call] target room "${targetRoom}" has ${roomSockets?.size ?? 0} sockets`);
                 const { markCallAccepted } = await import('../services/callLog.service');
                 markCallAccepted(targetRoom, String(authSocket.user.id));
-                this.io.to(targetRoom).emit('call_accepted', { signal: data.signal });
+                const payload = { signal: data.signal, from: String(authSocket.user.id) };
+                this.io.to(targetRoom).emit('call_accepted', payload);
+                // Mirror to accepter's own room so both sides stay in sync.
+                this.io.to(String(authSocket.user.id)).emit('call_accepted', payload);
             });
 
             authSocket.on('reject_call', async (data: { to: string; chatId?: string }) => {

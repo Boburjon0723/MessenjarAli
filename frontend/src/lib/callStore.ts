@@ -129,8 +129,12 @@ export async function handleIncomingCall(data: {
 }
 
 /** Called when we receive `call_accepted` from socket */
-export function handleCallAccepted(data: { signal: any }, fromBroadcast = false) {
-    if (state.status !== 'ringing_out') return;
+export function handleCallAccepted(data: { signal: any; from?: string }, fromBroadcast = false) {
+    const isOutgoingAccepted = state.status === 'ringing_out';
+    const isIncomingConfirmedByPeer =
+        state.status === 'ringing_in' &&
+        (!!state.peerId && (!data.from || String(data.from) === String(state.peerId)));
+    if (!isOutgoingAccepted && !isIncomingConfirmedByPeer) return;
     stopTones();
     state = { ...state, status: 'active', signal: data.signal };
     startTimer();

@@ -6,7 +6,7 @@ import { useNotification } from '@/context/NotificationContext';
 import { useLanguage } from '@/context/LanguageContext';
 import type { ChatMessage, ChatMessageMetadata } from '@/types/chat-message';
 import { getMessageCopyText, normalizeMessageType } from '@/lib/chat-message-cache';
-import { downloadChatFile } from '@/lib/download-file';
+import { downloadChatFile, fetchChatMediaBlob } from '@/lib/download-file';
 import { classifyTelegramMessage } from '@/lib/telegram-message-kind';
 
 function parseMessageMetadata(raw: ChatMessage['metadata']): ChatMessageMetadata {
@@ -95,12 +95,7 @@ export default function MediaContextMenu({
 
     const handleCopyImage = async () => {
         try {
-            const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
-            const fetchUrl = mediaUrl.includes('storage.googleapis.com') || mediaUrl.includes('firebasestorage')
-                ? `${apiBase}/api/media-proxy?url=${encodeURIComponent(mediaUrl)}`
-                : mediaUrl;
-            const res = await fetch(fetchUrl);
-            const srcBlob = await res.blob();
+            const srcBlob = await fetchChatMediaBlob(mediaUrl);
             // Convert any image format to PNG via canvas (ClipboardItem requires image/png)
             const bitmapUrl = URL.createObjectURL(srcBlob);
             const img = new Image();

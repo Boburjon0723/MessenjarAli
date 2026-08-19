@@ -28,6 +28,18 @@ async function fetchAsBlob(src: string, headers?: HeadersInit): Promise<Blob> {
     return res.blob();
 }
 
+/** GCS / cross-origin chat media — auth bilan backend proxy orqali blob oladi. */
+export async function fetchChatMediaBlob(url: string): Promise<Blob> {
+    if (!url) throw new Error('No url');
+    try {
+        return await fetchAsBlob(url);
+    } catch {
+        const token = getToken();
+        const proxy = `${apiOrigin()}/api/media/download?url=${encodeURIComponent(url)}`;
+        return fetchAsBlob(proxy, token ? { Authorization: `Bearer ${token}` } : undefined);
+    }
+}
+
 type SaveFilePickerHandle = {
     createWritable: () => Promise<{
         write: (data: Blob) => Promise<void>;
@@ -66,14 +78,7 @@ export async function downloadChatFile(url: string, filename = 'file'): Promise<
     if (!url) throw new Error('No url');
     const name = sanitizeDownloadName(filename);
 
-    let blob: Blob;
-    try {
-        blob = await fetchAsBlob(url);
-    } catch {
-        const token = getToken();
-        const proxy = `${apiOrigin()}/api/media/download?url=${encodeURIComponent(url)}&name=${encodeURIComponent(name)}`;
-        blob = await fetchAsBlob(proxy, token ? { Authorization: `Bearer ${token}` } : undefined);
-    }
+    const blob = await fetchChatMediaBlob(url);
 
     await saveBlobAs(blob, name);
 }

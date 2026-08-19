@@ -2,7 +2,7 @@
 
 import React, { useCallback } from 'react';
 import { useCallState } from '@/lib/useCallState';
-import { callReset, toggleMute, toggleSpeaker, type CallState } from '@/lib/callStore';
+import { callReset, toggleMute, toggleSpeaker, handleCallAccepted, type CallState } from '@/lib/callStore';
 import { useSocket } from '@/context/SocketContext';
 import { CHAT_CALLS_ALLOWED } from '@/lib/chat-calls';
 import { Phone, PhoneOff, Mic, MicOff, Volume2, Video } from 'lucide-react';
@@ -19,6 +19,9 @@ export default function GlobalCallOverlay() {
 
     const handleAccept = useCallback(() => {
         if (!socket || call.status !== 'ringing_in' || !call.peerId) return;
+        // Optimistic local transition: if socket event is delayed/dropped,
+        // callee still moves to active state immediately.
+        handleCallAccepted({ signal: { type: 'livekit' }, from: call.peerId });
         socket.emit('accept_call', {
             to: call.peerId,
             chatId: call.chatId,
@@ -70,7 +73,8 @@ export default function GlobalCallOverlay() {
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-16 left-1/2 -translate-x-1/2 flex items-center gap-6">
+            <div className="absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] flex justify-center">
+                <div className="flex items-center gap-6">
                 {isActive && (
                     <>
                         <button
@@ -103,6 +107,7 @@ export default function GlobalCallOverlay() {
                 >
                     <PhoneOff className="w-7 h-7" />
                 </button>
+                </div>
             </div>
 
             {/* Back button */}
