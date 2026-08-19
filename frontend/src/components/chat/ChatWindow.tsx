@@ -1694,7 +1694,7 @@ export default function ChatWindow({
             )}
 
             {/* Header — Telegram Web: floating plate, max 696px, wallpaper yonlardan ko‘rinadi */}
-            <div className="relative z-20 shrink-0 px-2 pt-2 lg:px-4 lg:pt-4">
+            <div className="relative z-20 shrink-0 px-2 pt-[max(1rem,env(safe-area-inset-top))] lg:px-4 lg:pt-4">
                 <div className="tg-chat-column">
                     <ChatWindowHeader
                 chat={chat}
