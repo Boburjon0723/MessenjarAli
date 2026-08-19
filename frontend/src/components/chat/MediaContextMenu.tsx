@@ -95,7 +95,11 @@ export default function MediaContextMenu({
 
     const handleCopyImage = async () => {
         try {
-            const res = await fetch(mediaUrl);
+            const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
+            const fetchUrl = mediaUrl.includes('storage.googleapis.com') || mediaUrl.includes('firebasestorage')
+                ? `${apiBase}/api/media-proxy?url=${encodeURIComponent(mediaUrl)}`
+                : mediaUrl;
+            const res = await fetch(fetchUrl);
             const srcBlob = await res.blob();
             // Convert any image format to PNG via canvas (ClipboardItem requires image/png)
             const bitmapUrl = URL.createObjectURL(srcBlob);

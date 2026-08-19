@@ -535,7 +535,36 @@ const runAutoMigration = async () => {
         );
         await runQuery(
             'AddCol_Chat_PinnedMessageId',
-            'ALTER TABLE chats ADD COLUMN IF NOT EXISTS pinned_message_id BIGINT'
+            'ALTER TABLE chats ADD COLUMN IF NOT EXISTS pinned_message_id UUID'
+        );
+        await runQuery(
+            'FixCol_Chat_PinnedMessageId_Type',
+            `DO $$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1
+                    FROM information_schema.columns
+                    WHERE table_name = 'chats'
+                      AND column_name = 'pinned_message_id'
+                      AND data_type <> 'uuid'
+                ) THEN
+                    UPDATE chats SET pinned_message_id = NULL;
+                    ALTER TABLE chats
+                        ALTER COLUMN pinned_message_id TYPE UUID USING NULL;
+                END IF;
+            END $$;`
+        );
+        await runQuery(
+            'CreateTable_PushTokens',
+            `CREATE TABLE IF NOT EXISTS push_tokens (
+                id SERIAL PRIMARY KEY,
+                user_id UUID NOT NULL,
+                token TEXT NOT NULL,
+                platform VARCHAR(20) DEFAULT 'expo',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(user_id, token)
+            )`
         );
         await runQuery(
             'AddCol_ChatPart_Muted',

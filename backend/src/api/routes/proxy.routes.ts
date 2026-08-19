@@ -92,4 +92,31 @@ router.post('/translate', async (req: Request, res: Response) => {
     }
 });
 
+/** GET /api/media-proxy?url=... — proxy Firebase Storage / external images to bypass CORS */
+router.get('/media-proxy', async (req: Request, res: Response) => {
+    try {
+        const url = String(req.query.url || '').trim();
+        if (!url) return res.status(400).json({ error: 'url required' });
+
+        const allowed = ['storage.googleapis.com', 'firebasestorage.googleapis.com'];
+        let hostname: string;
+        try { hostname = new URL(url).hostname; } catch { return res.status(400).json({ error: 'invalid url' }); }
+        if (!allowed.some(h => hostname === h || hostname.endsWith('.' + h) || hostname.endsWith('.firebasestorage.app'))) {
+            return res.status(403).json({ error: 'host not allowed' });
+        }
+
+        const upstream = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+        if (!upstream.ok) return res.status(upstream.status).end();
+
+        const ct = upstream.headers.get('content-type');
+        if (ct) res.setHeader('Content-Type', ct);
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+
+        const buf = Buffer.from(await upstream.arrayBuffer());
+        res.send(buf);
+    } catch (e: any) {
+        res.status(500).json({ error: e?.message || 'proxy failed' });
+    }
+});
+
 export default router;

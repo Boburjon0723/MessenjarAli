@@ -82,11 +82,15 @@ export async function pushPaymentReceived(expertId: string, amount: number, curr
 
 /** Yangi xabar (app yopiq bo'lganda) */
 export async function pushNewMessage(userId: string, senderName: string, preview: string, chatId: string) {
-    const tokens = await getTokenStrings(userId);
-    await sendExpoPush(tokens, {
-        title: senderName,
-        body: preview.length > 100 ? preview.slice(0, 97) + '...' : preview,
-        data: { type: 'new_message', chatId },
-        channelId: 'chat',
-    });
+    try {
+        const tokens = await getTokenStrings(userId);
+        await sendExpoPush(tokens, {
+            title: senderName,
+            body: preview.length > 100 ? preview.slice(0, 97) + '...' : preview,
+            data: { type: 'new_message', chatId },
+            channelId: 'chat',
+        });
+    } catch (e) {
+        console.error('[Push] pushNewMessage failed:', e);
+    }
 }
