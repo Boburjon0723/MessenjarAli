@@ -17,6 +17,7 @@ import { isApplicationRejected } from '@/lib/listing-chat';
 import ListingDealBar from './ListingDealBar';
 import ChatForwardModal from './ChatForwardModal';
 import ChatWindowHeader from './ChatWindowHeader';
+import PinnedMessageBar from './PinnedMessageBar';
 import ChatComposer from './ChatComposer';
 import type { Sticker } from '@/lib/sticker-packs';
 import ChatCallOverlay from './ChatCallOverlay';
@@ -149,6 +150,7 @@ export default function ChatWindow({
     const [inputFocused, setInputFocused] = useState(false);
     const chatInputRef = useRef<HTMLTextAreaElement>(null);
     const [forwardMessage, setForwardMessage] = useState<ChatMessage | null>(null);
+    const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(null);
     const [forwardAvatarErrors, setForwardAvatarErrors] = useState<Record<string, boolean>>({});
 
     // WebRTC Real-time Video
@@ -588,6 +590,31 @@ export default function ChatWindow({
     useEffect(() => {
         setHeaderImageError(false);
     }, [chat?.id]);
+
+    // Fetch pinned message on chat open + listen for pin changes
+    useEffect(() => {
+        if (!chat?.id) { setPinnedMessage(null); return; }
+        let cancelled = false;
+        apiFetch(`/api/chats/${chat.id}`).then(async (r) => {
+            if (cancelled || !r.ok) return;
+            const data = await r.json();
+            if (data.pinnedMessage && !cancelled) setPinnedMessage(data.pinnedMessage);
+            else if (!cancelled) setPinnedMessage(null);
+        }).catch(() => {});
+
+        const handler = (ev: { chatId: string; messageId: string | null }) => {
+            if (String(ev.chatId) !== String(chat.id)) return;
+            if (!ev.messageId) { setPinnedMessage(null); return; }
+            apiFetch(`/api/chats/${chat.id}`).then(async (r) => {
+                if (!r.ok) return;
+                const data = await r.json();
+                if (data.pinnedMessage) setPinnedMessage(data.pinnedMessage);
+                else setPinnedMessage(null);
+            }).catch(() => {});
+        };
+        socket?.on('message_pinned', handler);
+        return () => { cancelled = true; socket?.off('message_pinned', handler); };
+    }, [chat?.id, socket]);
 
     const stopCallRing = useCallback(() => {
         if (callRingIntervalRef.current) {
@@ -1750,6 +1777,32 @@ export default function ChatWindow({
             />
                 </div>
             </div>
+
+            {pinnedMessage && (
+                <div className="relative z-20 shrink-0 px-2 lg:px-4">
+                    <div className="tg-chat-column">
+                        <PinnedMessageBar
+                            message={pinnedMessage}
+                            onClickMessage={() => {
+                                const el = document.getElementById(`msg-${pinnedMessage.id}`);
+                                if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    el.classList.add('bg-[#8774e1]/10');
+                                    setTimeout(() => el.classList.remove('bg-[#8774e1]/10'), 2000);
+                                }
+                            }}
+                            onUnpin={async () => {
+                                if (!chat?.id) return;
+                                await apiFetch(`/api/chats/${chat.id}/pin`, {
+                                    method: 'POST',
+                                    body: JSON.stringify({ messageId: null }),
+                                });
+                                setPinnedMessage(null);
+                            }}
+                        />
+                    </div>
+                </div>
+            )}
 
             <div className="relative z-20 shrink-0 px-2 lg:px-4">
                 <div className="tg-chat-column">
