@@ -2,7 +2,12 @@
  * Global call state — Telegram-style singleton.
  * Socket listeners are registered once at app level (SocketContext),
  * so incoming calls are received regardless of which chat is open.
+ * Multi-tab: BroadcastChannel syncs call state across tabs.
  */
+
+const bc = typeof BroadcastChannel !== 'undefined'
+    ? new BroadcastChannel('expertline_call')
+    : null;
 
 export type CallState = {
     status: 'idle' | 'ringing_in' | 'ringing_out' | 'active';
@@ -73,7 +78,7 @@ function stopTones() {
     stopOutgoingTone = null;
 }
 
-export function callReset() {
+export function callReset(broadcast = true) {
     stopTimer();
     stopTones();
     state = {
@@ -89,6 +94,7 @@ export function callReset() {
         isSpeaker: false,
     };
     notify();
+    if (broadcast) bc?.postMessage({ type: 'reset' });
 }
 
 /** Called when we receive `incoming_call` from socket */
@@ -100,7 +106,7 @@ export async function handleIncomingCall(data: {
     callType: 'audio' | 'video';
     chatId?: string;
     callId?: string;
-}) {
+}, fromBroadcast = false) {
     if (state.status !== 'idle') return;
     state = {
         ...state,
@@ -113,6 +119,9 @@ export async function handleIncomingCall(data: {
         signal: data.signal,
     };
     notify();
+    if (!fromBroadcast) {
+        bc?.postMessage({ type: 'incoming', data });
+    }
     try {
         const { playIncomingRing } = await import('@/lib/call-tones');
         stopIncomingTone = playIncomingRing();
@@ -120,24 +129,27 @@ export async function handleIncomingCall(data: {
 }
 
 /** Called when we receive `call_accepted` from socket */
-export function handleCallAccepted(data: { signal: any }) {
+export function handleCallAccepted(data: { signal: any }, fromBroadcast = false) {
     if (state.status !== 'ringing_out') return;
     stopTones();
     state = { ...state, status: 'active', signal: data.signal };
     startTimer();
     notify();
+    if (!fromBroadcast) bc?.postMessage({ type: 'accepted', data });
 }
 
 /** Called when we receive `call_rejected` from socket */
-export function handleCallRejected() {
+export function handleCallRejected(fromBroadcast = false) {
     stopTones();
-    callReset();
+    callReset(false);
+    if (!fromBroadcast) bc?.postMessage({ type: 'rejected' });
 }
 
 /** Called when we receive `call_ended` from socket */
-export function handleCallEnded() {
+export function handleCallEnded(fromBroadcast = false) {
     stopTones();
-    callReset();
+    callReset(false);
+    if (!fromBroadcast) bc?.postMessage({ type: 'ended' });
 }
 
 /** Called when user initiates an outgoing call */
@@ -152,6 +164,7 @@ export async function startOutgoingCall(peerId: string, peerName: string, chatId
         callType,
     };
     notify();
+    bc?.postMessage({ type: 'outgoing', data: { peerId, peerName, chatId, callType } });
     try {
         const { playOutgoingTone } = await import('@/lib/call-tones');
         stopOutgoingTone = playOutgoingTone();
@@ -167,3 +180,32 @@ export function toggleSpeaker() {
     state = { ...state, isSpeaker: !state.isSpeaker };
     notify();
 }
+
+// ── Multi-tab sync via BroadcastChannel ──
+bc?.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (!msg?.type) return;
+    switch (msg.type) {
+        case 'incoming':
+            handleIncomingCall(msg.data, true);
+            break;
+        case 'accepted':
+            handleCallAccepted(msg.data, true);
+            break;
+        case 'rejected':
+            handleCallRejected(true);
+            break;
+        case 'ended':
+            handleCallEnded(true);
+            break;
+        case 'reset':
+            callReset(false);
+            break;
+        case 'outgoing':
+            if (state.status === 'idle') {
+                state = { ...state, ...msg.data, status: 'ringing_out' };
+                notify();
+            }
+            break;
+    }
+});

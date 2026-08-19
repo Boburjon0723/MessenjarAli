@@ -95,25 +95,28 @@ export default function MediaContextMenu({
 
     const handleCopyImage = async () => {
         try {
-            // Convert to PNG via canvas (ClipboardItem only accepts image/png in most browsers)
+            const res = await fetch(mediaUrl);
+            const srcBlob = await res.blob();
+            // Convert any image format to PNG via canvas (ClipboardItem requires image/png)
+            const bitmapUrl = URL.createObjectURL(srcBlob);
             const img = new Image();
-            img.crossOrigin = 'anonymous';
             await new Promise<void>((resolve, reject) => {
                 img.onload = () => resolve();
                 img.onerror = () => reject(new Error('Image load failed'));
-                img.src = mediaUrl;
+                img.src = bitmapUrl;
             });
             const canvas = document.createElement('canvas');
             canvas.width = img.naturalWidth;
             canvas.height = img.naturalHeight;
             canvas.getContext('2d')!.drawImage(img, 0, 0);
+            URL.revokeObjectURL(bitmapUrl);
             const pngBlob = await new Promise<Blob>((resolve, reject) =>
                 canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png')
             );
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
             showSuccess(t('msg_copied'));
-        } catch {
-            // Fallback: copy URL
+        } catch (err) {
+            console.warn('[CopyImage] Failed, trying writeText fallback:', err);
             try {
                 await navigator.clipboard.writeText(mediaUrl);
                 showSuccess(t('msg_copied'));
