@@ -63,7 +63,7 @@ import { logoutSession } from "@/lib/api";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
 import { alertIncomingChatMessage, getMessageChatId, promptMobileNotificationPermissionEarly } from "@/lib/message-alert";
-import { hydratePrefsFromChats, isChatMuted, patchChatPref, setChatUnreadMarked, syncChatPrefToServer, migrateLocalPrefsToServer } from "@/lib/chat-list-prefs";
+import { hydratePrefsFromChats, getChatPref, patchChatPref, setChatUnreadMarked, syncChatPrefToServer, migrateLocalPrefsToServer } from "@/lib/chat-list-prefs";
 
 
 /** API ro'yxatida guruh hali ko'rinmasa ham ChatWindow ochilsin */
@@ -967,7 +967,7 @@ export function MessagesPageContent() {
                 } else if (!isFromMe) {
                     chat.unread = (chat.unread || 0) + 1;
 
-                    if (!isChatMuted(chatId)) {
+                    if (!getChatPref(chatId).muted) {
                     const senderName = chat.name || (message.sender_name as string) || (message.senderName as string) || 'Yangi xabar';
                     const body =
                         msgType === 'text'
