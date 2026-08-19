@@ -627,72 +627,13 @@ export default function ChatWindow({
 
             socket.on('service_session_updated', handleSessionUpdate);
 
-            socket.on('incoming_call', async (data: CallSignalPayload) => {
-                if (!CHAT_CALLS_ALLOWED) {
-                    if (data?.from) socket.emit('reject_call', { to: String(data.from) });
-                    return;
-                }
-                setCallData(data);
-                if (data.callType === 'video' || data.callType === 'audio') {
-                    setCallType(data.callType);
-                } else if (
-                    data.signal &&
-                    typeof data.signal === 'object' &&
-                    'sdp' in data.signal &&
-                    typeof (data.signal as { sdp?: string }).sdp === 'string' &&
-                    (data.signal as { sdp: string }).sdp.includes('m=video')
-                ) {
-                    setCallType('video');
-                } else {
-                    setCallType('audio');
-                }
-                setIsIncomingCall(true);
-                try {
-                    const { playIncomingRing } = await import('@/lib/call-tones');
-                    stopIncomingToneRef.current?.();
-                    stopIncomingToneRef.current = playIncomingRing();
-                } catch (_) {}
-            });
+            // incoming_call is now handled globally in SocketContext + callStore
 
-            socket.on('call_accepted', async (data: CallSignalPayload) => {
-                if (!CHAT_CALLS_ALLOWED) return;
-                stopCallRing();
-                setIsCalling(true);
-                startCallTimer();
-                const sig = data.signal;
-                if (
-                    pcRef.current &&
-                    sig &&
-                    typeof sig === 'object' &&
-                    'type' in sig &&
-                    (sig as RTCSessionDescriptionInit).type === 'answer'
-                ) {
-                    try {
-                        await pcRef.current.setRemoteDescription(
-                            new RTCSessionDescription(sig as RTCSessionDescriptionInit)
-                        );
-                        pendingCandidatesRef.current.forEach(c => pcRef.current?.addIceCandidate(new RTCIceCandidate(c)).catch(console.error));
-                        pendingCandidatesRef.current = [];
-                    } catch (e) {
-                        console.error('Error setting remote description on accept', e);
-                    }
-                }
-            });
+            // call_accepted is now handled globally in callStore
 
-            socket.on('call_rejected', () => {
-                if (!CHAT_CALLS_ALLOWED) return;
-                stopCallRing();
-                setIsCalling(false);
-                setCallData(null);
-                showError(t('reject'));
-            });
+            // call_rejected and call_ended are now handled globally in callStore
 
-            socket.on('call_ended', () => {
-                if (!CHAT_CALLS_ALLOWED) return;
-                stopCallRing();
-                endCallUI();
-            });
-
+            /* call_signal removed: LiveKit handles media
             socket.on('call_signal', async (data: CallSignalPayload) => {
                 if (!CHAT_CALLS_ALLOWED) return;
                 if (!pcRef.current || !data?.signal || typeof data.signal !== 'object') return;
@@ -730,16 +671,10 @@ export default function ChatWindow({
                 } catch (err) {
                     console.warn("WebRTC signal error:", err);
                 }
-            });
+            }); */
 
             return () => {
-                if (callRingIntervalRef.current) clearInterval(callRingIntervalRef.current);
                 socket.off('service_session_updated', handleSessionUpdate);
-                socket.off('incoming_call');
-                socket.off('call_accepted');
-                socket.off('call_rejected');
-                socket.off('call_ended');
-                socket.off('call_signal');
             };
         }
     }, [chat?.id, chat?.userId, socket, isConnected, stopCallRing]);
@@ -860,13 +795,11 @@ export default function ChatWindow({
         if (!socket || !chat) return;
         const targetUserId = String(chat.otherUser?.id || chat.userId || chat.id);
         const myName = (getUser() || {}).name || "User";
+        const finalType: 'audio' | 'video' = typeOverride || callType;
 
-        const selectedType = typeOverride || callType;
-        const finalType: 'audio' | 'video' = selectedType;
-        setCallType(finalType);
-        setIsCalling(true);
+        const { startOutgoingCall } = await import('@/lib/callStore');
+        startOutgoingCall(targetUserId, chat.otherUser?.name || 'User', String(chat.id), finalType);
 
-        // Audio + video: LiveKit (WebRTC P2P ovoz ishonchsiz)
         socket.emit('call_user', {
             targetUserId,
             chatId: chat.id,
@@ -1921,29 +1854,7 @@ export default function ChatWindow({
                 </div>
             </div>
 
-            {CHAT_CALLS_ALLOWED && (isIncomingCall || isCalling) && (
-                <ChatCallOverlay
-                    t={t}
-                    remoteAudioRef={remoteAudioRef}
-                    callData={callData}
-                    displayName={displayName || ''}
-                    isIncomingCall={isIncomingCall}
-                    isCalling={isCalling}
-                    callType={callType}
-                    callTimer={callTimer}
-                    formatCallTime={formatCallTime}
-                    chat={chat}
-                    canShowVideo={canShowVideoCall(chat)}
-                    handleEndCall={handleEndCall}
-                    handleRejectCall={handleRejectCall}
-                    handleAcceptCall={handleAcceptCall}
-                    setCallType={setCallType}
-                    startLocalStream={startLocalStream}
-                    pcRef={pcRef}
-                    toggleMute={toggleMute}
-                    isMuted={isMuted}
-                />
-            )}
+            {/* Call overlay moved to GlobalCallOverlay (rendered in MessagesPageContent) */}
 
             <MediaUploadModal
                 open={pendingFiles.length > 0}

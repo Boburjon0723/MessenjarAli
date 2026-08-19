@@ -5,6 +5,13 @@ import { io, Socket } from 'socket.io-client';
 import { getPublicWsUrl } from '@/lib/public-origin';
 import { getToken, getRefreshToken, AUTH_TOKEN_CHANGED_EVENT } from '@/lib/auth-storage';
 import { tryRefreshAccessToken } from '@/lib/api';
+import {
+    handleIncomingCall,
+    handleCallAccepted,
+    handleCallRejected,
+    handleCallEnded,
+    callReset,
+} from '@/lib/callStore';
 
 interface SocketContextType {
     socket: Socket | null;
@@ -84,6 +91,20 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
         socketInstance.on('disconnect', () => {
             setIsConnected(false);
+        });
+
+        // ── Global call listeners (Telegram-style: always active) ──
+        socketInstance.on('incoming_call', (data: any) => {
+            handleIncomingCall(data);
+        });
+        socketInstance.on('call_accepted', (data: any) => {
+            handleCallAccepted(data);
+        });
+        socketInstance.on('call_rejected', () => {
+            handleCallRejected();
+        });
+        socketInstance.on('call_ended', () => {
+            handleCallEnded();
         });
 
         socketInstance.on('connect_error', async (err) => {

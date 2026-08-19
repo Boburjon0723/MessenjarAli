@@ -4,6 +4,7 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from
 import ChatList, { CHAT_FOLDER_IDS } from "@/components/chat/ChatList";
 import ChatCarouselPanel from "@/components/chat/ChatCarouselPanel";
 import ChatSongPlayerBar from "@/components/chat/ChatSongPlayerBar";
+import GlobalCallOverlay from "@/components/chat/GlobalCallOverlay";
 import ServicesList from "@/components/chat/ServicesList";
 import ProfileViewer from "@/components/chat/ProfileViewer";
 import ProfileEditor from "@/components/chat/ProfileEditor";
@@ -1354,6 +1355,7 @@ export function MessagesPageContent() {
 
     return (
         <div className="fixed inset-0 flex flex-col tg-chat-wallpaper animate-fade-in">
+            <GlobalCallOverlay />
             <ChatSongPlayerBar />
             <div className="w-full min-w-0 flex-1 min-h-0 flex flex-col lg:flex-row relative z-10 overflow-hidden">
 
