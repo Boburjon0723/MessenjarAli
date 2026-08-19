@@ -142,7 +142,7 @@ export class SocketService {
             }
 
             // Join personal room for private messages
-            authSocket.join(authSocket.user.id);
+            authSocket.join(String(authSocket.user.id));
 
             authSocket.on('join_room', async (roomId: string) => {
                 try {
@@ -327,21 +327,26 @@ export class SocketService {
                         for (const row of participantsRes.rows) {
                             await safeDelCache(`user_chats:${row.user_id}`);
                         }
-                        const offlineRecipients = participantsRes.rows
+                        const { isUserOnline } = await import('../config/redis');
+                        const otherUids = participantsRes.rows
                             .map((r: { user_id: string }) => String(r.user_id))
-                            .filter((uid) => {
-                                if (uid === String(authSocket.user.id)) return false;
-                                const sockets = this.io.sockets.adapter.rooms.get(uid);
-                                return !sockets || sockets.size === 0;
-                            });
+                            .filter((uid) => uid !== String(authSocket.user.id));
+                        const offlineRecipients: string[] = [];
+                        for (const uid of otherUids) {
+                            const online = await isUserOnline(uid);
+                            if (!online) offlineRecipients.push(uid);
+                        }
                         if (offlineRecipients.length > 0) {
-                            import('../services/push.service').then((pushSvc) => {
+                            try {
+                                const pushSvc = await import('../services/push.service');
                                 const preview = typeof content === 'string' ? content : 'Yangi xabar';
                                 const sName = broadcastSenderName || 'Foydalanuvchi';
                                 for (const uid of offlineRecipients) {
                                     void pushSvc.pushNewMessage(uid, sName, preview, roomId);
                                 }
-                            }).catch(() => {});
+                            } catch (pushErr) {
+                                console.error('[Push] Failed to send push notifications:', pushErr);
+                            }
                         }
                     } catch (cacheErr) {
                         console.error('[Socket Cache Inval] Error:', cacheErr);
@@ -423,8 +428,8 @@ export class SocketService {
                         chatId: data.chatId,
                         callType: data.callType,
                     });
-                    this.io.to(data.targetUserId).emit('incoming_call', {
-                        from: authSocket.user.id,
+                    this.io.to(String(data.targetUserId)).emit('incoming_call', {
+                        from: String(authSocket.user.id),
                         fromName: displayName,
                         name: displayName,
                         signal: data.signal,
@@ -436,9 +441,13 @@ export class SocketService {
             );
 
             authSocket.on('accept_call', async (data: { to: string; signal: any; chatId?: string }) => {
+                console.log(`[Call] accept_call from=${authSocket.user.id} to=${data.to} (type=${typeof data.to})`);
+                const targetRoom = String(data.to);
+                const roomSockets = this.io.sockets.adapter.rooms.get(targetRoom);
+                console.log(`[Call] target room "${targetRoom}" has ${roomSockets?.size ?? 0} sockets`);
                 const { markCallAccepted } = await import('../services/callLog.service');
-                markCallAccepted(data.to, authSocket.user.id);
-                this.io.to(data.to).emit('call_accepted', { signal: data.signal });
+                markCallAccepted(targetRoom, String(authSocket.user.id));
+                this.io.to(targetRoom).emit('call_accepted', { signal: data.signal });
             });
 
             authSocket.on('reject_call', async (data: { to: string; chatId?: string }) => {
@@ -454,7 +463,7 @@ export class SocketService {
                 } catch (e) {
                     console.error('[Socket] reject_call log:', e);
                 }
-                this.io.to(data.to).emit('call_rejected');
+                this.io.to(String(data.to)).emit('call_rejected');
             });
 
             authSocket.on(
@@ -473,7 +482,7 @@ export class SocketService {
                     } catch (e) {
                         console.error('[Socket] end_call log:', e);
                     }
-                    this.io.to(data.to).emit('call_ended');
+                    this.io.to(String(data.to)).emit('call_ended');
                 }
             );
 
@@ -494,7 +503,7 @@ export class SocketService {
             });
 
             authSocket.on('call_signal', (data: { to: string; signal: any }) => {
-                this.io.to(data.to).emit('call_signal', { signal: data.signal, from: authSocket.user.id });
+                this.io.to(String(data.to)).emit('call_signal', { signal: data.signal, from: String(authSocket.user.id) });
             });
 
             authSocket.on('typing', (roomId: string) => {
