@@ -88,7 +88,7 @@ export default function MediaContextMenu({
             await navigator.clipboard.writeText(copyText);
             showSuccess(t('msg_copied'));
         } catch {
-            showError(t('error') || 'Copy failed');
+            showError('Copy failed');
         }
         onClose();
     };
@@ -101,7 +101,7 @@ export default function MediaContextMenu({
             await navigator.clipboard.write([new ClipboardItem({ [clipType]: blob })]);
             showSuccess(t('msg_copied'));
         } catch {
-            showError(t('error') || 'Copy failed');
+            showError('Copy failed');
         }
         onClose();
     };

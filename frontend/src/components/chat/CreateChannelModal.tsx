@@ -62,16 +62,16 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                                 <div className="w-24 h-24 rounded-full bg-[#8774e1] flex items-center justify-center cursor-pointer hover:bg-[#7a68d4] transition-colors shadow-lg">
                                     <Camera className="h-10 w-10 text-white" />
                                 </div>
-                                <p className="text-white/40 text-sm">{t('choose_channel_photo') || 'Kanal rasmini tanlang'}</p>
+                                <p className="text-white/40 text-sm">{'Kanal rasmini tanlang'}</p>
                             </div>
                             <div className="space-y-4">
                                 <div className="space-y-1.5">
-                                    <label className="text-xs font-medium text-[#8774e1] ml-1">{t('channel_name') || 'Kanal nomi'}</label>
+                                    <label className="text-xs font-medium text-[#8774e1] ml-1">{t('channel_name')}</label>
                                     <input
                                         type="text"
                                         value={name}
                                         onChange={(e) => setName(e.target.value)}
-                                        placeholder={t('channel_name') as string || 'Kanal nomi'}
+                                        placeholder={t('channel_name') as string}
                                         className="w-full bg-transparent border-b border-white/10 py-2 text-white focus:outline-none focus:border-[#8774e1] transition-colors"
                                         autoFocus
                                     />
@@ -81,7 +81,7 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                                         type="text"
                                         value={description}
                                         onChange={(e) => setDescription(e.target.value)}
-                                        placeholder={t('description_optional') || "Tavsif (ixtiyoriy)"}
+                                        placeholder={"Tavsif (ixtiyoriy)"}
                                         className="w-full bg-transparent border-b border-white/10 py-2 text-white focus:outline-none focus:border-[#8774e1] transition-colors"
                                     />
                                 </div>
@@ -98,8 +98,8 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                                         {channelType === 'public' && <div className="h-2.5 w-2.5 rounded-full bg-[#8774e1]" />}
                                     </div>
                                     <div className="flex-1">
-                                        <h3 className="text-white font-medium">{t('public_channel') || 'Ommaviy kanal'}</h3>
-                                        <p className="text-white/40 text-sm">{t('public_channel_desc') || "Barchasi kanalni qidiruv orqali topishi mumkin."}</p>
+                                        <h3 className="text-white font-medium">{'Ommaviy kanal'}</h3>
+                                        <p className="text-white/40 text-sm">{"Barchasi kanalni qidiruv orqali topishi mumkin."}</p>
                                     </div>
                                 </div>
                                 <div
@@ -110,15 +110,15 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                                         {channelType === 'private' && <div className="h-2.5 w-2.5 rounded-full bg-[#8774e1]" />}
                                     </div>
                                     <div className="flex-1">
-                                        <h3 className="text-white font-medium">{t('private_channel') || 'Shaxsiy kanal'}</h3>
-                                        <p className="text-white/40 text-sm">{t('private_channel_desc') || "Faqat taklifnoma havolasi orqali obuna bo'lish mumkin."}</p>
+                                        <h3 className="text-white font-medium">{'Shaxsiy kanal'}</h3>
+                                        <p className="text-white/40 text-sm">{"Faqat taklifnoma havolasi orqali obuna bo\u2019lish mumkin."}</p>
                                     </div>
                                 </div>
                             </div>
 
                             {channelType === 'public' && (
                                 <div className="space-y-3 pt-2">
-                                    <h3 className="text-white font-medium px-1">{t('link') || 'Havola'}</h3>
+                                    <h3 className="text-white font-medium px-1">{'Havola'}</h3>
                                     <div className="flex items-center gap-1 border-b border-white/10 py-2 focus-within:border-[#8774e1] transition-colors">
                                         <span className="text-white/50">t.me/</span>
                                         <input
@@ -149,7 +149,7 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                             disabled={!name.trim()}
                             className="px-6 py-2 text-[#8774e1] disabled:opacity-30 hover:text-[#9d8ef0] transition-colors font-medium"
                         >
-                            {t('next') || 'Keyingi'}
+                            {'Keyingi'}
                         </button>
                     ) : (
                         <button

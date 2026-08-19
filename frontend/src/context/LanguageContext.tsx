@@ -16,9 +16,9 @@ function applyVars(s: string, variables?: Record<string, string | number>): stri
 interface LanguageContextType {
     language: Language;
     setLanguage: (lang: Language) => void;
-    t: (key: TranslationKeys, variables?: Record<string, string | number>) => string;
+    t: (key: TranslationKeys | string, variables?: Record<string, string | number>) => string;
     /** Bullet ro‘yxat matnlari (masalan mentor_payment_lines) */
-    tLines: (key: TranslationKeys, variables?: Record<string, string | number>) => string[];
+    tLines: (key: TranslationKeys | string, variables?: Record<string, string | number>) => string[];
 }
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
@@ -48,7 +48,7 @@ export const LanguageProvider = ({ children }: { children: ReactNode }) => {
         document.documentElement.lang = lang;
     };
 
-    const resolveRaw = (key: TranslationKeys): string | string[] => {
+    const resolveRaw = (key: string): string | string[] => {
         const transObj = translations[language] || translations.ru;
         const raw = transObj[key as keyof typeof transObj]
             ?? translations.en[key as keyof typeof translations.en]
@@ -57,7 +57,7 @@ export const LanguageProvider = ({ children }: { children: ReactNode }) => {
         return raw as string | string[];
     };
 
-    const tLines = (key: TranslationKeys, variables?: Record<string, string | number>): string[] => {
+    const tLines = (key: string, variables?: Record<string, string | number>): string[] => {
         const raw = resolveRaw(key);
         if (Array.isArray(raw)) {
             return raw.map((line) => applyVars(String(line), variables));
@@ -65,7 +65,7 @@ export const LanguageProvider = ({ children }: { children: ReactNode }) => {
         return [applyVars(String(raw), variables)];
     };
 
-    const t = (key: TranslationKeys, variables?: Record<string, string | number>): string => {
+    const t = (key: string, variables?: Record<string, string | number>): string => {
         const raw = resolveRaw(key);
         if (Array.isArray(raw)) {
             return raw.map((line) => applyVars(String(line), variables)).join('\n');

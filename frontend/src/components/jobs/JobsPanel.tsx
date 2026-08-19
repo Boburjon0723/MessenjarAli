@@ -948,7 +948,7 @@ function MarketTabSwitch({
 }: {
     marketTab: MarketTab;
     onChange: (tab: MarketTab) => void;
-    t: (key: string) => string;
+    t: any;
 }) {
     return (
         <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#181818] border border-white/[0.06]">

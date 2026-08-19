@@ -1974,7 +1974,7 @@ export function DashboardContent({
                                                 {t(
                                                     paymentPhaseLabelKey(
                                                         mapSessionStatusToPhase(consultAcceptModal.prep.session.status)
-                                                    )
+                                                    ) as any
                                                 )}{' '}
                                                 · {formatMaliUi(consultAcceptModal.prep.session.amountMali, language)} MALI
                                             </span>

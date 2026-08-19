@@ -7,7 +7,7 @@ import { formatPaymentAmount, paymentPhaseLabelKey, type ChatPaymentStatus } fro
 
 export type ChatPaymentStatusCardProps = {
     chatId?: string | number;
-    t: (...args: unknown[]) => string;
+    t: any;
 };
 
 export function ChatPaymentStatusCard({ chatId, t }: ChatPaymentStatusCardProps) {

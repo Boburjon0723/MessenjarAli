@@ -53,10 +53,10 @@ export default function EditChannelModal({ open, chat, onClose, onSave, onDelete
                 onClose();
             } else {
                 const data = await res.json().catch(() => ({}));
-                showError(data?.message || t('error') || 'Xatolik');
+                showError(data?.message || 'Xatolik');
             }
         } catch {
-            showError(t('error') || 'Xatolik');
+            showError('Xatolik');
         } finally {
             setIsSaving(false);
         }
@@ -78,10 +78,10 @@ export default function EditChannelModal({ open, chat, onClose, onSave, onDelete
                 onClose();
             } else {
                 const data = await res.json().catch(() => ({}));
-                showError(data?.message || t('error') || 'Xatolik');
+                showError(data?.message || 'Xatolik');
             }
         } catch {
-            showError(t('error') || 'Xatolik');
+            showError('Xatolik');
         }
     };
 

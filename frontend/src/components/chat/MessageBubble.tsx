@@ -327,7 +327,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
         if (messageType === 'phone_call') {
             const phoneMeta = parsePhoneCallMeta(fileMeta);
-            const label = formatPhoneCallLabel(phoneMeta, isOwn, t);
+            const label = formatPhoneCallLabel(phoneMeta, isOwn, t as unknown as (key: string) => string);
             const isMissedOrCancelled =
                 phoneMeta.status === 'missed' && !isOwn;
             return (
@@ -384,9 +384,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         </div>
                     )}
                 {messageType === 'consult_panel_invite' &&
-                    (inviteKind === 'payment_request' || fileMeta.serviceAmountMali) &&
+                    (inviteKind === 'payment_request' || !!fileMeta.serviceAmountMali) &&
                     inviteKind !== 'panel_open' &&
-                    !isOwn && (
+                    !isOwn ? (
                         <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-blue-500/30 bg-blue-950/40 p-3 shadow-lg">
                             <p className="text-[13px] font-semibold text-blue-200 mb-2">
                                 {t('consult_payment_title')}
@@ -400,8 +400,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 onClick={async () => {
                                     const amount = Number(fileMeta.serviceAmountMali) || 0;
                                     const expertId =
-                                        message.senderId ||
-                                        (message as { sender_id?: string }).sender_id;
+                                        message.sender_id ||
+                                        (message as any).senderId;
                                     if (!expertId || !chatId || amount <= 0) {
                                         showError(t('server_error') as string);
                                         return;
@@ -445,7 +445,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 {payLoading ? '...' : t('consult_pay_now_btn')}
                             </button>
                         </div>
-                    )}
+                    ) : null}
                 {(messageType === 'lesson_start' || messageType === 'consult_panel_invite') && (() => {
                     const inviteExpired =
                         fileMeta.invite_status === 'expired' || fileMeta.status === 'expired';
