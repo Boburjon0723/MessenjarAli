@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead, updateChatPrefs, postListingConsent, getConsultPanelAccessEndpoint, getChatPaymentStatusEndpoint } from '../controllers/chat.controller';
+import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead, updateChatPrefs, postListingConsent, getConsultPanelAccessEndpoint, getChatPaymentStatusEndpoint, pinMessage } from '../controllers/chat.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -27,6 +27,7 @@ router.get('/:chatId', getChatDetails);
 router.delete('/:chatId', deleteChatEndpoint);
 router.post('/:chatId/participants', addParticipant);
 router.post('/:chatId/leave', leaveGroup);
+router.post('/:chatId/pin', pinMessage);
 router.patch('/:chatId', updateGroupChat);
 
 export default router;

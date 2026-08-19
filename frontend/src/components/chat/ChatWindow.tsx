@@ -357,8 +357,21 @@ export default function ChatWindow({
         }
     };
 
-    const handlePinMessage = (_msg: ChatMessage) => {
-        showSuccess(t('feature_coming_soon'));
+    const handlePinMessage = async (msg: ChatMessage) => {
+        if (!chat?.id) return;
+        try {
+            const res = await apiFetch(`/api/chats/${chat.id}/pin`, {
+                method: 'POST',
+                body: JSON.stringify({ messageId: msg.id }),
+            });
+            if (res.ok) {
+                showSuccess(t('pin_msg') || 'Xabar qadaldi');
+            } else {
+                showError('Pin qilishda xatolik');
+            }
+        } catch {
+            showError('Pin qilishda xatolik');
+        }
     };
 
     const handleForwardMessage = (msg: ChatMessage) => {

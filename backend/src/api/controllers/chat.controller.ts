@@ -624,9 +624,16 @@ export const getChatDetails = async (req: Request, res: Response) => {
             })
         );
 
+        let pinnedMessage = null;
+        if ((chat as any).pinned_message_id) {
+            const pmRes = await pool.query('SELECT * FROM messages WHERE id = $1', [(chat as any).pinned_message_id]);
+            if (pmRes.rows[0]) pinnedMessage = pmRes.rows[0];
+        }
+
         res.status(200).json({
             ...chat,
-            participants: participantsData.filter(Boolean)
+            participants: participantsData.filter(Boolean),
+            pinnedMessage,
         });
     } catch (error) {
         console.error('Get Chat Details Error:', error);
@@ -1182,3 +1189,43 @@ export const getChatPaymentStatusEndpoint = async (req: Request, res: Response) 
     }
 };
 
+// ── Pin / Unpin message ──
+export const pinMessage = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user?.id;
+        const { chatId } = req.params;
+        const { messageId } = req.body;
+        if (!chatId || !userId) return res.status(400).json({ message: 'Missing params' });
+
+        const isMember = await pool.query(
+            'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+            [chatId, userId]
+        );
+        if (!isMember.rows.length) return res.status(403).json({ message: 'Not a member' });
+
+        const mid = messageId ? String(messageId) : null;
+
+        if (mid) {
+            const msgExists = await pool.query(
+                'SELECT id FROM messages WHERE id = $1 AND chat_id = $2',
+                [mid, chatId]
+            );
+            if (!msgExists.rows.length) return res.status(404).json({ message: 'Message not found' });
+        }
+
+        await pool.query(
+            'UPDATE chats SET pinned_message_id = $1 WHERE id = $2',
+            [mid, chatId]
+        );
+
+        const io = (req as any).app?.get?.('io');
+        if (io) {
+            io.to(String(chatId)).emit('message_pinned', { chatId, messageId: mid });
+        }
+
+        res.json({ ok: true, messageId: mid });
+    } catch (error) {
+        console.error('pinMessage error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
