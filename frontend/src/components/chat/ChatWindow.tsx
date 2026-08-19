@@ -251,7 +251,7 @@ export default function ChatWindow({
                 await navigator.clipboard.writeText(texts.join('\n'));
                 showSuccess(t('msg_copied'));
             } catch {
-                showError(String(t('error') || 'Copy failed'));
+                showError((t('error') || 'Copy failed') as string);
             }
             return;
         }
@@ -267,7 +267,7 @@ export default function ChatWindow({
                 await navigator.clipboard.write([new ClipboardItem({ [clipType]: blob })]);
                 showSuccess(t('msg_copied'));
             } catch {
-                showError(String(t('error') || 'Copy failed'));
+                showError((t('error') || 'Copy failed') as string);
             }
             return;
         }

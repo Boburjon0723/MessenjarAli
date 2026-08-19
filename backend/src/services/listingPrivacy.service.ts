@@ -116,7 +116,7 @@ export async function getChatPaymentStatusForUser(
                 amountMali: num(deal.amount),
             };
         }
-        if (phase === 'completed' || phase === 'disputed') {
+        if (phase === 'disputed') {
             return {
                 phase,
                 source: 'deal',
