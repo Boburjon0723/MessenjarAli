@@ -108,18 +108,10 @@ export async function getChatPaymentStatusForUser(
     if (deal) {
         const st = String(deal.status || '');
         const phase = mapDealPhase(st);
-        if (phase !== 'completed' && phase !== 'cancelled') {
+        if (phase !== 'none') {
             return {
                 phase,
-                source: 'deal',
-                rawStatus: st,
-                amountMali: num(deal.amount),
-            };
-        }
-        if (phase === 'disputed') {
-            return {
-                phase,
-                source: 'deal',
+                source: 'deal' as const,
                 rawStatus: st,
                 amountMali: num(deal.amount),
             };
