@@ -947,7 +947,6 @@ export default function ChatWindow({
         setRemoteStream(null);
         pendingCandidatesRef.current = [];
         setIsMuted(false);
-        setLowBandwidth(false);
     };
 
     useEffect(() => {
