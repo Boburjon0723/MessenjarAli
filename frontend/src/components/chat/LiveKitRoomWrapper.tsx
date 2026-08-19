@@ -4,16 +4,10 @@ import React, { useEffect, useState } from 'react';
 import {
     LiveKitRoom,
     VideoConference,
-    GridLayout,
-    ParticipantTile,
     RoomAudioRenderer,
-    ControlBar,
-    useTracks,
-    AudioTrack,
-    VideoTrack
+    useLocalParticipant,
 } from '@livekit/components-react';
 import '@livekit/components-styles';
-import { Track } from 'livekit-client';
 import { apiFetch } from '@/lib/api';
 
 interface LiveKitRoomWrapperProps {
@@ -21,9 +15,20 @@ interface LiveKitRoomWrapperProps {
     onDisconnected: () => void;
     /** Ovozli chaqiruv: faqat audio, video yo'q */
     audioOnly?: boolean;
+    /** Global call overlay mute holati */
+    muted?: boolean;
 }
 
-export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnly = false }: LiveKitRoomWrapperProps) {
+function MicSync({ muted }: { muted?: boolean }) {
+    const { localParticipant } = useLocalParticipant();
+    useEffect(() => {
+        if (!localParticipant || muted == null) return;
+        void localParticipant.setMicrophoneEnabled(!muted);
+    }, [localParticipant, muted]);
+    return null;
+}
+
+export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnly = false, muted }: LiveKitRoomWrapperProps) {
     const [token, setToken] = useState("");
     const [wsUrl, setWsUrl] = useState("");
 
@@ -63,6 +68,7 @@ export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnl
             }
             onDisconnected={onDisconnected}
         >
+            <MicSync muted={muted} />
             {audioOnly ?
                 <RoomAudioRenderer />
             :   <>

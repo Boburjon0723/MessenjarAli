@@ -2,10 +2,11 @@
 
 import React, { useCallback } from 'react';
 import { useCallState } from '@/lib/useCallState';
-import { callReset, toggleMute, toggleSpeaker, handleCallAccepted, type CallState } from '@/lib/callStore';
+import { callReset, toggleMute, toggleSpeaker, handleCallAccepted } from '@/lib/callStore';
 import { useSocket } from '@/context/SocketContext';
 import { CHAT_CALLS_ALLOWED } from '@/lib/chat-calls';
-import { Phone, PhoneOff, Mic, MicOff, Volume2, Video } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, Volume2 } from 'lucide-react';
+import LiveKitRoomWrapper from './LiveKitRoomWrapper';
 
 function formatTimer(s: number) {
     const m = Math.floor(s / 60);
@@ -52,6 +53,7 @@ export default function GlobalCallOverlay() {
 
     const isRinging = call.status === 'ringing_in' || call.status === 'ringing_out';
     const isActive = call.status === 'active';
+    const liveKitRoomId = call.chatId ? String(call.chatId) : null;
 
     return (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center"
@@ -59,8 +61,27 @@ export default function GlobalCallOverlay() {
                 background: 'linear-gradient(135deg, #1a1040 0%, #2d1b69 40%, #1e3a5f 100%)',
             }}
         >
+            {isActive && liveKitRoomId && (
+                call.callType === 'video' ? (
+                    <div className="absolute inset-0 z-0">
+                        <LiveKitRoomWrapper
+                            sessionId={liveKitRoomId}
+                            onDisconnected={handleEnd}
+                            muted={call.isMuted}
+                        />
+                    </div>
+                ) : (
+                    <LiveKitRoomWrapper
+                        sessionId={liveKitRoomId}
+                        onDisconnected={handleEnd}
+                        audioOnly
+                        muted={call.isMuted}
+                    />
+                )
+            )}
+
             {/* Peer info */}
-            <div className="flex flex-col items-center gap-4">
+            <div className="relative z-10 flex flex-col items-center gap-4">
                 <div className="w-28 h-28 rounded-full bg-white/20 flex items-center justify-center text-white text-3xl font-bold border-2 border-white/30 shadow-xl">
                     {call.peerName?.[0]?.toUpperCase() || '?'}
                 </div>
@@ -73,7 +94,7 @@ export default function GlobalCallOverlay() {
             </div>
 
             {/* Controls */}
-            <div className="absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] flex justify-center">
+            <div className="absolute inset-x-0 bottom-[max(1.5rem,env(safe-area-inset-bottom))] z-10 flex justify-center">
                 <div className="flex items-center gap-6">
                 {isActive && (
                     <>
@@ -113,7 +134,7 @@ export default function GlobalCallOverlay() {
             {/* Back button */}
             <button
                 onClick={isActive ? handleEnd : handleReject}
-                className="absolute top-6 left-6 text-white/60 hover:text-white text-sm flex items-center gap-2 transition-colors"
+                className="absolute top-6 left-6 z-10 text-white/60 hover:text-white text-sm flex items-center gap-2 transition-colors"
             >
                 ← Orqaga
             </button>
