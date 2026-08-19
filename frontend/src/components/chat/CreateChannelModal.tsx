@@ -47,7 +47,7 @@ export default function CreateChannelModal({ open, onClose, onCreateChannel }: C
                             </button>
                         )}
                         <h2 className="text-xl font-bold text-white">
-                            {step === 1 ? (t('new_channel') || 'Yangi kanal') : (t('channel_settings') || 'Kanal sozlamalari')}
+                            {step === 1 ? (t('new_channel') || 'Yangi kanal') : 'Kanal sozlamalari'}
                         </h2>
                     </div>
                     <button onClick={onClose} className="text-white/50 hover:text-white transition-colors">
