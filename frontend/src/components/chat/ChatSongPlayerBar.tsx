@@ -80,8 +80,8 @@ export default function ChatSongPlayerBar() {
                     className={utilBtn}
                     title="Save"
                     onClick={() => {
-                        const name = s.track.filename || `${s.track.title}.mp3`;
-                        void downloadChatFile(s.track.url, name);
+                        const name = s.track?.filename || `${s.track?.title || 'audio'}.mp3`;
+                        if (s.track?.url) void downloadChatFile(s.track.url, name);
                     }}
                     aria-label="Save"
                 >
