@@ -534,6 +534,10 @@ const runAutoMigration = async () => {
             'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP WITH TIME ZONE'
         );
         await runQuery(
+            'AddCol_Chat_PinnedMessageId',
+            'ALTER TABLE chats ADD COLUMN IF NOT EXISTS pinned_message_id BIGINT'
+        );
+        await runQuery(
             'AddCol_ChatPart_Muted',
             'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_muted BOOLEAN DEFAULT FALSE'
         );
