@@ -482,7 +482,7 @@ export function MessagesPageContent() {
                             }
                         :   null);
                     if (snap) {
-                        const content = buildJobApplyIntro(snap as Record<string, any>, t);
+                        const content = buildJobApplyIntro(snap as Record<string, any>, t as unknown as (key: string) => string);
                         await apiFetch(`/api/chats/${chatId}/messages`, {
                             method: 'POST',
                             body: JSON.stringify({ content, type: 'text' }),
@@ -491,7 +491,7 @@ export function MessagesPageContent() {
                 } else if (user.fromExpertListing && !existing) {
                     const content = buildExpertConsultIntro(
                         { profession: (user as any).profession, name: user.name },
-                        t
+                        t as unknown as (key: string) => string
                     );
                     await apiFetch(`/api/chats/${chatId}/messages`, {
                         method: 'POST',
