@@ -91,6 +91,41 @@ export class JobController {
         }
     };
 
+    getMyJobs = async (req: Request, res: Response) => {
+        try {
+            const userId = (req as any).user.id as string;
+            const jobs = await this.jobModel.findByUserId(userId);
+            res.json(jobs);
+        } catch (error) {
+            console.error('Get My Jobs Error:', error);
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    };
+
+    updateJobStatus = async (req: Request, res: Response) => {
+        try {
+            const userId = (req as any).user.id as string;
+            const jobId = String(req.params.id || '');
+            const status = String((req.body as { status?: string })?.status || '');
+            if (!['active', 'closed'].includes(status)) {
+                return res.status(400).json({ message: "Status faqat 'active' yoki 'closed' bo'lishi kerak" });
+            }
+            const updated = await this.jobModel.updateStatusForOwner(
+                jobId,
+                userId,
+                status as 'active' | 'closed'
+            );
+            if (!updated) {
+                return res.status(404).json({ message: "E'lon topilmadi yoki sizga tegishli emas" });
+            }
+            await safeClearCache('cache:/api/jobs*');
+            res.json(updated);
+        } catch (error) {
+            console.error('Update Job Status Error:', error);
+            res.status(500).json({ message: 'Internal server error' });
+        }
+    };
+
     getCategories = async (req: Request, res: Response) => {
         try {
             const categories = await this.categoryModel.findAll();

@@ -1,8 +1,11 @@
 import { apiFetch } from "../../lib/api";
 import { writeChatsToCache, writeMessagesToCache } from "../../lib/app-cache";
 import { API_URL } from "../../lib/config";
-import { getToken } from "../../lib/auth-storage";
+import { getToken, getUser } from "../../lib/auth-storage";
 import { Chat, Message } from "./types";
+import { decryptListPreview, decryptMessage, decryptMessages } from "../../lib/e2e-chat";
+import { encryptTextForPeer } from "../../lib/e2e-crypto";
+import { E2E_PLACEHOLDER, isE2eEnvelope } from "../../lib/e2e-envelope";
 
 /** UUID / id solishtirish uchun bir xil format */
 export function normalizeUserId(id: string | null | undefined): string {
@@ -145,25 +148,35 @@ export async function getChatsRequest(): Promise<Chat[]> {
   }
   const data = await response.json();
 
-  const list = data.map((chat: any) => {
-    const isGroup = chat.type === "group" || chat.type === "channel";
-
-    return {
-      id: String(chat.id || chat._id),
-      type: chat.type,
-      name: isGroup
+  const list = await Promise.all(
+    data.map(async (chat: any) => {
+      const isGroup = chat.type === "group" || chat.type === "channel";
+      let lastMessage = chat.lastMessage ?? "Xabarlar yo'q";
+      if (isE2eEnvelope(chat.lastMessageMeta) && chat.lastMessageCipher) {
+        lastMessage = await decryptListPreview(
+          chat.lastMessageCipher,
+          chat.lastMessageMeta,
+          E2E_PLACEHOLDER
+        );
+      }
+      return {
+        id: String(chat.id || chat._id),
+        type: chat.type,
+        name: isGroup
           ? chat.name || "Chat"
           : chat.otherUser?.name
             ? `${chat.otherUser.name} ${chat.otherUser.surname || ""}`.trim()
             : "Foydalanuvchi",
-      lastMessage: chat.lastMessage ?? "Xabarlar yo'q",
-      timestamp: chat.lastMessageAt
-        ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        : "",
-      unreadCount: Number(chat.unread) || 0,
-      avatarUrl: getFullUrl(pickChatAvatarPath(chat)),
-    };
-  });
+        lastMessage,
+        timestamp: chat.lastMessageAt
+          ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+          : "",
+        unreadCount: Number(chat.unread) || 0,
+        avatarUrl: getFullUrl(pickChatAvatarPath(chat)),
+        otherUserId: chat.otherUser?.id ? String(chat.otherUser.id) : null,
+      };
+    })
+  );
   await writeChatsToCache(list);
   return list;
 }
@@ -178,8 +191,9 @@ export async function getMessagesRequest(chatId: string): Promise<Message[]> {
     return [];
   }
   const mapped = data.map(mapApiMessageToMessage);
-  await writeMessagesToCache(chatId, mapped);
-  return mapped;
+  const decrypted = await decryptMessages(mapped);
+  await writeMessagesToCache(chatId, decrypted);
+  return decrypted;
 }
 
 export async function markChatReadRequest(chatId: string): Promise<void> {
@@ -236,11 +250,25 @@ export function messageTypeFromMime(mime: string | undefined | null): OutgoingMe
 export async function sendMessageRequest(
   chatId: string,
   text: string,
-  messageType: OutgoingMessageType = "text"
+  messageType: OutgoingMessageType = "text",
+  opts?: { peerUserId?: string | null }
 ): Promise<Message> {
+  let content = text;
+  let metadata: Record<string, unknown> | undefined;
+  if (messageType === "text" && opts?.peerUserId) {
+    const me = await getUser();
+    const myId = me?.id;
+    if (myId) {
+      const enc = await encryptTextForPeer(String(myId), String(opts.peerUserId), text);
+      if (enc) {
+        content = enc.content;
+        metadata = enc.metadata;
+      }
+    }
+  }
   const response = await apiFetch(`/api/chats/${encodeURIComponent(chatId)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content: text, type: messageType }),
+    body: JSON.stringify({ content, type: messageType, metadata }),
   });
   if (!response.ok) {
     const errText = await response.text().catch(() => "");
@@ -254,7 +282,7 @@ export async function sendMessageRequest(
     throw new Error(message);
   }
   const data = await response.json();
-  return mapApiMessageToMessage(data);
+  return decryptMessage(mapApiMessageToMessage(data));
 }
 
 export const getLiveKitTokenRequest = async (chatId: string, username: string): Promise<{ token: string; wsUrl: string }> => {
@@ -277,9 +305,12 @@ export type ChatDetailsParticipant = {
 export type ChatDetailsResponse = {
   id?: string;
   type?: string;
+  chat_type?: string;
   name?: string | null;
   avatar_url?: string | null;
   participants?: ChatDetailsParticipant[];
+  messaging_unlocked?: boolean;
+  metadata?: Record<string, any>;
 };
 
 /** Suhbatdosh / guruh haqida — `GET /api/chats/:chatId` */

@@ -15,12 +15,31 @@ const createStore = (prefix: string) => {
 
 export const globalLimiter = rateLimit({
     windowMs: 60 * 1000,
-    max: Number(process.env.RATE_LIMIT_IP_MAX || 90),
+    max: Number(process.env.RATE_LIMIT_IP_MAX || 300),
     standardHeaders: true,
     legacyHeaders: false,
     store: createStore('global'),
+    skip: (req) => {
+        if (req.method === 'OPTIONS') return true;
+        const p = String(req.originalUrl || req.url || '').split('?')[0];
+        if (p === '/api/ping' || p.startsWith('/uploads')) return true;
+        if (p === '/api/media/upload' || p.startsWith('/api/media/download')) return true;
+        return false;
+    },
     message: {
         message: "Juda ko'p so'rov yuborildi. Iltimos, birozdan so'ng qayta urinib ko'ring.",
+    },
+});
+
+/** Chat media: polling limitidan alohida */
+export const mediaUploadLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: Number(process.env.RATE_LIMIT_UPLOAD_MAX || 40),
+    standardHeaders: true,
+    legacyHeaders: false,
+    store: createStore('media-upload'),
+    message: {
+        message: "Fayl yuklash limiti. Biroz kuting, keyin qayta yuboring.",
     },
 });
 

@@ -345,6 +345,12 @@ export async function completeConsultation(expertId: string, sessionId: string, 
 
         await client.query('COMMIT');
 
+        const resolvedChatId = String(sessionData?.chat_id || dealData?.chat_id || '');
+        if (resolvedChatId && io) {
+            const { expireAllPanelInvitesForChat } = await import('./panelInvite.service');
+            await expireAllPanelInvitesForChat(resolvedChatId, io);
+        }
+
         if (io) {
             const eid = sessionData?.expert_id || dealData?.expert_id;
             const cid = sessionData?.client_id || dealData?.client_id;

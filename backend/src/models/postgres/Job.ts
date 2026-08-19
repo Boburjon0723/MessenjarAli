@@ -81,7 +81,7 @@ export class JobModel {
             FROM jobs j
             LEFT JOIN users u ON j.user_id = u.id
             LEFT JOIN job_categories c ON j.category_id = c.id
-            WHERE 1=1
+            WHERE 1=1 AND j.status = 'active'
         `;
         const values: any[] = [];
         let paramIndex = 1;
@@ -121,6 +121,36 @@ export class JobModel {
     async findById(id: string): Promise<Job | null> {
         const query = `SELECT * FROM jobs WHERE id = $1`;
         const result = await pool.query(query, [id]);
+        return result.rows[0] || null;
+    }
+
+    async findByUserId(userId: string): Promise<Job[]> {
+        const query = `
+            SELECT j.*, c.name_uz as category_name_uz, c.icon as category_icon
+            FROM jobs j
+            LEFT JOIN job_categories c ON j.category_id = c.id
+            WHERE j.user_id = $1::uuid
+            ORDER BY j.created_at DESC
+        `;
+        const result = await pool.query(query, [userId]);
+        return result.rows.map((row) => ({
+            ...row,
+            category_name: row.category_name_uz,
+        }));
+    }
+
+    async updateStatusForOwner(
+        jobId: string,
+        userId: string,
+        status: 'active' | 'closed'
+    ): Promise<Job | null> {
+        const result = await pool.query(
+            `UPDATE jobs
+             SET status = $3
+             WHERE id = $1 AND user_id = $2::uuid
+             RETURNING *`,
+            [jobId, userId, status]
+        );
         return result.rows[0] || null;
     }
 }

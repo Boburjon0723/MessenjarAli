@@ -2,11 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { useNotification } from "@/context/NotificationContext";
+import { useLanguage } from "@/context/LanguageContext";
 import { apiFetch } from "@/lib/api";
 import StudentDashboard from "./StudentDashboard";
 import type { ExpertPanelMode } from "@/lib/expert-roles";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
 const DEFAULT_MONTHLY_MALI = 100;
 
 export default function RoomAccessGate({
@@ -21,8 +21,11 @@ export default function RoomAccessGate({
     onLeave: () => void;
 }) {
     const { showError } = useNotification();
+    const { t } = useLanguage();
     const [loading, setLoading] = useState(true);
     const [hasAccess, setHasAccess] = useState(false);
+    const [isPrivateRoom, setIsPrivateRoom] = useState(false);
+    const [roomClosed, setRoomClosed] = useState(false);
     const [mentorId, setMentorId] = useState<string | null>(null);
     const [mentorName, setMentorName] = useState<string>("");
     const [roomName, setRoomName] = useState<string>("");
@@ -41,28 +44,55 @@ export default function RoomAccessGate({
                 }
                 const room = await roomRes.json();
                 const creatorId = room.creator_id;
+                const privateRoom = room.type === "private";
+                setIsPrivateRoom(privateRoom);
+                setMentorId(creatorId || null);
+                setMentorName(room.creator_name || "Ustoz");
+                setRoomName(room.name || "Dars");
+
+                if (privateRoom) {
+                    const accessRes = await apiFetch(
+                        `/api/chats/${encodeURIComponent(roomId)}/panel-access`
+                    );
+                    if (cancelled) return;
+                    if (!accessRes.ok) {
+                        setRoomClosed(true);
+                        setLoading(false);
+                        return;
+                    }
+                    const access = await accessRes.json();
+                    if (access?.allowed) {
+                        setHasAccess(true);
+                    } else {
+                        setRoomClosed(true);
+                    }
+                    setLoading(false);
+                    return;
+                }
+
                 if (!creatorId) {
                     setHasAccess(true);
                     setLoading(false);
                     return;
                 }
-                setMentorId(creatorId);
-                setMentorName(room.creator_name || "Ustoz");
-                setRoomName(room.name || "Dars");
 
-                const subRes = await apiFetch(`/api/wallet/subscription-status?mentorId=${encodeURIComponent(creatorId)}`);
+                const subRes = await apiFetch(
+                    `/api/wallet/subscription-status?mentorId=${encodeURIComponent(creatorId)}`
+                );
                 if (cancelled) return;
                 if (subRes.ok) {
                     const data = await subRes.json();
                     if (data.active) setHasAccess(true);
                 }
-            } catch (e) {
+            } catch {
                 if (!cancelled) setError("Ma'lumotni yuklashda xatolik");
             } finally {
                 if (!cancelled) setLoading(false);
             }
         })();
-        return () => { cancelled = true; };
+        return () => {
+            cancelled = true;
+        };
     }, [roomId]);
 
     const handleSubscribe = async () => {
@@ -106,6 +136,21 @@ export default function RoomAccessGate({
         );
     }
 
+    if (roomClosed && isPrivateRoom) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/80 text-center">{t("panel_room_closed")}</p>
+                <p className="text-sm text-white/50 text-center max-w-sm">{t("invite_expired_hint")}</p>
+                <button
+                    onClick={onLeave}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t("back")}
+                </button>
+            </div>
+        );
+    }
+
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
@@ -126,7 +171,9 @@ export default function RoomAccessGate({
                 <div className="text-center">
                     <h1 className="text-xl font-bold text-white mb-1">1 oylik obuna</h1>
                     <p className="text-sm text-white/60">
-                        30 kalendar kun davomida <span className="text-white/90">{mentorName}</span> ustozning barcha darslariga kirish huquqi. Har dars uchun alohida to&apos;lov yo&apos;q.
+                        30 kalendar kun davomida{" "}
+                        <span className="text-white/90">{mentorName}</span> ustozning barcha
+                        darslariga kirish huquqi. Har dars uchun alohida to&apos;lov yo&apos;q.
                     </p>
                 </div>
                 <div className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-lg text-center">
@@ -149,5 +196,3 @@ export default function RoomAccessGate({
         </div>
     );
 }
-
-

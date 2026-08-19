@@ -20,10 +20,11 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: false, // Essential for local resource loading in some cases
+            webSecurity: true,
             preload: path.join(__dirname, 'preload.js'),
         },
-        backgroundColor: '#050505',
+        backgroundColor: '#0e1621',
+        title: 'ExpertLine',
     });
 
     if (isDev) {

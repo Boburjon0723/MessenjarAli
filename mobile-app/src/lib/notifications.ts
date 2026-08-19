@@ -1,5 +1,8 @@
 import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
+import { apiFetch } from './api';
 
 // Ushbu kod bildirishnomalar app ichidagida xabar va ovoz bilan chiqishini ta'minlaydi
 Notifications.setNotificationHandler({
@@ -50,6 +53,30 @@ export const setupNotifications = async () => {
   }
   
   return finalStatus === 'granted';
+};
+
+/**
+ * Expo Push Token olish va backendga ro'yxatdan o'tkazish.
+ * App ochilganda yoki login bo'lgandan keyin chaqiring.
+ */
+export const registerPushToken = async () => {
+  if (!Device.isDevice) return; // emulator da ishlamaydi
+
+  const granted = await setupNotifications();
+  if (!granted) return;
+
+  try {
+    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
+    const { data: token } = await Notifications.getExpoPushTokenAsync(
+      projectId ? { projectId } : undefined
+    );
+    await apiFetch('/api/users/push-token', {
+      method: 'POST',
+      body: JSON.stringify({ token, platform: Platform.OS }),
+    });
+  } catch (e) {
+    console.warn('Push token registration failed:', e);
+  }
 };
 
 // Istalgan joydan chaqirish uchun yordamchi funksiya

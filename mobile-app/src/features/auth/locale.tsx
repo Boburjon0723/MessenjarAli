@@ -171,6 +171,8 @@ type Dict = {
   callIncoming: string;
   callConnected: string;
   callError: string;
+  callNotAllowed: string;
+  callListingRestriction: string;
   paymentAction: string;
   paymentOngoing: string;
   msgToday: string;
@@ -342,6 +344,8 @@ const DICTS: Record<AppLanguage, Dict> = {
     callIncoming: "Kiruvchi qo'ng'iroq",
     callConnected: "Ulandi",
     callError: "Aloqada xatolik",
+    callNotAllowed: "Qo'ng'iroq ruxsat etilmagan",
+    callListingRestriction: "E'lon chatlarida faqat xizmat paneli orqali qo'ng'iroq qilish mumkin.",
     paymentAction: "To'lov qilish",
     paymentOngoing: "Sessiya boshlangan",
     msgToday: "Bugun",
@@ -511,6 +515,8 @@ const DICTS: Record<AppLanguage, Dict> = {
     callIncoming: "Входящий звонок",
     callConnected: "Подключено",
     callError: "Ошибка связи",
+    callNotAllowed: "Звонок не разрешён",
+    callListingRestriction: "В чатах объявлений звонить можно только через сервисную панель.",
     paymentAction: "Оплатить",
     paymentOngoing: "Сессия началась",
     msgToday: "Сегодня",
@@ -680,6 +686,8 @@ const DICTS: Record<AppLanguage, Dict> = {
     callIncoming: "Incoming Call",
     callConnected: "Connected",
     callError: "Connection Error",
+    callNotAllowed: "Call not allowed",
+    callListingRestriction: "In listing chats, calls are only available through the service panel.",
     paymentAction: "Make Payment",
     paymentOngoing: "Session Ongoing",
     msgToday: "Today",

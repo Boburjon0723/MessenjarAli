@@ -1,10 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useRef, useCallback, useEffect, useMemo } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { computeMessageContinuation } from '@/lib/chat-continuation';
 import { parseMessageDate } from './chatWindowHelpers';
 import type { ChatMessage } from '@/types/chat-message';
+import { classifyTelegramMessage, resolveChatMediaUrl } from '@/lib/telegram-message-kind';
+import type { SongTrack } from '@/lib/song-player-store';
 
 export type ChatMessageListProps = {
     t: (...args: any[]) => string;
@@ -28,16 +30,21 @@ export type ChatMessageListProps = {
     isSelecting: boolean;
     selectedMessageIds: string[];
     toggleSelection: (id: string) => void;
+    setSelectedMessageIds?: (ids: string[]) => void;
     uploadProgresses: Record<string, number>;
     setViewerMedia: (v: { url: string; type: 'image' | 'video' | 'file' } | null) => void;
     handleForwardMessage: (msg: ChatMessage) => void;
     handleDeleteMessage: (msg: ChatMessage) => void;
+    handleEditMessage?: (msg: ChatMessage) => void;
+    handlePinMessage?: (msg: ChatMessage) => void;
     handleReplyClick: (parentId: string) => void;
+    onStartSelecting?: () => void;
     activeAudioId: string | null;
     setActiveAudioId: (id: string | null) => void;
     isNearBottom: boolean;
     newMessagesWhileUp: number;
     jumpToLatestMessage: () => void;
+    showPeerAvatar?: boolean;
 };
 
 export function ChatMessageList({
@@ -62,26 +69,123 @@ export function ChatMessageList({
     isSelecting,
     selectedMessageIds,
     toggleSelection,
+    setSelectedMessageIds,
     uploadProgresses,
     setViewerMedia,
     handleForwardMessage,
     handleDeleteMessage,
+    handleEditMessage,
+    handlePinMessage,
     handleReplyClick,
+    onStartSelecting,
     activeAudioId,
     setActiveAudioId,
     isNearBottom,
     newMessagesWhileUp,
     jumpToLatestMessage,
+    showPeerAvatar = false,
 }: ChatMessageListProps) {
+    const songPlaylist = useMemo<SongTrack[]>(() => {
+        return filteredMessages.flatMap((m) => {
+            const meta = m.metadata && typeof m.metadata === 'object' ? m.metadata : {};
+            const kind = classifyTelegramMessage({
+                type: m.type,
+                mime: typeof (meta as any).mimetype === 'string' ? (meta as any).mimetype : '',
+                filename: `${(meta as any).name || ''} ${(meta as any).file_name || ''} ${m.text || ''}`,
+            });
+            if (kind !== 'song') return [];
+            const url = resolveChatMediaUrl(m.text || '');
+            if (!url) return [];
+            const rawName = String((meta as any).name || (meta as any).file_name || m.text.split('/').pop() || 'Audio');
+            const title = rawName.replace(/\.[^.]+$/, '') || rawName;
+            return [{ id: m.id, url, title }];
+        });
+    }, [filteredMessages]);
+
+    const dragRef = useRef<{
+        active: boolean;
+        anchorId: string | null;
+        startY: number;
+    }>({ active: false, anchorId: null, startY: 0 });
+
+    const getMsgIdFromEl = useCallback((el: EventTarget | null): string | null => {
+        let node = el as HTMLElement | null;
+        while (node) {
+            if (node.id?.startsWith('msg-')) return node.id.replace('msg-', '');
+            node = node.parentElement;
+        }
+        return null;
+    }, []);
+
+    const getMsgIdFromPoint = useCallback((x: number, y: number): string | null => {
+        for (const el of document.elementsFromPoint(x, y)) {
+            let node: HTMLElement | null = el as HTMLElement;
+            while (node) {
+                if (node.id?.startsWith('msg-')) return node.id.replace('msg-', '');
+                node = node.parentElement;
+            }
+        }
+        return null;
+    }, []);
+
+    const computeRangeIds = useCallback((fromId: string, toId: string): string[] => {
+        const allIds = renderedMessages.map(m => m.id);
+        const a = allIds.indexOf(fromId);
+        const b = allIds.indexOf(toId);
+        if (a === -1 || b === -1) return [fromId];
+        const lo = Math.min(a, b);
+        const hi = Math.max(a, b);
+        return allIds.slice(lo, hi + 1);
+    }, [renderedMessages]);
+
+    const handleMouseDown = useCallback((e: React.MouseEvent) => {
+        if (e.button !== 0) return;
+        if (isSelecting) return;
+        const msgId = getMsgIdFromEl(e.target);
+        if (!msgId) return;
+        dragRef.current = { active: false, anchorId: msgId, startY: e.clientY };
+    }, [isSelecting, getMsgIdFromEl]);
+
+    const handleMouseMove = useCallback((e: React.MouseEvent) => {
+        const dr = dragRef.current;
+        if (!dr.anchorId) return;
+
+        if (!dr.active) {
+            if (Math.abs(e.clientY - dr.startY) > 10) {
+                dr.active = true;
+                onStartSelecting?.();
+                setSelectedMessageIds?.([dr.anchorId]);
+            }
+            return;
+        }
+
+        const hoverId = getMsgIdFromPoint(e.clientX, e.clientY);
+        if (!hoverId || !dr.anchorId) return;
+        const rangeIds = computeRangeIds(dr.anchorId, hoverId);
+        setSelectedMessageIds?.(rangeIds);
+    }, [onStartSelecting, setSelectedMessageIds, getMsgIdFromPoint, computeRangeIds]);
+
+    const handleMouseUp = useCallback(() => {
+        dragRef.current = { active: false, anchorId: null, startY: 0 };
+    }, []);
+
+    useEffect(() => {
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => window.removeEventListener('mouseup', handleMouseUp);
+    }, [handleMouseUp]);
+
     return (
             <div
                 ref={messagesScrollRef}
-                className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 py-3 sm:p-4 space-y-1 custom-scrollbar relative pb-4 ${isDragging ? 'bg-blue-500/10' : ''}`}
+                className={`relative z-10 tg-chat-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 py-2 lg:px-4 space-y-0 custom-scrollbar ${isDragging ? 'bg-blue-500/10' : ''}`}
                 onScroll={handleMessagesScroll}
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
+                onMouseDown={handleMouseDown}
+                onMouseMove={handleMouseMove}
             >
+                <div className="tg-chat-column tg-chat-bubbles-inner">
                 {isDragging && (
                     <div className="absolute inset-0 z-50 flex items-center justify-center bg-blue-500/20 backdrop-blur-sm pointer-events-none">
                         <div className="bg-[#1e293b] border-2 border-dashed border-blue-500 p-8 rounded-3xl flex flex-col items-center gap-4 animate-scale-in">
@@ -123,8 +227,8 @@ export function ChatMessageList({
                     return (
                         <React.Fragment key={msg.id || `msg-${absoluteIdx}`}>
                             {isNewDay && msgDate && (
-                                <div className="flex items-center justify-center my-4">
-                                    <div className="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[10px] uppercase tracking-wider text-white/50">
+                                <div className="flex items-center justify-center my-3">
+                                    <div className="rounded-full bg-black/35 px-2.5 py-1 text-[13px] text-white">
                                         {formatDateLabel(msgDate)}
                                     </div>
                                 </div>
@@ -135,7 +239,7 @@ export function ChatMessageList({
                                     chatId={chatId}
                                     onImageLoad={() => {
                                         if (isNearBottomRef.current) {
-                                            requestAnimationFrame(() => scrollToBottom('auto'));
+                                            scrollToBottom('auto');
                                         }
                                     }}
                                     onReply={setReplyTo}
@@ -146,10 +250,14 @@ export function ChatMessageList({
                                     onMediaClick={(url, type) => setViewerMedia({ url, type })}
                                     onForward={handleForwardMessage}
                                     onDelete={handleDeleteMessage}
+                                    onEdit={handleEditMessage}
+                                    onPin={handlePinMessage}
                                     isContinuation={isContinuation}
                                     onReplyClick={handleReplyClick}
                                     activeAudioId={activeAudioId}
                                     onAudioPlay={setActiveAudioId}
+                                    songPlaylist={songPlaylist}
+                                    showPeerAvatar={showPeerAvatar}
                                 />
                             </div>
                         </React.Fragment>
@@ -160,13 +268,20 @@ export function ChatMessageList({
                         <button
                             type="button"
                             onClick={jumpToLatestMessage}
-                            className="pointer-events-auto rounded-full bg-blue-500/90 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 shadow-lg border border-white/20 backdrop-blur animate-pulse"
+                            className="pointer-events-auto relative flex h-10 w-10 items-center justify-center rounded-full bg-[#212121] text-white shadow-[0_1px_8px_rgba(0,0,0,0.35)]"
+                            aria-label={t('new_messages')}
                         >
-                            {t('new_messages')} ({newMessagesWhileUp}) ↓
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-[#8774e1] text-[11px] font-semibold leading-[18px] text-center">
+                                {newMessagesWhileUp > 99 ? '99+' : newMessagesWhileUp}
+                            </span>
                         </button>
                     </div>
                 )}
                 <div ref={messagesEndRef} />
+            </div>
             </div>
 
     );

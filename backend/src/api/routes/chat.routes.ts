@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead } from '../controllers/chat.controller';
+import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead, updateChatPrefs, postListingConsent, getConsultPanelAccessEndpoint, getChatPaymentStatusEndpoint } from '../controllers/chat.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -16,6 +16,10 @@ router.post('/:chatId/messages', sendChatMessage);
 router.delete('/:chatId/messages', clearMessages);
 router.delete('/:chatId/messages/bulk', deleteMessagesBulk);
 router.post('/:chatId/read', markAsRead);
+router.patch('/:chatId/prefs', updateChatPrefs);
+router.post('/:chatId/listing-consent', postListingConsent);
+router.get('/:chatId/panel-access', getConsultPanelAccessEndpoint);
+router.get('/:chatId/payment-status', getChatPaymentStatusEndpoint);
 router.get('/:chatId/search', searchMessages);
 router.get('/:chatId/room-info', getRoomSubscriptionInfo);
 router.post('/:chatId/join-with-subscription', joinGroupWithSubscription);

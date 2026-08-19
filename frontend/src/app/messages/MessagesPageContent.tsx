@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
-import ChatList from "@/components/chat/ChatList";
+import ChatList, { CHAT_FOLDER_IDS } from "@/components/chat/ChatList";
 import ChatCarouselPanel from "@/components/chat/ChatCarouselPanel";
+import ChatSongPlayerBar from "@/components/chat/ChatSongPlayerBar";
 import ServicesList from "@/components/chat/ServicesList";
 import ProfileViewer from "@/components/chat/ProfileViewer";
 import ProfileEditor from "@/components/chat/ProfileEditor";
@@ -10,6 +11,13 @@ import WalletPanel from "@/components/chat/WalletPanel";
 import ExpenseTracker from "@/components/chat/ExpenseTracker";
 import CommunitiesList from "@/components/chat/CommunitiesList";
 import JobsPanel from "@/components/jobs/JobsPanel";
+import MyListingsPanel from "@/components/listings/MyListingsPanel";
+import {
+    buildExpertConsultIntro,
+    buildJobApplyIntro,
+    type MarketplaceContactPayload,
+} from "@/lib/marketplace-chat";
+import { getChatMetadata } from "@/lib/listing-chat";
 import BotsPanel from "@/components/chat/BotsPanel";
 import AddContactModal from "@/components/chat/AddContactModal";
 import CreateGroupModal from "@/components/chat/CreateGroupModal";
@@ -17,11 +25,8 @@ import CreateChannelModal from "@/components/chat/CreateChannelModal";
 import ContactsModal from "@/components/chat/ContactsModal";
 import { useSocket } from "@/context/SocketContext";
 import { useNotifications } from "@/hooks/useNotifications";
-import { useHorizontalNavWheel } from "@/hooks/useHorizontalNavWheel";
 import NotificationPopover from "@/components/chat/NotificationPopover";
 import MessagesMenuDrawer from "./MessagesMenuDrawer";
-import MessagesMobileBottomNav from "./MessagesMobileBottomNav";
-import MessagesMobileHeader from "./MessagesMobileHeader";
 import MessagesRightPanels from "./MessagesRightPanels";
 import { useNotification } from "@/context/NotificationContext";
 import { useConfirm } from "@/context/ConfirmContext";
@@ -42,21 +47,23 @@ import {
     Settings,
     Moon,
     LogOut,
-    MessageSquare,
     Bot,
     ArrowLeft,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useLanguage } from "@/context/LanguageContext";
 import { TranslationKeys } from "@/lib/translations";
-import { parseCreatedToMs, prefetchChatMessagesCache, resetAllLocalChatData } from "@/lib/chat-message-cache";
+import { parseCreatedToMs, prefetchChatMessagesCache, resetAllLocalChatData, formatDialogClock } from "@/lib/chat-message-cache";
 import { getPrivateChatPeerUserId } from "@/lib/private-chat-peer";
+import { decryptListPreview } from "@/lib/e2e-chat";
+import { E2E_PLACEHOLDER, isE2eEnvelope } from "@/lib/e2e-envelope";
 import { getExpertPanelMode, parseStudentSessionStyle, type ExpertPanelMode } from "@/lib/expert-roles";
 import { getToken, getUser, setUser, AUTH_USER_UPDATED_EVENT } from "@/lib/auth-storage";
 import { logoutSession } from "@/lib/api";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
 import { alertIncomingChatMessage, getMessageChatId, promptMobileNotificationPermissionEarly } from "@/lib/message-alert";
+import { hydratePrefsFromChats, isChatMuted, patchChatPref, setChatUnreadMarked, syncChatPrefToServer, migrateLocalPrefsToServer } from "@/lib/chat-list-prefs";
 
 
 /** API ro'yxatida guruh hali ko'rinmasa ham ChatWindow ochilsin */
@@ -83,6 +90,8 @@ export function MessagesPageContent() {
 
     // Core State
     const [activeCategory, setActiveCategory] = useState("all");
+    const [jobsMarketTab, setJobsMarketTab] = useState<'listings' | 'experts'>('listings');
+    const [jobsExpertId, setJobsExpertId] = useState<string | null>(null);
     const [selectedChat, setSelectedChat] = useState<any | null>(null);
     /** SSR bilan bir xil: birinchi renderda har doim null; keyin loadInitial / storage da getUser() — hydration buzilmaydi */
     const [currentUser, setCurrentUser] = useState<any>(null);
@@ -102,7 +111,7 @@ export function MessagesPageContent() {
     /** E'lon / havola: mutaxassis kartasini ochish — /messages?expert=<userId> */
     const expertParam = searchParams.get('expert');
     const router = useRouter();
-    const [roomGateState, setRoomGateState] = useState<'checking' | 'payment' | 'joined' | null>(roomParam ? 'checking' : null);
+    const [roomGateState, setRoomGateState] = useState<'checking' | 'payment' | 'joined' | 'closed' | null>(roomParam ? 'checking' : null);
 
     // Search State
     const [searchQuery, setSearchQuery] = useState("");
@@ -133,9 +142,14 @@ export function MessagesPageContent() {
     const [studentSessionStyle, setStudentSessionStyle] = useState<ExpertPanelMode>('mentor');
 
     const selectedChatIdRef = useRef<string | null>(null);
+    const chatsRef = useRef<any[]>([]);
+    const openingPeerRef = useRef<string | null>(null);
     useEffect(() => {
         selectedChatIdRef.current = selectedChat?.id != null ? String(selectedChat.id) : null;
     }, [selectedChat?.id]);
+    useEffect(() => {
+        chatsRef.current = chats;
+    }, [chats]);
 
     /** Parallel fetchChats chaqiruqlarida eski javob yangi ro‘yxatni qayta yozmasin */
     const fetchChatsSeqRef = useRef(0);
@@ -182,6 +196,22 @@ export function MessagesPageContent() {
         }
         if (savedTheme) setIsDarkMode(savedTheme === 'dark');
     }, []);
+
+    // ESC: modal/menyu/panel yopish (Telegram Web K)
+    useEffect(() => {
+        const handleEsc = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            if (showContactModal) { setShowContactModal(false); return; }
+            if (showGroupModal) { setShowGroupModal(false); return; }
+            if (showCreateChannelModal) { setShowCreateChannelModal(false); return; }
+            if (showContactsModal) { setShowContactsModal(false); return; }
+            if (showMenu) { setShowMenu(false); return; }
+            if (showNotifications) { setShowNotifications(false); return; }
+            if (showRightPanel) { setShowRightPanel(false); return; }
+        };
+        window.addEventListener('keydown', handleEsc);
+        return () => window.removeEventListener('keydown', handleEsc);
+    }, [showContactModal, showGroupModal, showCreateChannelModal, showContactsModal, showMenu, showNotifications, showRightPanel]);
 
     // Mobile / Desktop — Tailwind `lg` (1024px); layout effect: paint oldin to‘g‘ri `isMobile`
     useLayoutEffect(() => {
@@ -290,8 +320,18 @@ export function MessagesPageContent() {
     }, [isExpertMode, currentUser, selectedChat, openMentorPanelForGroup]);
 
     const handleCategoryNavChange = useCallback((catId: string) => {
+        if (catId === 'services') {
+            setJobsMarketTab('experts');
+            setJobsExpertId(null);
+            setActiveCategory('jobs');
+            setSelectedChat(null);
+            setShowRightPanel(false);
+            return;
+        }
         setActiveCategory(catId);
-        if (catId !== 'all') setSelectedChat(null);
+        if (!CHAT_FOLDER_IDS.has(catId)) {
+            setSelectedChat(null);
+        }
         if (catId === 'wallet') setIsExpertMode(false);
     }, []);
 
@@ -305,19 +345,28 @@ export function MessagesPageContent() {
         }
         const seq = ++fetchChatsSeqRef.current;
         try {
+            await migrateLocalPrefsToServer();
             const url = refresh ? `/api/chats?refresh=1` : `/api/chats`;
             const res = await apiFetch(url);
             if (res.ok) {
                 const data = await res.json();
                 if (seq !== fetchChatsSeqRef.current) return;
-                const mappedChats = data.map((chat: any) => {
+                const mappedChats = await Promise.all(data.map(async (chat: any) => {
                     const chatId = chat.id || chat._id;
+                    let message = chat.lastMessage || "No messages yet";
+                    if (isE2eEnvelope(chat.lastMessageMeta) && chat.lastMessageCipher) {
+                        message = await decryptListPreview(
+                            chat.lastMessageCipher,
+                            chat.lastMessageMeta,
+                            E2E_PLACEHOLDER
+                        );
+                    }
                     return {
                         ...chat,
                         id: chatId,
                         name: chat.type === 'group' ? chat.name : (chat.otherUser?.name ? `${chat.otherUser.name} ${chat.otherUser.surname || ''}` : 'Unknown User'),
-                        message: chat.lastMessage || "No messages yet",
-                        time: chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
+                        message,
+                        time: chat.lastMessageAt ? formatDialogClock(new Date(chat.lastMessageAt).getTime()) : "",
                         unread: (String(chatId) === String(selectedChat?.id)) ? 0 : (chat.unread || 0),
                         avatar: chat.type === 'group' ? (chat.avatar_url ?? chat.avatar ?? null) : (chat.otherUser?.avatar || "use_initials"),
                         status: "offline",
@@ -326,8 +375,14 @@ export function MessagesPageContent() {
                             ...chat,
                             type: chat.type || "private",
                         }) ?? chat.otherUser?.id,
+                        pinned: !!chat.pinned,
+                        muted: !!chat.muted,
+                        archived: !!chat.archived,
+                        unreadMarked: !!chat.unreadMarked,
+                        pinnedAt: chat.pinnedAt ? new Date(chat.pinnedAt).getTime() : undefined,
                     };
-                });
+                }));
+                hydratePrefsFromChats(mappedChats);
                 setChats(mappedChats);
             }
         } catch (err) {
@@ -366,23 +421,140 @@ export function MessagesPageContent() {
             console.error("Failed to load contacts:", err);
         }
     }, []);
+    const openChatFromNotification = useCallback(
+        (chatId: string) => {
+            setShowNotifications(false);
+            const cid = String(chatId);
+            const found = (chatsRef.current || []).find(
+                (c: any) => String(c.id || c._id) === cid
+            );
+            if (found) {
+                void prefetchChatMessagesCache(found.id);
+                setSelectedChat(found);
+                setActiveCategory('all');
+                setShowRightPanel(false);
+                setIsExpertMode(false);
+                return;
+            }
+            router.push(`/messages?openChat=${encodeURIComponent(cid)}`);
+            void fetchChats(true);
+        },
+        [router, fetchChats]
+    );
     // HANDLERS
-    const handleAddContact = async (user: any) => {
+    const handleAddContact = async (user: MarketplaceContactPayload) => {
         const token = getToken();
-        if (!token) return;
+        const peerId = String(user?.id || (user as any)?.userId || '');
+        if (!token || !peerId) return;
+        if (openingPeerRef.current === peerId) return;
+        openingPeerRef.current = peerId;
+
+        setShowContactModal(false);
+        setShowContactsModal(false);
+        setShowRightPanel(false);
+        setActiveCategory('all');
+        setIsExpertMode(false);
+
+        const existing = (chatsRef.current || []).find((c: any) => {
+            if (c?.type && c.type !== 'private') return false;
+            const other = String(
+                getPrivateChatPeerUserId(c) || c.participantId || c.otherUser?.id || ''
+            );
+            return other === peerId;
+        });
+
+        const fallbackName =
+            `${user.name || ''} ${(user as any).surname || ''}`.trim() ||
+            (user.username ? `@${user.username}` : '') ||
+            (user as any).phone ||
+            'Chat';
+
+        const sendMarketplaceIntro = async (chatId: string, chatRow?: any) => {
+            try {
+                if (user.fromJobListing && user.jobIntent === 'apply') {
+                    const snap =
+                        getChatMetadata(chatRow)?.snapshot ||
+                        (user.jobTitle ?
+                            {
+                                position: user.jobTitle,
+                                company_name: user.jobCompany,
+                                sub_type: 'employer',
+                            }
+                        :   null);
+                    if (snap) {
+                        const content = buildJobApplyIntro(snap as Record<string, any>, t);
+                        await apiFetch(`/api/chats/${chatId}/messages`, {
+                            method: 'POST',
+                            body: JSON.stringify({ content, type: 'text' }),
+                        });
+                    }
+                } else if (user.fromExpertListing && !existing) {
+                    const content = buildExpertConsultIntro(
+                        { profession: (user as any).profession, name: user.name },
+                        t
+                    );
+                    await apiFetch(`/api/chats/${chatId}/messages`, {
+                        method: 'POST',
+                        body: JSON.stringify({ content, type: 'text' }),
+                    });
+                }
+            } catch (e) {
+                console.error('[marketplace] intro message', e);
+            }
+        };
+
+        if (existing) {
+            const existingId = existing.id || existing._id;
+            if (existingId) {
+                void prefetchChatMessagesCache(existingId);
+                if (user.fromJobListing || user.fromExpertListing) {
+                    try {
+                        const res = await apiFetch(`/api/chats`, {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                participantId: peerId,
+                                ...(user.fromExpertListing ? { fromExpertListing: true } : {}),
+                                ...(user.fromJobListing && user.jobId ?
+                                    {
+                                        fromJobListing: true,
+                                        jobId: user.jobId,
+                                        jobIntent: user.jobIntent || 'chat',
+                                    }
+                                :   {}),
+                            }),
+                        });
+                        if (res.ok) {
+                            const enriched = await res.json();
+                            await sendMarketplaceIntro(String(existingId), enriched);
+                            void fetchChats(true);
+                        }
+                    } catch (e) {
+                        console.error('[marketplace] update existing chat meta', e);
+                    }
+                }
+            }
+            setSelectedChat(existing);
+            openingPeerRef.current = null;
+            return;
+        }
+
         try {
             const res = await apiFetch(`/api/chats`, {
                 method: 'POST',
                 body: JSON.stringify({
-                    participantId: user.id || user.userId,
+                    participantId: peerId,
                     ...(user.fromExpertListing ? { fromExpertListing: true } : {}),
-                })
+                    ...(user.fromJobListing && user.jobId ?
+                        {
+                            fromJobListing: true,
+                            jobId: user.jobId,
+                            jobIntent: user.jobIntent || 'chat',
+                        }
+                    :   {}),
+                }),
             });
             if (res.ok) {
                 const enriched = await res.json();
-                await fetchContacts();
-                await fetchChats(true);
-
                 const chatId = enriched.id || enriched._id;
                 const fullChat = {
                     ...enriched,
@@ -390,22 +562,28 @@ export function MessagesPageContent() {
                     name:
                         enriched.otherUser?.name ?
                             `${enriched.otherUser.name} ${enriched.otherUser.surname || ''}`.trim()
-                        :   `${user.name} ${user.surname || ''}`.trim(),
-                    message: 'No messages yet',
+                        :   fallbackName,
+                    message: t('no_messages'),
                     time: '',
                     unread: 0,
                     avatar: enriched.otherUser?.avatar || user.avatar || user.avatar_url || 'use_initials',
                     type: 'private',
-                    participantId: enriched.otherUser?.id,
+                    participantId: enriched.otherUser?.id || peerId,
                 };
-                if (chatId) void prefetchChatMessagesCache(chatId);
+                setChats((prev) => {
+                    if (prev.some((c) => String(c.id || c._id) === String(chatId))) return prev;
+                    return [fullChat, ...prev];
+                });
+                if (chatId) {
+                    void prefetchChatMessagesCache(chatId);
+                    await sendMarketplaceIntro(String(chatId), enriched);
+                }
                 setSelectedChat(fullChat);
-                setShowRightPanel(false);
-                setActiveCategory('all');
-                setIsExpertMode(false);
+                void fetchContacts();
+                void fetchChats(true);
             }
         } catch (err) { console.error(err); }
-        setShowContactModal(false);
+        openingPeerRef.current = null;
     };
 
     const handleCreateGroup = async (name: string, participantIds: string[], avatarUrl?: string) => {
@@ -461,7 +639,32 @@ export function MessagesPageContent() {
                 body: JSON.stringify({ type: 'channel', ...data })
             });
             if (res.ok) {
-                await fetchChats();
+                const newChat = await res.json();
+                const id = newChat.id || newChat._id;
+                const avatar = newChat.avatar_url ?? null;
+                if (id) {
+                    const mappedNew = {
+                        ...newChat,
+                        id,
+                        creator_id: newChat.creator_id ?? newChat.creatorId ?? currentUser?.id,
+                        name: newChat.name || data.name,
+                        message: "No messages yet",
+                        time: "",
+                        unread: 0,
+                        avatar,
+                        avatar_url: avatar,
+                        status: "offline",
+                        type: "channel",
+                        participantId: undefined,
+                    };
+                    setChats(prev => [mappedNew, ...prev]);
+                    void prefetchChatMessagesCache(id);
+                    setSelectedChat(mappedNew);
+                    setShowRightPanel(typeof window !== 'undefined' && window.innerWidth >= 1024);
+                    setIsExpertMode(false);
+                }
+                await fetchChats(true);
+                setActiveCategory('all');
                 setShowCreateChannelModal(false);
             }
         } catch (err) { console.error(err); }
@@ -490,6 +693,49 @@ export function MessagesPageContent() {
             console.error("Failed to mark chat as read:", err);
         }
     }, []);
+
+    const applyListingConsentMetadata = useCallback((chatId: string, metadata: Record<string, unknown>) => {
+        if (!chatId) return;
+        setChats((prev) =>
+            prev.map((c) => (String(c.id) === String(chatId) ? { ...c, metadata } : c))
+        );
+        setSelectedChat((prev: any) => {
+            if (!prev || String(prev.id) !== String(chatId)) return prev;
+            return { ...prev, metadata };
+        });
+    }, []);
+
+    const handleChatMetadataUpdate = useCallback(
+        (metadata: Record<string, unknown>) => {
+            const chatId = selectedChatIdRef.current;
+            if (!chatId) return;
+            applyListingConsentMetadata(chatId, metadata);
+        },
+        [applyListingConsentMetadata]
+    );
+
+    const handleDeleteChatFromList = useCallback(async (chat: any) => {
+        if (!chat?.id) return;
+        const ok = await confirm({
+            title: t('delete_chat') as TranslationKeys,
+            description: t('confirm_delete_chat') as TranslationKeys,
+            variant: 'danger',
+            confirmLabel: t('delete') as TranslationKeys,
+        });
+        if (!ok) return;
+        try {
+            const res = await apiFetch(`/api/chats/${chat.id}`, { method: 'DELETE' });
+            if (!res.ok) return;
+            setChats(prev => prev.filter(c => String(c.id) !== String(chat.id)));
+            if (selectedChat && String(selectedChat.id) === String(chat.id)) {
+                setSelectedChat(null);
+                setShowRightPanel(false);
+                setIsExpertMode(false);
+            }
+        } catch (err) {
+            console.error('Failed to delete chat from list:', err);
+        }
+    }, [confirm, t, selectedChat]);
 
     const handleDeleteContact = async (contactId: string) => {
         const ok = await confirm({
@@ -539,8 +785,7 @@ export function MessagesPageContent() {
             .filter(c => {
                 const nameMatch = c.name?.toLowerCase().includes(trimmed.toLowerCase());
                 const userMatch = c.username?.toLowerCase().includes(trimmed.toLowerCase());
-                const phoneMatch = c.phone?.includes(trimmed);
-                return nameMatch || userMatch || phoneMatch;
+                return nameMatch || userMatch;
             })
             // Exclude if already in localChats to avoid duplicates
             .filter(c => !localChats.some(lc => String(lc.participantId || lc.id) === String(c.participantId || c.id)))
@@ -610,6 +855,10 @@ export function MessagesPageContent() {
         loadInitial();
     }, [fetchChats, fetchContacts, roomParam]);
 
+    useEffect(() => {
+        if (showContactsModal) void fetchContacts();
+    }, [showContactsModal, fetchContacts]);
+
     /** Profildan `setUser` chaqirilganda yon menyu `currentUser` darhol yangilansin (socketdan mustaqil) */
     useEffect(() => {
         const syncFromStorage = () => {
@@ -672,23 +921,37 @@ export function MessagesPageContent() {
                 const updatedChats = [...prev];
                 const chat = { ...updatedChats[index] };
                 const msgType = message.type || 'text';
-                chat.message =
-                    msgType === 'text'
-                        ? (message.content || '')
-                        : msgType === 'image'
-                          ? 'Rasm'
-                          : msgType === 'video'
-                            ? 'Video'
-                            : msgType === 'voice'
-                              ? 'Ovozli xabar'
-                              : msgType === 'file'
-                                ? 'Fayl'
-                                : (message.content || '');
+                if (isE2eEnvelope(message.metadata)) {
+                    chat.message = E2E_PLACEHOLDER;
+                    const cipher = String(message.content || '');
+                    void decryptListPreview(cipher, message.metadata, E2E_PLACEHOLDER).then((plain) => {
+                        setChats((cur) => {
+                            const i = cur.findIndex((c) => String(c.id) === chatId);
+                            if (i === -1) return cur;
+                            const next = [...cur];
+                            next[i] = { ...next[i], message: plain };
+                            return next;
+                        });
+                    });
+                } else {
+                    chat.message =
+                        msgType === 'text'
+                            ? (message.content || '')
+                            : msgType === 'image'
+                              ? 'Rasm'
+                              : msgType === 'video'
+                                ? 'Video'
+                                : msgType === 'voice'
+                                  ? 'Ovozli xabar'
+                                  : msgType === 'file'
+                                    ? 'Fayl'
+                                    : (message.content || '');
+                }
                 const createdRaw = message.created_at ?? message.createdAt ?? message.timestamp;
                 const createdMs = parseCreatedToMs(createdRaw);
                 if (createdMs != null) {
                     const createdIso = new Date(createdMs).toISOString();
-                    chat.time = new Date(createdMs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                    chat.time = formatDialogClock(createdMs);
                     chat.lastMessageAt = createdIso;
                 } else if (!chat.time) {
                     chat.time = '';
@@ -704,6 +967,7 @@ export function MessagesPageContent() {
                 } else if (!isFromMe) {
                     chat.unread = (chat.unread || 0) + 1;
 
+                    if (!isChatMuted(chatId)) {
                     const senderName = chat.name || (message.sender_name as string) || (message.senderName as string) || 'Yangi xabar';
                     const body =
                         msgType === 'text'
@@ -722,6 +986,7 @@ export function MessagesPageContent() {
                         body,
                         tag: `chat-${chatId}`,
                     });
+                    }
                 }
 
                 updatedChats.splice(index, 1);
@@ -756,9 +1021,35 @@ export function MessagesPageContent() {
             });
         };
 
+        const handleListingConsentUpdated = (data: {
+            chatId?: string;
+            metadata?: Record<string, unknown>;
+        }) => {
+            if (!data?.chatId || !data.metadata) return;
+            applyListingConsentMetadata(String(data.chatId), data.metadata);
+        };
+
         socket.on('profile_updated', handleProfileUpdate);
         socket.on('receive_message', handleReceiveMessage);
         socket.on('chat_updated', handleChatUpdated);
+        socket.on('listing_consent_updated', handleListingConsentUpdated);
+        socket.on('chat_prefs_updated', (data: {
+            chatId?: string;
+            pinned?: boolean;
+            muted?: boolean;
+            archived?: boolean;
+            unreadMarked?: boolean;
+            pinnedAt?: number | null;
+        }) => {
+            if (!data?.chatId) return;
+            patchChatPref(data.chatId, {
+                pinned: !!data.pinned,
+                muted: !!data.muted,
+                archived: !!data.archived,
+                unreadMarked: !!data.unreadMarked,
+                pinnedAt: data.pinnedAt || undefined,
+            });
+        });
 
         const handleReconnect = () => {
             fetchChats(true);
@@ -770,13 +1061,15 @@ export function MessagesPageContent() {
             socket.off('profile_updated', handleProfileUpdate);
             socket.off('receive_message', handleReceiveMessage);
             socket.off('chat_updated', handleChatUpdated);
+            socket.off('listing_consent_updated', handleListingConsentUpdated);
+            socket.off('chat_prefs_updated');
             window.removeEventListener('socket_reconnected', handleReconnect);
             if (chatListResyncTimerRef.current) {
                 clearTimeout(chatListResyncTimerRef.current);
                 chatListResyncTimerRef.current = null;
             }
         };
-    }, [socket, fetchChats, fetchContacts]);
+    }, [socket, fetchChats, fetchContacts, applyListingConsentMetadata]);
 
     // Reset unread count locally when a chat is selected
     useEffect(() => {
@@ -811,21 +1104,50 @@ export function MessagesPageContent() {
                 }
                 const room = await roomRes.json();
                 const creatorId = room.creator_id;
-                if (creatorId) {
-                    const subRes = await apiFetch(`/api/wallet/subscription-status?mentorId=${encodeURIComponent(creatorId)}`);
+                const isPrivateRoom = room.type === 'private';
+
+                if (isPrivateRoom) {
+                    const accessRes = await apiFetch(
+                        `/api/chats/${encodeURIComponent(roomParam)}/panel-access`
+                    );
                     if (cancelled) return;
-                    const subData = await subRes.json();
-                    if (!subData?.active) {
+                    if (!accessRes.ok) {
+                        setRoomGateState('closed');
+                        setLoading(false);
+                        router.replace('/messages');
+                        return;
+                    }
+                    const access = await accessRes.json();
+                    if (!access?.allowed) {
+                        showError(t('panel_room_closed') as string);
+                        setRoomGateState('closed');
+                        setLoading(false);
+                        router.replace('/messages');
+                        return;
+                    }
+                } else {
+                    if (creatorId) {
+                        const subRes = await apiFetch(
+                            `/api/wallet/subscription-status?mentorId=${encodeURIComponent(creatorId)}`
+                        );
+                        if (cancelled) return;
+                        const subData = await subRes.json();
+                        if (!subData?.active) {
+                            setRoomGateState('payment');
+                            return;
+                        }
+                    }
+                    const joinRes = await apiFetch(
+                        `/api/chats/${roomParam}/join-with-subscription`,
+                        { method: 'POST' }
+                    );
+                    if (cancelled) return;
+                    if (!joinRes.ok) {
                         setRoomGateState('payment');
                         return;
                     }
                 }
-                const joinRes = await apiFetch(`/api/chats/${roomParam}/join-with-subscription`, { method: 'POST' });
-                if (cancelled) return;
-                if (!joinRes.ok) {
-                    setRoomGateState('payment');
-                    return;
-                }
+
                 const chatsRes = await apiFetch('/api/chats?refresh=1');
                 if (cancelled) return;
                 if (chatsRes.ok) {
@@ -837,7 +1159,7 @@ export function MessagesPageContent() {
                             id: chatId,
                             name: chat.type === 'group' ? chat.name : (chat.otherUser?.name ? `${chat.otherUser.name} ${chat.otherUser.surname || ''}` : 'Unknown User'),
                             message: chat.lastMessage || "No messages yet",
-                            time: chat.lastMessageAt ? new Date(chat.lastMessageAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "",
+                            time: chat.lastMessageAt ? formatDialogClock(new Date(chat.lastMessageAt).getTime()) : "",
                             unread: 0,
                             avatar: chat.type === 'group' ? (chat.avatar_url ?? chat.avatar ?? null) : (chat.otherUser?.avatar || "use_initials"),
                             status: "offline",
@@ -859,6 +1181,9 @@ export function MessagesPageContent() {
                             setStudentLiveRoomId(String(roomParam));
                             setStudentSessionStyle(parseStudentSessionStyle(searchParams.get('style')));
                         }
+                    } else if (isPrivateRoom) {
+                        setStudentLiveRoomId(String(roomParam));
+                        setStudentSessionStyle(parseStudentSessionStyle(searchParams.get('style')));
                     } else {
                         setSelectedChat(lessonGroupPlaceholder(String(roomParam)));
                         setShowRightPanel(false);
@@ -873,7 +1198,7 @@ export function MessagesPageContent() {
             }
         })();
         return () => { cancelled = true; };
-    }, [roomParam, currentUser?.id, router, searchParams]);
+    }, [roomParam, currentUser?.id, router, searchParams, showError, t]);
 
     // Darsga qo'shilgandan keyin: chat ro'yxatini yangilash
     useEffect(() => {
@@ -924,8 +1249,10 @@ export function MessagesPageContent() {
                 if (cancelled) return;
                 setSelectedExpertFromSidebar(profile);
                 setSelectedExpertInView(profile);
-                setActiveCategory('services');
-                setShowRightPanel(true);
+                setJobsMarketTab('experts');
+                setJobsExpertId(String(profile.id || expertParam));
+                setActiveCategory('jobs');
+                setShowRightPanel(false);
                 setIsExpertMode(false);
                 stripExpert();
             } catch (e) {
@@ -938,13 +1265,11 @@ export function MessagesPageContent() {
         };
     }, [expertParam, currentUser?.id, router, searchParams]);
 
-    const isPanelCategory = ['jobs', 'services', 'finance', 'communities', 'wallet', 'profile', 'settings', 'profile_edit', 'bots'].includes(activeCategory);
-    /** Konsultant/ustoz paneli chat tanlamasdan: main oynasi mobilda ham ko'rinsin (oldingi holatda showDetail false → main `hidden`) */
+    const isPanelCategory = ['jobs', 'listings', 'services', 'finance', 'communities', 'wallet', 'profile', 'settings', 'profile_edit', 'bots'].includes(activeCategory);
+    /** Konsultant/ustoz paneli chat tanlamasdan: main oynasi mobilda ham ko'rinsin */
     const showDetail =
         !!selectedChat ||
-        (isPanelCategory &&
-            !(activeCategory === 'services' && !selectedExpertInView) &&
-            !(activeCategory === 'wallet' && isMobile)) ||
+        isPanelCategory ||
         (isExpertMode && !!currentUser?.is_expert);
 
     /** Shaxsiy chat yoki o‘z guruhim: ekspert xizmat paneli. Kanal/guruhda boshqa odam yaratuvchisi bo‘lsa — panel yo‘q. */
@@ -972,13 +1297,10 @@ export function MessagesPageContent() {
      * Servislar/hamyon va h.k. da `selectedChat` qolgan bo‘lsa ham noto‘g‘ri yashirmaslik uchun.
      */
     const hideMainUnderChatInfo =
-        activeCategory === 'all' &&
+        CHAT_FOLDER_IDS.has(activeCategory) &&
         showRightPanel &&
         !!selectedChat &&
         !hideRightPanelForSpecialistDashboard;
-
-    const mobileCategoryNavRef = useRef<HTMLDivElement | null>(null);
-    useHorizontalNavWheel(mobileCategoryNavRef, !showDetail);
 
     // roomParam + to'lov talab qilinadi – RoomAccessGate (obuna oynasi)
     if (roomParam && roomGateState === 'payment') {
@@ -1000,6 +1322,21 @@ export function MessagesPageContent() {
             </div>
         );
     }
+    if (roomParam && roomGateState === 'closed') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/80 text-center">{t('panel_room_closed')}</p>
+                <p className="text-sm text-white/50 text-center max-w-sm">{t('invite_expired_hint')}</p>
+                <button
+                    type="button"
+                    onClick={() => { window.location.href = '/messages'; }}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t('back')}
+                </button>
+            </div>
+        );
+    }
 
     if (studentLiveRoomId && currentUser) {
         return (
@@ -1016,29 +1353,35 @@ export function MessagesPageContent() {
     }
 
     return (
-        <div className="fixed inset-0 flex items-center justify-center bg-black animate-fade-in">
-            {/* Global Dynamic Background Image */}
-            <div
-                className="absolute inset-0 z-0 transition-all duration-700 ease-in-out"
-                style={{
-                    backgroundImage: `url(${bgImage})`,
-                    backgroundSize: 'cover',
-                    backgroundPosition: 'center',
-                    filter: `blur(${bgImageBlur}px) brightness(${isDarkMode ? 0.6 : 0.9})`,
-                    transform: `scale(${1.1 + (bgImageBlur / 100)})` // Dynamically adjust scale to hide blur edges
-                }}
-            />
-
-            {/* Scaled/Responsive Main Application Frame */}
-            <div className={`w-full min-w-0 h-dvh ${isExpertMode ? '' : 'max-w-[1800px] lg:h-[calc(100vh-2rem)] lg:rounded-[2rem]'} flex flex-col lg:flex-row gap-2 lg:gap-4 relative z-10 overflow-hidden`}>
+        <div className="fixed inset-0 flex flex-col tg-chat-wallpaper animate-fade-in">
+            <ChatSongPlayerBar />
+            <div className="w-full min-w-0 flex-1 min-h-0 flex flex-col lg:flex-row relative z-10 overflow-hidden">
 
                 {showMenu && (
                     <MessagesMenuDrawer
                         t={t}
                         currentUser={currentUser}
+                        isExpertMode={isExpertMode}
                         onClose={() => setShowMenu(false)}
                         onOpenProfile={() => { setShowMenu(false); setActiveCategory('profile'); }}
-                        onOpenWallet={() => { setShowMenu(false); setActiveCategory('wallet'); }}
+                        onOpenWallet={() => { setShowMenu(false); router.push('/wallet'); }}
+                        onOpenExperts={() => {
+                            setShowMenu(false);
+                            setShowRightPanel(false);
+                            setJobsMarketTab('experts');
+                            setJobsExpertId(null);
+                            setActiveCategory('jobs');
+                        }}
+                        onOpenJobs={() => {
+                            setShowMenu(false);
+                            setShowRightPanel(false);
+                            setJobsMarketTab('listings');
+                            setJobsExpertId(null);
+                            setActiveCategory('jobs');
+                        }}
+                        onOpenFinance={() => { setShowMenu(false); setActiveCategory('finance'); }}
+                        onOpenListings={() => { setShowMenu(false); setActiveCategory('listings'); }}
+                        onToggleExpertPanel={() => { setShowMenu(false); handleToggleExpertPanel(); }}
                         onSupport={() => { setShowMenu(false); handleSupport(); }}
                         onCreateGroup={() => { setShowMenu(false); setShowGroupModal(true); }}
                         onCreateChannel={() => { setShowMenu(false); setShowCreateChannelModal(true); }}
@@ -1048,7 +1391,10 @@ export function MessagesPageContent() {
                 )}
 
                 {showNotifications && (
-                    <NotificationPopover onClose={() => setShowNotifications(false)} />
+                    <NotificationPopover
+                        onClose={() => setShowNotifications(false)}
+                        onOpenChat={openChatFromNotification}
+                    />
                 )}
 
                 {/* Modals */}
@@ -1067,47 +1413,28 @@ export function MessagesPageContent() {
                     onClose={() => setShowCreateChannelModal(false)}
                     onCreateChannel={handleCreateChannel}
                 />
-                <ContactsModal
-                    open={showContactsModal}
-                    contacts={contacts}
-                    onClose={() => setShowContactsModal(false)}
-                    onStartChat={handleAddContact}
-                    onAddContact={() => { setShowContactsModal(false); setShowContactModal(true); }}
-                    onDeleteContact={handleDeleteContact}
-                />
-
-                {/* Global Mobile Header - Only visible on mobile, hidden when chat is open */}
-                {!showDetail && (
-                    <MessagesMobileHeader
-                        currentUser={currentUser}
-                        isExpertMode={isExpertMode}
-                        searchQuery={searchQuery}
-                        activeCategory={activeCategory}
-                        mobileCategoryNavRef={mobileCategoryNavRef}
-                        onOpenMenu={() => setShowMenu(true)}
-                        onToggleExpertPanel={handleToggleExpertPanel}
-                        onOpenContactModal={() => setShowContactModal(true)}
-                        onSearch={handleSearch}
-                        onCategoryChange={handleCategoryNavChange}
-                    />
-                )}
 
                 {/* Left Panel: ChatList */}
-                <aside className={` ${showDetail ? 'hidden lg:flex' : 'flex'} ${isExpertMode ? 'lg:w-0 lg:p-0 w-0 p-0 opacity-0 pointer-events-none absolute lg:relative z-0' : 'lg:w-[380px] lg:px-4 w-full px-2 opacity-100 relative z-10'} transition-all duration-500 ease-in-out lg:h-full flex-1 min-h-0 lg:flex-none lg:min-h-0 min-w-0 flex-col overflow-hidden `}>
+                <aside className={` ${showDetail && activeCategory !== 'jobs' ? 'hidden lg:flex' : activeCategory === 'jobs' ? 'hidden' : 'flex'} ${isExpertMode || activeCategory === 'jobs' ? 'lg:w-0 lg:p-0 lg:m-0 lg:rounded-none lg:shadow-none w-0 p-0 opacity-0 pointer-events-none absolute lg:relative z-0' : 'lg:w-[420px] w-full opacity-100 relative z-10 lg:rounded-[24px] lg:shadow-[0_0_4px_0_rgba(0,0,0,0.24)]'} transition-all duration-300 ease-in-out lg:h-full flex-1 min-h-0 lg:flex-none lg:min-h-0 min-w-0 flex-col overflow-hidden bg-[#212121]`}>
                     <ChatList
                         activeCategory={activeCategory}
                         onCategoryChange={handleCategoryNavChange}
                         onChatSelect={(chat) => {
-                            if (chat?.id != null) void prefetchChatMessagesCache(chat.id);
+                            if (chat?.id != null) {
+                                void prefetchChatMessagesCache(chat.id);
+                                setChatUnreadMarked(chat.id, false);
+                                void syncChatPrefToServer(chat.id, { unreadMarked: false });
+                            }
                             setSelectedChat(chat);
-                            if (activeCategory !== 'all') setActiveCategory('all');
+                            if (!CHAT_FOLDER_IDS.has(activeCategory)) setActiveCategory('all');
                             /** Har doim avval chat; info faqat headerdan */
                             setShowRightPanel(false);
                             // Guruhga kirganda mentor paneli avtomatik ochilmasin — faqat Layout (ekspert) tugmasi
                             setIsExpertMode(false);
                         }}
-                        hideHeader={true}
-                        hideCategories={true}
+                        hideHeader={false}
+                        hideCategories={false}
+                        selectedChatId={selectedChat?.id ?? selectedChat?._id ?? null}
                         showMenu={showMenu} setShowMenu={setShowMenu}
                         showContactModal={showContactModal} setShowContactModal={setShowContactModal}
                         showGroupModal={showGroupModal} setShowGroupModal={setShowGroupModal}
@@ -1120,6 +1447,8 @@ export function MessagesPageContent() {
                         handleAddContact={handleAddContact}
                         handleSupport={handleSupport}
                         handleDeleteContact={handleDeleteContact}
+                        onDeleteChat={handleDeleteChatFromList}
+                        onMarkAsRead={handleMarkAsRead}
                         searchQuery={searchQuery}
                         onSearchChange={handleSearch}
                         searchResults={searchResults}
@@ -1131,10 +1460,20 @@ export function MessagesPageContent() {
                         unreadCount={unreadCount}
                             isMobile={isMobile}
                         onExpertSelect={(exp) => {
-                            setSelectedExpertFromSidebar(exp);
-                            setSelectedExpertInView(exp);
-                            setActiveCategory('services');
+                            setJobsMarketTab('experts');
+                            setJobsExpertId(exp?.id ? String(exp.id) : null);
+                            setActiveCategory('jobs');
+                            setShowRightPanel(false);
                         }}
+                    />
+                    <ContactsModal
+                        open={showContactsModal}
+                        contacts={contacts}
+                        chats={chats}
+                        onClose={() => setShowContactsModal(false)}
+                        onStartChat={handleAddContact}
+                        onAddContact={() => setShowContactModal(true)}
+                        onDeleteContact={handleDeleteContact}
                     />
                 </aside>
 
@@ -1142,22 +1481,39 @@ export function MessagesPageContent() {
                     className={
                         hideMainUnderChatInfo
                             ? 'hidden lg:flex lg:flex-col flex-1 min-h-0 h-full min-w-0 relative overflow-hidden w-full'
-                            : ` ${!showDetail ? 'hidden lg:block' : 'w-full'} flex-1 min-h-0 h-full min-w-0 relative overflow-hidden flex flex-col`
+                            : `${!showDetail ? 'hidden lg:flex lg:flex-col' : 'flex flex-col w-full'} flex-1 min-h-0 h-full min-w-0 relative overflow-hidden`
                     }
                 >
                     {activeCategory === 'jobs' ? (
-                        <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
-                            <header className="lg:hidden shrink-0 p-4 border-b border-white/5 flex items-center gap-3 bg-[#1a1c20]/80 backdrop-blur-xl pt-[max(2rem,env(safe-area-inset-top))]">
-                                <button onClick={() => setActiveCategory('all')} className="p-2 -ml-2 hover:bg-white/10 rounded-full text-white/70 shadow-lg">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" /></svg>
-                                </button>
-                                <h2 className="text-white font-bold">Ish qidirish</h2>
-                            </header>
-                            <div className="flex-1 min-h-0 w-full flex flex-col p-4 overflow-hidden">
-                                <JobsPanel />
-                            </div>
-                        </div>
+                        <JobsPanel
+                            key={`jobs-${jobsMarketTab}-${jobsExpertId || 'none'}`}
+                            initialMarketTab={jobsMarketTab}
+                            initialExpertId={jobsExpertId}
+                            onBack={() => {
+                                setActiveCategory('all');
+                                setJobsExpertId(null);
+                            }}
+                            onStartChat={handleAddContact}
+                        />
                     )
+                        : activeCategory === 'listings' ? (
+                            <MyListingsPanel
+                                currentUser={currentUser}
+                                chats={chats}
+                                onBack={() => setActiveCategory('all')}
+                                onOpenChat={(chat) => {
+                                    setSelectedChat(chat);
+                                    setActiveCategory('all');
+                                    setShowRightPanel(false);
+                                    setIsExpertMode(false);
+                                }}
+                                onOpenJobsMarket={() => {
+                                    setJobsMarketTab('listings');
+                                    setActiveCategory('jobs');
+                                }}
+                                onOpenProfile={() => setActiveCategory('profile')}
+                            />
+                        )
                         : activeCategory === 'services' ? (
                             <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
                                 {/* Desktop: chatlar ro'yxatiga qaytish (oldingi holatda tugma yo'q edi) */}
@@ -1185,8 +1541,8 @@ export function MessagesPageContent() {
                                 <header className="lg:hidden shrink-0 p-4 border-b border-white/5 flex items-center gap-3 bg-transparent pt-[max(2rem,env(safe-area-inset-top))]">
                                     <button
                                         onClick={() => {
-                                            // Mobile: ekspert tanlanmagan holatga qaytish (1-rasm)
-                                            setActiveCategory('services');
+                                            setJobsMarketTab('experts');
+                                            setActiveCategory('jobs');
                                             setSelectedExpertInView(null);
                                             setSelectedExpertFromSidebar(null);
                                             setShowRightPanel(false);
@@ -1330,7 +1686,7 @@ export function MessagesPageContent() {
                                                         />
                                                     </div>
                                                 ) : loading ? (
-                                                    <div className="hidden lg:flex flex-1 h-full items-center justify-center flex-col gap-4 lg:glass-premium lg:rounded-3xl lg:border lg:border-white/10">
+                                                    <div className="hidden lg:flex flex-1 min-h-0 h-full w-full items-center justify-center flex-col gap-4">
                                                         <div className="w-full max-w-md space-y-3 px-6">
                                                             <div className="h-4 w-32 rounded-full bg-white/5 animate-pulse" />
                                                             <div className="h-32 rounded-2xl bg-white/5 animate-pulse" />
@@ -1345,38 +1701,15 @@ export function MessagesPageContent() {
                                                             onToggleInfo={() => setShowRightPanel(!showRightPanel)}
                                                             onBack={() => setSelectedChat(null)}
                                                             onMarkAsRead={handleMarkAsRead}
+                                                            onChatMetadataUpdate={handleChatMetadataUpdate}
+                                                            chatBgImage={bgImage}
+                                                            chatBgImageBlur={bgImageBlur}
                                                         />
                                                     )
-                                                ) : (
-                                                    <div className="hidden lg:flex flex-1 h-full items-center justify-center text-white/20 flex-col gap-4 lg:glass-premium lg:rounded-3xl lg:border lg:border-white/10">
-                                                        <div className="w-20 h-20 rounded-full border-2 border-dashed border-white/10 flex items-center justify-center">
-                                                            <MessageSquare className="h-10 w-10 opacity-20" />
-                                                        </div>
-                                                        <p className="text-sm font-medium">
-                                                            Suhbatni boshlash uchun kontakt tanlang yoki yangi kontakt qo&apos;shing.
-                                                        </p>
-                                                        <button
-                                                            onClick={() => setShowContactsModal(true)}
-                                                            className="mt-1 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white hover:bg-white/15 transition-colors"
-                                                        >
-                                                            Kontaktlar oynasini ochish
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                ) : null}
                 </main>
 
-                {!showDetail && (
-                    <MessagesMobileBottomNav
-                        activeCategory={activeCategory}
-                        selectedChat={selectedChat}
-                        onSelectCategory={(id) => {
-                            setActiveCategory(id);
-                            if (id !== 'all') setSelectedChat(null);
-                        }}
-                    />
-                )}
-
-                {!hideRightPanelForSpecialistDashboard && (
+                {!hideRightPanelForSpecialistDashboard && activeCategory !== 'jobs' && (
                     <MessagesRightPanels
                         showRightPanel={showRightPanel}
                         activeCategory={activeCategory}

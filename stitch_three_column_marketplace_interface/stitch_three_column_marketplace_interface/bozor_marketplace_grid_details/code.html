@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+
+<html class="h-full" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Nexus Hub - Marketplace</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                            "on-primary": "#ffffff",
+                            "surface": "#f9f9ff",
+                            "tertiary-fixed-dim": "#c0c1ff",
+                            "secondary": "#006c49",
+                            "inverse-primary": "#c3c0ff",
+                            "on-secondary-fixed-variant": "#005236",
+                            "inverse-on-surface": "#ecf1ff",
+                            "on-surface": "#111c2d",
+                            "error-container": "#ffdad6",
+                            "on-tertiary-fixed-variant": "#2f2ebe",
+                            "tertiary-container": "#4b4dd8",
+                            "on-tertiary-container": "#d9d8ff",
+                            "surface-tint": "#4d44e3",
+                            "surface-container-low": "#f0f3ff",
+                            "surface-variant": "#d8e3fb",
+                            "primary-fixed": "#e2dfff",
+                            "surface-container": "#e7eeff",
+                            "outline-variant": "#c7c4d8",
+                            "on-secondary": "#ffffff",
+                            "primary": "#3525cd",
+                            "inverse-surface": "#263143",
+                            "secondary-fixed": "#6ffbbe",
+                            "tertiary": "#3130c0",
+                            "on-primary-container": "#dad7ff",
+                            "on-error-container": "#93000a",
+                            "on-background": "#111c2d",
+                            "tertiary-fixed": "#e1e0ff",
+                            "on-tertiary-fixed": "#07006c",
+                            "on-primary-fixed-variant": "#3323cc",
+                            "on-secondary-fixed": "#002113",
+                            "on-surface-variant": "#464555",
+                            "on-tertiary": "#ffffff",
+                            "surface-bright": "#f9f9ff",
+                            "on-error": "#ffffff",
+                            "error": "#ba1a1a",
+                            "outline": "#777587",
+                            "surface-container-lowest": "#ffffff",
+                            "on-primary-fixed": "#0f0069",
+                            "surface-dim": "#cfdaf2",
+                            "on-secondary-container": "#00714d",
+                            "primary-fixed-dim": "#c3c0ff",
+                            "secondary-fixed-dim": "#4edea3",
+                            "primary-container": "#4f46e5",
+                            "surface-container-highest": "#d8e3fb",
+                            "surface-container-high": "#dee8ff",
+                            "background": "#f9f9ff",
+                            "secondary-container": "#6cf8bb"
+                    },
+                    "borderRadius": {
+                            "DEFAULT": "0.125rem",
+                            "lg": "0.25rem",
+                            "xl": "0.5rem",
+                            "full": "0.75rem"
+                    },
+                    "spacing": {
+                            "stack-lg": "24px",
+                            "column-right-width": "360px",
+                            "stack-xs": "4px",
+                            "container-padding": "32px",
+                            "stack-sm": "8px",
+                            "column-center-width": "1fr",
+                            "gutter": "20px",
+                            "stack-md": "16px",
+                            "column-left-width": "280px"
+                    },
+                    "fontFamily": {
+                            "label-md": ["Inter"],
+                            "display-lg": ["Inter"],
+                            "body-md": ["Inter"],
+                            "label-sm": ["Inter"],
+                            "headline-md": ["Inter"],
+                            "title-lg": ["Inter"],
+                            "headline-sm": ["Inter"],
+                            "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                            "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                            "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                            "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                            "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                            "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                            "title-lg": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                            "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                            "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined { font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24; }
+        .filled-icon { font-variation-settings: 'FILL' 1; }
+        
+        /* Hide scrollbar for Chrome, Safari and Opera */
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        /* Hide scrollbar for IE, Edge and Firefox */
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="bg-background text-on-background font-body-md h-full overflow-hidden flex flex-col">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-container-padding h-16 bg-surface border-b border-outline-variant flat no shadows">
+<div class="flex items-center gap-stack-md">
+<!-- Brand Logo mapped to style_brand_logo -->
+<span class="text-title-lg font-title-lg font-bold text-primary">NexusPlatform</span>
+</div>
+<div class="hidden">Search Bar Hidden</div>
+<div class="flex items-center gap-stack-lg">
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 ease-in-out p-2 rounded-full">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 ease-in-out p-2 rounded-full">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<button class="text-on-surface-variant hover:bg-surface-container-low transition-colors duration-200 ease-in-out p-2 rounded-full">
+<span class="material-symbols-outlined">help</span>
+</button>
+<img alt="User profile photo" class="w-8 h-8 rounded-full object-cover ml-2 border border-outline-variant" data-alt="A small, professional headshot of a person looking directly at the camera. Soft, high-key lighting creates a bright, welcoming atmosphere consistent with a modern, clean corporate identity. The background is a plain, light grey." src="https://lh3.googleusercontent.com/aida-public/AB6AXuARwPAr29mDv0VDfgWO7Kd7rK56_fjRmvg5iwmITABsN46b9Resb2vymoeonMaNrr01ZuO5QGD9YxhmDF82AQ3woyxEufRWbwTd8M-0YMibHW99zSpLtQ6m_e0HJ_fxeWFWjNVc54lXW8P5l4qgfwzs0_QvOvTQvVaXm8pGikhpsqfP18S_gRXxKx1yHf-VLnETOIGb9KyqsaMgL8e0cVqLruoyts6eM528hovtTsv_fdZ7LEIif1Pr0Q"/>
+</div>
+</header>
+<!-- Main Layout Container -->
+<div class="flex flex-1 pt-16 h-full">
+<!-- Left Column: SideNavBar -->
+<nav class="hidden md:flex flex-col fixed left-0 top-16 h-[calc(100vh-64px)] w-[280px] py-stack-lg bg-white border-r border-outline-variant flat no shadows z-40 overflow-y-auto no-scrollbar">
+<div class="px-container-padding mb-stack-lg">
+<div class="flex items-center gap-stack-sm mb-stack-xs">
+<div class="w-8 h-8 rounded bg-primary-container text-on-primary-container flex items-center justify-center font-bold font-title-lg">N</div>
+<div>
+<h2 class="text-headline-sm font-headline-sm text-primary">Nexus Hub</h2>
+<p class="text-label-sm font-label-sm text-on-surface-variant">Enterprise Workspace</p>
+</div>
+</div>
+</div>
+<div class="px-container-padding mb-stack-lg">
+<button class="w-full bg-primary text-on-primary font-label-md text-label-md py-2 px-4 rounded hover:bg-surface-tint transition-colors duration-200 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    Create New Listing
+                </button>
+</div>
+<div class="flex-1">
+<!-- Navigation Items -->
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined">dashboard</span>
+<span class="text-label-md font-label-md">Ads Panel</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined">work</span>
+<span class="text-label-md font-label-md">Jobs</span>
+</a>
+<!-- Active Nav Item -->
+<a class="flex items-center gap-stack-md bg-primary/5 text-primary border-l-4 border-primary px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined filled-icon">storefront</span>
+<span class="text-label-md font-label-md">Marketplace</span>
+</a>
+<!-- Sub-navigation for Marketplace -->
+<div class="pl-[52px] pr-4 py-2 flex flex-col gap-2 border-l-4 border-transparent">
+<a class="text-label-sm font-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Electronics</a>
+<a class="text-label-sm font-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Vehicles</a>
+<a class="text-label-sm font-label-sm text-on-surface-variant hover:text-primary transition-colors" href="#">Property</a>
+</div>
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-all duration-200 mt-2" href="#">
+<span class="material-symbols-outlined">chat</span>
+<span class="text-label-md font-label-md">Chats</span>
+</a>
+</div>
+<div class="mt-auto border-t border-surface-variant pt-stack-sm">
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined">archive</span>
+<span class="text-label-md font-label-md">Archive</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined">contact_support</span>
+<span class="text-label-md font-label-md">Support</span>
+</a>
+</div>
+</nav>
+<!-- Center Column: Fluid Content (Marketplace Grid) -->
+<main class="flex-1 ml-[0px] md:ml-[280px] mr-[0px] lg:mr-[360px] h-[calc(100vh-64px)] overflow-y-auto bg-surface-bright p-gutter">
+<!-- Filter Bar -->
+<div class="flex flex-wrap items-center justify-between gap-stack-sm mb-stack-lg sticky top-0 bg-surface-bright/95 backdrop-blur-sm z-10 py-2 border-b border-surface-variant">
+<div class="flex gap-stack-sm overflow-x-auto no-scrollbar pb-1">
+<!-- Active Filter -->
+<button class="flex items-center gap-1 bg-primary text-on-primary rounded-full px-3 py-1 font-label-sm text-label-sm whitespace-nowrap">
+                        Price: $100 - $500
+                        <span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+<!-- Inactive Filters -->
+<button class="flex items-center gap-1 bg-surface-container-low text-on-surface-variant border border-outline-variant rounded-full px-3 py-1 font-label-sm text-label-sm hover:bg-surface-container transition-colors whitespace-nowrap">
+                        Location
+                        <span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+<button class="flex items-center gap-1 bg-surface-container-low text-on-surface-variant border border-outline-variant rounded-full px-3 py-1 font-label-sm text-label-sm hover:bg-surface-container transition-colors whitespace-nowrap">
+                        Condition
+                        <span class="material-symbols-outlined text-[16px]">arrow_drop_down</span>
+</button>
+</div>
+<div class="flex items-center gap-2 text-on-surface-variant">
+<span class="text-label-sm font-label-sm">Sort by:</span>
+<button class="flex items-center gap-1 font-label-md text-label-md hover:text-primary">
+                        Newest
+                        <span class="material-symbols-outlined text-[16px]">swap_vert</span>
+</button>
+</div>
+</div>
+<!-- Bento Grid / Chessboard pattern -->
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-gutter auto-rows-[240px]">
+<!-- Product Card 1 (Large - spans 2 cols) -->
+<div class="col-span-1 sm:col-span-2 row-span-2 group cursor-pointer bg-white rounded border border-outline-variant overflow-hidden hover:border-primary hover:shadow-md transition-all duration-300 flex flex-col">
+<div class="relative flex-1 overflow-hidden">
+<img alt="Product" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A sleek, minimalist electric bicycle parked against a smooth, light grey concrete wall. The bike features a matte black frame with subtle indigo accents. High-key natural lighting emphasizes its modern design and clean lines, fitting perfectly within a tech-focused, premium aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBBZuOeYIBMho8ml7HAWicp70mEqId4emoedYRfBpDhMA97YekPdXrZ7x6RHemWsuOrjREgrqMf6Nk7UnuZc1sBYHP5GFTiSjSqnIRiqShsAY_v7yj8QLQQZti1Cp05S_xNMPjM2XpaT9VKaFJtfNs16E8VI65AzdWZhm6YuqSwU_SfgodvZ6RcjY9mmLv3VTXVIfefWBZtuV0SSSh9RLJjkEy1E-of8sJEIXnnCsbTIittVzug40z3MQ"/>
+<div class="absolute top-3 right-3 bg-white/90 backdrop-blur rounded px-2 py-1 flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px] text-primary">favorite</span>
+</div>
+</div>
+<div class="p-stack-md border-t border-surface-variant bg-white">
+<div class="flex justify-between items-start mb-1">
+<h3 class="font-title-lg text-title-lg text-on-surface truncate pr-4">Urban E-Bike X-100</h3>
+<span class="font-headline-sm text-headline-sm text-primary whitespace-nowrap">$ 1,299</span>
+</div>
+<p class="font-body-sm text-body-sm text-on-surface-variant mb-2">Like New • San Francisco</p>
+</div>
+</div>
+<!-- Product Card 2 -->
+<div class="bg-white rounded border border-outline-variant overflow-hidden hover:border-primary hover:shadow-md transition-all duration-300 flex flex-col group cursor-pointer">
+<div class="relative h-[160px] overflow-hidden">
+<img alt="Product" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A high-end mirrorless digital camera resting on a clean white desk. The camera has a sleek, retro-modern silver and black body. Soft, diffused studio lighting highlights the metallic textures and precision engineering, creating a highly professional, product-photography look." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA-FA6hctTY6tPu0o0btjnUY8CDnymkAyghMgdIlVtg6S2EVb7wHttBNhiCHma6jrVk84NxaRAlwNruE0FaoOXd_xM-bKkX3ouQg5qrAt_qiK1cI9Y3fHT6Kc8cV7YWN8yOKnfqJCD8CO6hoOud0r7wfcmhGHBt9p5Bsv9uokNBL57Xq5ZqDik_vSVZNbEPgK6oAqPceKHb8dANmTa5QZoU2Dw0xM4Zrr2jJlJMVxISuJehWbyUet4EmQ"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface line-clamp-1">Mirrorless Camera Alpha</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Used • Electronics</p>
+</div>
+<span class="font-headline-sm text-headline-sm text-primary mt-2">$ 850</span>
+</div>
+</div>
+<!-- Product Card 3 -->
+<div class="bg-white rounded border border-outline-variant overflow-hidden hover:border-primary hover:shadow-md transition-all duration-300 flex flex-col group cursor-pointer">
+<div class="relative h-[160px] overflow-hidden">
+<img alt="Product" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A pair of premium noise-canceling over-ear headphones in a matte dark indigo color. They are displayed on a simple acrylic stand against a pristine white background. The lighting is crisp and cool, accentuating the smooth curves and high-quality materials of the headphones." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA8m00ynVPhicikI2WaS3bg_o4jfFqxItalFi00_hF5fO2zpwlQJokur-LeNK3G7I5WvIjAClGYRa0o8FNJQlOCVcb0PCsBY5o70hQuVjLa2gWEwXu9IDxMq_rgWocbGAgIzhRJSNuEFLTkyGymqoZXTbYwKNrbpI5rk9SQ8v1h9fVP5kbdVginEMsyLlOnNzO2ovlx1sAEvXct4JNJf1AHirR4p_Q_LydUaKnfcO3-F0OeCvUeVr4QYg"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface line-clamp-1">Studio Headphones Pro</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">New • Audio</p>
+</div>
+<span class="font-headline-sm text-headline-sm text-primary mt-2">$ 240</span>
+</div>
+</div>
+<!-- Product Card 4 (Sponsored) -->
+<div class="bg-surface-container-low rounded border border-outline-variant overflow-hidden hover:border-primary hover:shadow-md transition-all duration-300 flex flex-col group cursor-pointer relative">
+<div class="absolute top-2 left-2 z-10 bg-primary/10 text-primary font-label-sm text-label-sm px-2 py-0.5 rounded border border-primary/20 backdrop-blur-sm">Sponsored</div>
+<div class="relative h-[160px] overflow-hidden">
+<img alt="Product" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" data-alt="A sleek, modern smart-home hub device resembling a glowing white cylinder, placed on a light oak wooden shelf. The environment is a brightly lit, minimalist living room. The device emits a very subtle, cool blue light from its base, indicating activity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDIT-QVowoB9JYnqaPWHnig1cP9dyKEh3OJIkrZqkGVfkA9gbZ_ulCoS6L6m5U2rQOnrqVg-xSwuh4xOhMswYDR_RwJggKgGyMTS3KM1mDYltpQKUn3rBVJiEp-xgUaw_r_3Db3ZwXlt5THzFwjMJROoZlWBAr-V8qTWAVG7W0C4ExgoJHLe5SvhVtYcLWwtVa9wZ4UTlexOjiSgm2mA-9CVBcYj_eDJjnhZTe1tauNu75VoNgTkN_GBA"/>
+</div>
+<div class="p-3 flex-1 flex flex-col justify-between">
+<div>
+<h3 class="font-title-lg text-title-lg text-on-surface line-clamp-1">Smart Home Hub V2</h3>
+<p class="font-body-sm text-body-sm text-on-surface-variant">Brand New • Tech Inc.</p>
+</div>
+<span class="font-headline-sm text-headline-sm text-primary mt-2">$ 120</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Right Column: Detail View -->
+<aside class="hidden lg:flex flex-col fixed right-0 top-16 h-[calc(100vh-64px)] w-[360px] bg-white border-l border-outline-variant z-30 shadow-[-4px_0_15px_-3px_rgb(0_0_0_/_0.05)] overflow-y-auto no-scrollbar">
+<!-- Image Slider Area (Static rep) -->
+<div class="relative h-[280px] w-full bg-surface-container-lowest">
+<img alt="Detail Image" class="w-full h-full object-cover" data-alt="A close-up, high-resolution shot of the handlebars and digital display of a modern electric bicycle. The display shows speed and battery life in crisp, high-contrast numbers. The lighting is clean and even, emphasizing the premium build quality and matte black finish of the components." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpS6V6O1g4TXfMrR-aibu9M8tFH0fElRUXnkocA5llXneEDJ4Z5PLumh7Xe0wyDGry2s6V9max3dXdy7I-26cgHZre17--D4W3Ps9EMLzkiinQZtKIukULr6ja-BwmqW0wPR8Kiuf6HdV8I_ptkFL-Lf6mKCesogbwT2_UgKmhGPQPFZLYNjT7o_Zuy7qHDOBbLc4nKq_CSu2EgsFq5JF9lOEZeOjDZ8D1GxPkNbKarRD1fa7AfwM_Aw"/>
+<!-- Slider Controls -->
+<button class="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center text-on-surface hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<button class="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-white/80 backdrop-blur shadow flex items-center justify-center text-on-surface hover:bg-white transition-colors">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+<!-- Dots -->
+<div class="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+<div class="w-2 h-2 rounded-full bg-primary"></div>
+<div class="w-2 h-2 rounded-full bg-white/50"></div>
+<div class="w-2 h-2 rounded-full bg-white/50"></div>
+</div>
+</div>
+<!-- Content Area -->
+<div class="p-container-padding flex-1">
+<div class="mb-4">
+<div class="flex justify-between items-start mb-2">
+<h2 class="font-headline-md text-headline-md text-on-surface leading-tight">Urban E-Bike X-100</h2>
+<button class="text-on-surface-variant hover:text-primary transition-colors mt-1">
+<span class="material-symbols-outlined">favorite_border</span>
+</button>
+</div>
+<div class="font-display-lg text-display-lg text-primary mb-2">$ 1,299</div>
+<div class="flex gap-2">
+<span class="bg-surface-container inline-block px-2 py-1 rounded font-label-sm text-label-sm text-on-surface-variant">Like New</span>
+<span class="bg-surface-container inline-block px-2 py-1 rounded font-label-sm text-label-sm text-on-surface-variant">Electronics</span>
+</div>
+</div>
+<p class="font-body-md text-body-md text-on-surface-variant mb-6 border-b border-surface-variant pb-6">
+                    Selling my barely used Urban E-Bike. Only ridden for about 50 miles. Excellent condition, comes with original charger and manual. Battery holds a full charge. Moving out of the city and no longer need it.
+                </p>
+<!-- Seller Profile -->
+<div class="flex items-center justify-between mb-6">
+<div class="flex items-center gap-3">
+<img alt="Seller" class="w-12 h-12 rounded-full object-cover border border-outline-variant" data-alt="A small, friendly profile picture of a young man smiling slightly. The photo is well-lit with a neutral light background, fitting a professional yet approachable corporate platform style." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDMCgZEYqbstuT8JbPks3zNntJslnN3zzaG8WUW0koYGIsB069JEfe27S_BhKw1U8NBWsz8zkpeoXKpLIngvkUkFqyIZ1etmFkUlrKFt2zvAkKFFXL7lLZccIw7sT4aBeCnuxShTlxGG0jWtbuV2QWLxK3zj2ZUCVfDta3YBhR-Vyc-iiub6LC9AHYCZea-2HPA1yz7xn_eGShrO2YjPR2yqDOoeU7omSAVtu363AETwev-rmUX8cbDHA"/>
+<div>
+<div class="font-title-lg text-title-lg text-on-surface">Alex Chen</div>
+<div class="flex items-center gap-1 text-secondary font-label-sm text-label-sm">
+<span class="material-symbols-outlined text-[14px] filled-icon text-secondary">star</span>
+                                4.9 (24 ratings)
+                            </div>
+</div>
+</div>
+<button class="text-primary font-label-md text-label-md hover:underline">View Profile</button>
+</div>
+</div>
+<!-- Sticky Footer Action & Ad -->
+<div class="sticky bottom-0 bg-white border-t border-surface-variant p-container-padding shadow-[0_-4px_6px_-1px_rgb(0_0_0_/_0.05)]">
+<button class="w-full bg-primary text-on-primary font-title-lg text-title-lg py-3 rounded hover:bg-surface-tint transition-colors duration-200 mb-4 flex justify-center items-center gap-2 shadow-[0_4px_6px_-1px_rgb(0_0_0_/_0.1)]">
+<span class="material-symbols-outlined">chat</span>
+                    Message Seller
+                </button>
+<!-- Sponsored Sidebar Ad -->
+<div class="bg-[#F5F3FF] rounded border border-outline-variant p-3 flex items-center gap-3 relative">
+<div class="absolute top-1 right-1 text-[9px] uppercase tracking-wider text-primary/60 font-bold">Ad</div>
+<div class="w-12 h-12 bg-white rounded border border-outline-variant flex-shrink-0 flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-[24px]">shield</span>
+</div>
+<div>
+<div class="font-label-md text-label-md text-on-surface leading-tight">Secure your purchase</div>
+<div class="font-label-sm text-label-sm text-on-surface-variant">Get buyer protection today.</div>
+</div>
+</div>
+</div>
+</aside>
+</div>
+</body></html>

@@ -63,11 +63,28 @@ export function originMatchesPattern(origin: string, pattern: string): boolean {
     }
 }
 
+function isLoopbackOrigin(origin: string): boolean {
+    try {
+        const { hostname } = new URL(origin);
+        const h = hostname.toLowerCase();
+        return h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || h === '::1';
+    } catch {
+        return false;
+    }
+}
+
 export function isOriginAllowed(
     origin: string,
     allowlist: string[],
     opts?: { allowInDevWhenEmpty?: boolean }
 ): boolean {
+    try {
+        if (new URL(origin).protocol === 'app:') return true;
+    } catch {
+        /* ignore */
+    }
+    // Local frontend (Next.js / Electron) — production .env often omits localhost.
+    if (isLoopbackOrigin(origin)) return true;
     if (allowlist.length === 0) {
         if (opts?.allowInDevWhenEmpty !== false) {
             return process.env.NODE_ENV !== 'production';

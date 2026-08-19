@@ -111,6 +111,9 @@ export async function sendConsultPanelInvite(params: {
                 ? 'psychology'
                 : 'consult';
 
+    const { expirePreviousPanelInvites, newInviteToken } = await import('./panelInvite.service');
+    await expirePreviousPanelInvites(chatId, undefined, params.io);
+
     let content = consultPanelInviteChatContent(expertName, style);
     let kind: string = 'panel_open';
     if (params.isPaymentRequest) {
@@ -149,6 +152,8 @@ export async function sendConsultPanelInvite(params: {
         sessionId: chatId,
         sessionStyle: style,
         kind,
+        invite_token: newInviteToken(),
+        invite_status: 'active',
         ...(serviceAmountMali != null ? { serviceAmountMali } : {}),
     };
     const mentor = await UserModel.findById(expertId);
@@ -180,6 +185,15 @@ export async function sendConsultPanelInvite(params: {
         },
         others
     );
+
+    if (!params.isPaymentRequest) {
+        const { markExpertListingAcceptedByExpert } = await import('./chatConsent.service');
+        await markExpertListingAcceptedByExpert({
+            chatId,
+            expertId,
+            io: params.io,
+        });
+    }
 
     return { messageId: String(newMessage.id), chatId };
 }
@@ -227,9 +241,14 @@ export async function sendLessonStartNotify(params: {
         'start',
         params.sessionStyle ?? 'mentor'
     );
+    const { expirePreviousPanelInvites, newInviteToken } = await import('./panelInvite.service');
+    await expirePreviousPanelInvites(chatId, undefined, params.io);
+
     const startMeta = {
         sessionId,
         sessionStyle: params.sessionStyle ?? 'mentor',
+        invite_token: newInviteToken(),
+        invite_status: 'active',
     };
     const mentor = await UserModel.findById(expertId);
     const mentorAvatar = mentor?.avatar_url || null;

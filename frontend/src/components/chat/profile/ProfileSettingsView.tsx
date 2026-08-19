@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { GlassCard } from '../../ui/GlassCard';
 import {
     User,
     DollarSign,
@@ -11,7 +10,6 @@ import {
     Search,
     MoreVertical,
     X,
-    Grid,
 } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import type { ProfileBgSettings } from './ProfileChatSettingsView';
@@ -32,7 +30,6 @@ export type ProfileSettingsViewProps = {
 };
 
 export function ProfileSettingsView({
-    bgSettings,
     user,
     profilePhotoDisplaySrc,
     getAvatarUrl,
@@ -49,67 +46,68 @@ export function ProfileSettingsView({
 
     const SETTINGS_ITEMS = [
         { id: 'account', icon: <User className="h-5 w-5" />, label: t('profile'), subtext: t('edit_account_sub') },
-        { id: 'wallet', icon: <DollarSign className="h-5 w-5 text-emerald-400" />, label: t('wallet'), subtext: t('wallet_sub') },
+        { id: 'wallet', icon: <DollarSign className="h-5 w-5" />, label: t('wallet'), subtext: t('wallet_sub') },
         { id: 'chats', icon: <MessageSquare className="h-5 w-5" />, label: t('chat_settings'), subtext: t('chat_settings_sub') },
-        ...(user.role === 'admin' ? [{ id: 'admin', icon: <Shield className="h-5 w-5 text-emerald-400" />, label: 'Admin Panel', subtext: t('admin_panel_sub') }] : []),
+        ...(user.role === 'admin' ? [{ id: 'admin', icon: <Shield className="h-5 w-5" />, label: 'Admin Panel', subtext: t('admin_panel_sub') }] : []),
     ];
 
     return (
-        <GlassCard
-            className={`w-full h-full lg:h-auto lg:max-w-[420px] !p-0 border-none lg:border flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:!rounded-[25px] shadow-2xl animate-scale-up lg:border-white/10 text-white`}
-            style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
+        <div
+            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)]"
             onClick={(e: React.MouseEvent) => e.stopPropagation()}
         >
             <div
-                className={`flex min-h-[52px] items-center justify-between gap-2 border-b border-white/10 px-4 pb-3 sm:px-6`}
+                className="flex min-h-12 items-center justify-between gap-2 px-3 pb-2"
                 style={{
-                    paddingTop: 'max(0.75rem, env(safe-area-inset-top))',
-                    paddingLeft: 'max(1rem, env(safe-area-inset-left))',
-                    paddingRight: 'max(1rem, env(safe-area-inset-right))',
+                    paddingTop: 'max(0.5rem, env(safe-area-inset-top))',
+                    paddingLeft: 'max(0.75rem, env(safe-area-inset-left))',
+                    paddingRight: 'max(0.75rem, env(safe-area-inset-right))',
                 }}
             >
-                <h2 className="min-w-0 flex-1 truncate font-medium text-[17px] sm:text-[19px]">{t('settings')}</h2>
-                <div className="flex shrink-0 items-center gap-0.5 sm:gap-1.5 text-white/50">
+                <h2 className="min-w-0 flex-1 truncate font-medium text-[20px]">{t('settings')}</h2>
+                <div className="flex shrink-0 items-center text-[#aaaaaa]">
                     <button
                         type="button"
                         onClick={onOpenLanguage}
-                        className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center gap-1 rounded-xl bg-white/10 px-2 py-2 text-[11px] font-bold uppercase tracking-wide border border-white/10 hover:text-white transition-colors sm:min-h-0 sm:min-w-0 sm:px-2.5 sm:py-1.5 sm:text-[13px]"
+                        className="flex h-10 min-w-10 items-center justify-center gap-1 rounded-full px-2 hover:bg-white/[0.08] hover:text-white"
                     >
-                        <Languages className="h-[17px] w-[17px] shrink-0 sm:h-[18px] sm:w-[18px]" />
-                        <span className="max-w-[2.5rem] truncate sm:max-w-none">{language}</span>
+                        <Languages className="h-[18px] w-[18px] shrink-0" />
+                        <span className="text-[13px] uppercase">{language}</span>
                     </button>
                     <button
                         type="button"
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
+                        className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/[0.08] hover:text-white"
                         aria-label="Search"
                     >
-                        <Search className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
+                        <Search className="h-5 w-5" />
                     </button>
                     <button
                         type="button"
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
+                        className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/[0.08] hover:text-white"
                         aria-label="More"
                     >
-                        <MoreVertical className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
+                        <MoreVertical className="h-5 w-5" />
                     </button>
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-xl hover:bg-white/10 hover:text-white transition-colors"
+                        className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/[0.08] hover:text-white"
                         aria-label={t('cancel')}
                     >
-                        <X className="h-[21px] w-[21px] sm:h-[22px] sm:w-[22px]" />
+                        <X className="h-5 w-5" />
                     </button>
                 </div>
             </div>
 
             <div className="overflow-y-auto custom-scrollbar flex-1 pb-6">
-                <div className="px-6 py-5 flex items-center gap-5 group cursor-pointer hover:bg-white/5 transition-all"
-                    onClick={onOpenNameEdit}>
+                <div
+                    className="px-4 py-4 flex items-center gap-4 cursor-pointer hover:bg-white/[0.04]"
+                    onClick={onOpenNameEdit}
+                >
                     <div
                         role="button"
                         tabIndex={0}
-                        className={`w-[64px] h-[64px] rounded-full overflow-hidden border-2 border-white/10 shadow-xl relative shrink-0 ${getAvatarUrl(user.avatar || user.avatar_url) ? 'cursor-zoom-in' : ''}`}
+                        className={`w-[72px] h-[72px] rounded-full overflow-hidden bg-[#8774e1] relative shrink-0 ${getAvatarUrl(user.avatar || user.avatar_url) ? 'cursor-zoom-in' : ''}`}
                         onClick={(e) => {
                             e.stopPropagation();
                             if (getAvatarUrl(user.avatar || user.avatar_url)) onOpenAvatar();
@@ -132,31 +130,31 @@ export function ProfileSettingsView({
                         <img
                             src={profilePhotoDisplaySrc}
                             alt=""
-                            className="w-full h-full object-cover transition-transform group-hover:scale-110 pointer-events-none"
+                            className="w-full h-full object-cover pointer-events-none"
                         />
                     </div>
-                    <div className="flex-1">
-                        <h3 className="text-white font-bold text-[18px] leading-tight group-hover:text-[#00A884] transition-colors">{user.name} {user.surname || ''}</h3>
-                        <div className="flex flex-col mt-0.5 opacity-40">
-                            <span className="text-[13px]">{user.phone || '+998 -- --- -- --'}</span>
-                            <span className="text-[13px]">@{user.username || 'username'}</span>
+                    <div className="flex-1 min-w-0">
+                        <h3 className="text-white font-medium text-[16px] leading-tight truncate">{user.name} {user.surname || ''}</h3>
+                        <div className="flex flex-col mt-0.5 text-[#aaaaaa]">
+                            <span className="text-[14px]">{user.phone || '+998 -- --- -- --'}</span>
+                            <span className="text-[14px]">@{user.username || 'username'}</span>
                             {displayAge() && (
-                                <span className="text-[12px] mt-0.5 opacity-70">
+                                <span className="text-[13px] mt-0.5">
                                     {displayAge()!.current} {t('years_old')} • {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
                                 </span>
                             )}
                         </div>
                     </div>
-                    <button className="text-white/20 group-hover:text-white transition-all bg-white/5 p-2 rounded-xl active:scale-95"><Grid className="h-6 w-6" /></button>
                 </div>
 
-                <div className="h-[1px] bg-white/5 mx-6 mb-2"></div>
+                <div className="h-px bg-white/[0.06] mx-4 my-1"></div>
 
-                <div className="space-y-0.5 mt-2">
+                <div className="mt-1">
                     {SETTINGS_ITEMS.map((item) => (
                         <button
                             key={item.id}
-                            className="w-full flex items-center gap-5 px-6 py-3.5 hover:bg-white/5 transition-all group text-left"
+                            type="button"
+                            className="w-full flex items-center gap-4 px-4 py-3 hover:bg-white/[0.04] text-left"
                             onClick={() => {
                                 if (item.id === 'account') onOpenNameEdit();
                                 else if (item.id === 'wallet') onOpenWallet();
@@ -164,20 +162,26 @@ export function ProfileSettingsView({
                                 else if (item.id === 'admin') { window.open('/AdminZero0723s', '_blank'); }
                             }}
                         >
-                            <span className="text-white/30 group-hover:text-[#00A884] transition-colors">{item.icon}</span>
-                            <div className="flex-1 flex flex-col justify-center">
-                                <span className="text-white/90 group-hover:text-white text-[15px] font-medium">{item.label}</span>
-                                {item.subtext && <span className="text-white/20 text-[12px] mt-0.5">{item.subtext}</span>}
+                            <span className="text-[#8774e1]">{item.icon}</span>
+                            <div className="flex-1 flex flex-col justify-center min-w-0">
+                                <span className="text-white text-[16px]">{item.label}</span>
+                                {item.subtext && <span className="text-[#aaaaaa] text-[13px] mt-0.5">{item.subtext}</span>}
                             </div>
                         </button>
                     ))}
                 </div>
 
-                <div className="px-6 mt-8">
-                    <button onClick={onLogout} className="w-full py-4 text-red-500/80 font-bold text-[15px] hover:text-red-500 hover:bg-red-500/5 rounded-xl transition-all border border-red-500/5">{t('logout')}</button>
+                <div className="px-4 mt-6">
+                    <button
+                        type="button"
+                        onClick={onLogout}
+                        className="w-full py-3 text-[#e53935] text-[16px] hover:bg-[#e53935]/10 rounded-xl"
+                    >
+                        {t('logout')}
+                    </button>
                 </div>
             </div>
-        </GlassCard>
+        </div>
     );
 }
 

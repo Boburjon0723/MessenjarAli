@@ -55,6 +55,7 @@ import { downloadAndOpenWithSystemSheet } from "../../../lib/files";
 import { useAuthStore } from "../../auth/store";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { setCurrentChatId, getSocket } from "../../../lib/socket";
+import { decryptMessage } from "../../../lib/e2e-chat";
 
 const VideoPlayerModal = ({ visible, uri, onClose }: { visible: boolean; uri: string | null; onClose: () => void }) => {
   if (!uri) return null;
@@ -489,6 +490,10 @@ export function ChatDetailScreen({ route, navigation }: Props) {
 
   const peerSpecialization = peerInfo?.specialization || (peerInfo as any)?.profession || "";
 
+  const isListingChat = chatDetails?.chat_type === 'expert_listing' || chatDetails?.chat_type === 'job_listing' ||
+    chatDetails?.metadata?.source === 'expert_listing' || chatDetails?.metadata?.source === 'job_listing';
+  const composerLocked = isListingChat && !chatDetails?.messaging_unlocked;
+
   useEffect(() => {
     getChatDetailsRequest(chatId)
       .then(setChatDetails)
@@ -540,15 +545,16 @@ export function ChatDetailScreen({ route, navigation }: Props) {
       const handleReceive = (data: any) => {
         const rawMsg = data.message || data;
         const msg = mapApiMessageToMessage(rawMsg);
-        
-        const mChatId = String(msg.chatId).toLowerCase();
-        const sChatId = String(chatId).toLowerCase();
-
-        if (mChatId === sChatId) {
-          addMessageLocally(chatId, msg);
-          markChatReadRequest(chatId).catch(() => {});
-          setTimeout(() => scrollToEnd(), 100);
-        }
+        void (async () => {
+          const decrypted = await decryptMessage(msg);
+          const mChatId = String(decrypted.chatId).toLowerCase();
+          const sChatId = String(chatId).toLowerCase();
+          if (mChatId === sChatId) {
+            addMessageLocally(chatId, decrypted);
+            markChatReadRequest(chatId).catch(() => {});
+            setTimeout(() => scrollToEnd(), 100);
+          }
+        })();
       };
 
       socket.on("receive_message", handleReceive);
@@ -597,6 +603,10 @@ export function ChatDetailScreen({ route, navigation }: Props) {
   const startCall = (type: 'audio' | 'video') => {
     const socket = getSocket();
     if (!socket || !chatId) return;
+    if (isListingChat) {
+      Alert.alert(t('callNotAllowed'), t('callListingRestriction'));
+      return;
+    }
     setCallType(type);
     setCallStatus('ringing');
     setCallVisible(true);
@@ -681,7 +691,9 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     setSending(true);
     setError(null);
     try {
-      const saved = await sendMessageRequest(chatId, text);
+      const saved = await sendMessageRequest(chatId, text, "text", {
+        peerUserId: chatDetails?.type === "group" || chatDetails?.type === "channel" ? undefined : peerInfo?.id,
+      });
       setInputText("");
       addMessageLocally(chatId, saved);
       setTimeout(scrollToEnd, 120);
@@ -937,7 +949,9 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', flexWrap: 'wrap', marginTop: isMedia && !displayText ? 0 : 2 }}>
            {displayText ? <Text style={[styles.messageText, (hasAttachment && !isMedia) && { marginTop: 8 }]}>{displayText}</Text> : null}
            <View style={[styles.bubbleFooter, displayText ? { marginLeft: 8, marginBottom: 2 } : {}]}>
-             <Text style={[styles.timestamp, { color: isMe ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.5)" }]}>{item.timestamp}</Text>
+             <Text style={[styles.timestamp, { color: isMe ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.5)" }]}>
+               {item.e2e ? "🔒 " : ""}{item.timestamp}
+             </Text>
              {isMe && (
                <Text
                  style={[
@@ -1076,7 +1090,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
               value={inputText}
               onChangeText={setInputText}
               multiline
-              editable={!busy}
+              editable={!busy && !composerLocked}
             />
             <Pressable style={[styles.inputIcon, { marginRight: 4 }]} disabled={busy}>
               <Smile color="rgba(255,255,255,0.55)" size={24} />
@@ -1085,7 +1099,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
           <Pressable
             style={[styles.sendButton, (!inputText.trim() || busy) && styles.sendButtonDisabled]}
             onPress={() => void sendMessage()}
-            disabled={!inputText.trim() || busy}
+            disabled={!inputText.trim() || busy || composerLocked}
           >
             {sending ? <ActivityIndicator color="#fff" size="small" /> : <Send color="#fff" size={20} />}
           </Pressable>
@@ -1139,12 +1153,14 @@ export function ChatDetailScreen({ route, navigation }: Props) {
             </View>
           </Pressable>
           <View style={{ flexDirection: 'row', gap: 6, alignItems: 'center' }}>
+            {!isListingChat && (
             <Pressable 
               style={styles.iconButton} 
               onPress={() => startCall('audio')}
             >
               <Phone color="#fff" size={20} />
             </Pressable>
+            )}
             <Pressable 
               style={styles.iconButton}
               onPress={() => {
@@ -1385,16 +1401,18 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: "80%",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
   },
   myBubbleBase: {
-    backgroundColor: "#3b82f6",
+    backgroundColor: "#2b5278",
+    borderBottomRightRadius: 4,
   },
   otherBubbleBase: {
-    backgroundColor: "rgba(30, 41, 59, 0.85)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+    backgroundColor: "#182533",
+    borderBottomLeftRadius: 4,
+    borderWidth: 0,
   },
   messageText: {
     color: "#ffffff",
@@ -1655,13 +1673,12 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 26,
+    backgroundColor: "#17212b",
+    borderRadius: 22,
     paddingHorizontal: 10,
     minHeight: 48,
     maxHeight: 120,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.22)",
+    borderWidth: 0,
     overflow: "hidden",
   },
   input: {
@@ -1687,11 +1704,10 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: "rgba(59, 130, 246, 0.85)",
+    backgroundColor: "#5288c1",
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.28)",
+    borderWidth: 0,
   },
   sendButtonDisabled: {
     backgroundColor: "rgba(255,255,255,0.1)",

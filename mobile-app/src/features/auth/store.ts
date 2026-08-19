@@ -3,6 +3,8 @@ import { AuthUser } from "./types";
 import { clearChatCacheForUser } from "../../lib/app-cache";
 import { clearAuth, getToken, getUser, saveUser } from "../../lib/auth-storage";
 import { connectSocket, disconnectSocket } from "../../lib/socket";
+import { publishIdentity } from "../../lib/e2e-crypto";
+import { registerPushToken } from "../../lib/notifications";
 
 interface AuthState {
   user: AuthUser | null;
@@ -22,11 +24,17 @@ export const useAuthStore = create<AuthState>((set) => ({
   hydrate: async () => {
     const [token, user] = await Promise.all([getToken(), getUser()]);
     set({ token, user, isBootstrapping: false });
-    if (token) connectSocket();
+    if (token) {
+      connectSocket();
+      if (user?.id) void publishIdentity(String(user.id));
+      void registerPushToken();
+    }
   },
   setSession: ({ user, token }) => {
     set({ user, token });
     connectSocket();
+    if (user?.id) void publishIdentity(String(user.id));
+    void registerPushToken();
   },
   patchUser: async (partial) => {
     const prev = useAuthStore.getState().user;

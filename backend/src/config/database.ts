@@ -1,4 +1,3 @@
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 import { Pool } from 'pg';
 import * as dotenv from 'dotenv';
 
@@ -8,9 +7,11 @@ if (process.env.NODE_ENV !== 'production') {
 
 // PostgreSQL Connection
 const isProduction = process.env.NODE_ENV === 'production';
+const dbUrl = process.env.DATABASE_URL || '';
+const useSsl = Boolean(dbUrl) && !/localhost|127\.0\.0\.1/i.test(dbUrl);
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+    connectionString: dbUrl || undefined,
+    ssl: useSsl ? { rejectUnauthorized: process.env.PG_SSL_REJECT_UNAUTHORIZED === 'true' } : false,
     connectionTimeoutMillis: 30000, // Increase to 30s
     idleTimeoutMillis: 30000,
     max: 20, // Increase pool size

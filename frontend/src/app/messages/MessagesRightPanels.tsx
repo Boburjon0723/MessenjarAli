@@ -32,7 +32,7 @@ export function MessagesRightPanels({
     return (
         <>
             {showRightPanel && activeCategory === 'services' && selectedExpertInView ? (
-                <aside className="hidden lg:flex fixed lg:relative inset-0 lg:inset-auto z-[110] lg:z-0 xl:flex w-80 h-full min-h-0 flex-shrink-0 flex-col overflow-hidden animate-slide-left">
+                <aside className="hidden lg:flex fixed lg:relative inset-0 lg:inset-auto z-[110] lg:z-0 xl:flex w-80 h-full min-h-0 flex-shrink-0 flex-col overflow-hidden animate-slide-left lg:rounded-[24px] lg:shadow-[0_0_4px_0_rgba(0,0,0,0.24)]">
                     <ExpertActionsPanel expert={selectedExpertInView} onClose={onCloseRightPanel} />
                 </aside>
             ) : null}
@@ -41,12 +41,12 @@ export function MessagesRightPanels({
                 <aside
                     aria-hidden={!showRightPanel}
                     className={[
-                        'fixed lg:relative inset-0 lg:inset-auto z-[200] lg:z-0 h-full min-h-0 w-80 flex-shrink-0 overflow-hidden isolate max-lg:bg-transparent max-lg:w-full',
+                        'fixed lg:relative inset-0 lg:inset-auto z-[200] lg:z-0 h-full min-h-0 w-80 flex-shrink-0 overflow-hidden isolate max-lg:w-full bg-[#212121] lg:rounded-[24px] lg:shadow-[0_0_4px_0_rgba(0,0,0,0.24)]',
                         showRightPanel ? 'flex flex-col chat-info-panel-enter' : 'hidden',
                     ].join(' ')}
                 >
                     {selectedChat?.type === 'channel' ? (
-                        <ChannelInfoPanel chat={selectedChat} onClose={onCloseRightPanel} />
+                        <ChannelInfoPanel chat={selectedChat} onClose={onCloseRightPanel} onLeft={onChatLeft} onDeleted={onChatDeleted} onGroupUpdated={onGroupUpdated} />
                     ) : selectedChat?.type === 'private' ? (
                         <UserInfoPanel chat={selectedChat} onClose={onCloseRightPanel} />
                     ) : (

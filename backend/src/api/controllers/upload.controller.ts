@@ -7,17 +7,20 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { bucket } from '../../config/firebase';
+import { attachmentDisposition, mimeFromFilename } from '../../middleware/upload.middleware';
 
 async function uploadToFirebase(file: any): Promise<string> {
     const fileExt = path.extname(file.originalname).toLowerCase().slice(0, 16);
     const fileName = `${crypto.randomUUID()}${fileExt}`;
     const filePath = fileName;
+    const contentType = mimeFromFilename(file.originalname, file.mimetype);
 
     const fileUpload = bucket.file(filePath);
 
     await fileUpload.save(fs.readFileSync(file.path), {
         metadata: {
-            contentType: file.mimetype,
+            contentType,
+            contentDisposition: attachmentDisposition(file.originalname || `file${fileExt}`),
         }
     });
 
@@ -180,11 +183,13 @@ export const uploadFile = async (req: Request, res: Response): Promise<void> => 
 
         const uploadedFiles = await Promise.all(files.map(async f => {
             const publicUrl = await uploadToFirebase(f);
+            const mimetype = mimeFromFilename(f.originalname, f.mimetype);
             return {
                 name: f.originalname,
+                originalname: f.originalname,
                 url: publicUrl,
-                type: f.mimetype,
-                mimetype: f.mimetype,
+                type: mimetype,
+                mimetype,
                 size: f.size
             };
         }));
@@ -253,5 +258,63 @@ export const streamFile = async (req: Request, res: Response): Promise<void> => 
         if (!res.headersSent) {
             res.status(500).json({ error: 'Failed to stream file' });
         }
+    }
+};
+
+const DOWNLOAD_HOST_OK = (host: string) => {
+    const h = host.toLowerCase();
+    return (
+        h === 'storage.googleapis.com' ||
+        h === 'firebasestorage.googleapis.com' ||
+        h.endsWith('.googleapis.com') ||
+        h.endsWith('.firebasestorage.app')
+    );
+};
+
+/** Chat media (GCS) ni attachment sifatida beradi — brauzer yangi tab ochmasin. */
+export const downloadRemoteFile = async (req: Request, res: Response): Promise<void> => {
+    try {
+        const raw = String(req.query.url || '');
+        let parsed: URL;
+        try {
+            parsed = new URL(raw);
+        } catch {
+            res.status(400).json({ error: 'Invalid url' });
+            return;
+        }
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            res.status(400).json({ error: 'Invalid protocol' });
+            return;
+        }
+        if (!DOWNLOAD_HOST_OK(parsed.hostname)) {
+            res.status(400).json({ error: 'Host not allowed' });
+            return;
+        }
+
+        const rawName = String(req.query.name || path.basename(parsed.pathname) || 'file');
+        const safeName = rawName.replace(/[\\/:"*?<>|\r\n]+/g, '_').slice(0, 180) || 'file';
+
+        const upstream = await fetch(parsed.toString());
+        if (!upstream.ok) {
+            res.status(502).json({ error: 'Download failed' });
+            return;
+        }
+
+        const ct = mimeFromFilename(safeName, upstream.headers.get('content-type') || '');
+        const len = upstream.headers.get('content-length');
+        res.setHeader('Content-Type', ct);
+        if (len) res.setHeader('Content-Length', len);
+        res.setHeader('Content-Disposition', attachmentDisposition(safeName));
+        res.setHeader('Cache-Control', 'private, max-age=0');
+
+        if (!upstream.body) {
+            res.end(Buffer.from(await upstream.arrayBuffer()));
+            return;
+        }
+        const { Readable } = await import('stream');
+        Readable.fromWeb(upstream.body as import('stream/web').ReadableStream).pipe(res);
+    } catch (err) {
+        console.error('downloadRemoteFile', err);
+        if (!res.headersSent) res.status(500).json({ error: 'Download failed' });
     }
 };

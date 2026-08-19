@@ -3,8 +3,8 @@
 import React, { useLayoutEffect, useRef, useState } from "react";
 import ChatWindow from "./ChatWindow";
 
-/** Qisqaroq — ikki bosqichli «avval to‘liq, keyin siljish» effektini kamaytiradi */
-const DURATION_MS = 420;
+/** CSS `.chat-carousel-panel-*` animatsiyasi bilan mos (globals.css → 0.7s) */
+const DURATION_MS = 700;
 
 /** Ro'yxat / API dan keladigan chat obyekti (ChatWindow bilan bir xil shakl) */
 export type CarouselChat = Record<string, unknown> & { id: string | number };
@@ -15,6 +15,9 @@ export interface ChatCarouselPanelProps {
     onToggleInfo: () => void;
     onBack: () => void;
     onMarkAsRead?: (chatId: string) => void;
+    onChatMetadataUpdate?: (metadata: Record<string, unknown>) => void;
+    chatBgImage?: string;
+    chatBgImageBlur?: number;
 }
 
 /**
@@ -27,6 +30,9 @@ export default function ChatCarouselPanel({
     onToggleInfo,
     onBack,
     onMarkAsRead,
+    onChatMetadataUpdate,
+    chatBgImage,
+    chatBgImageBlur,
 }: ChatCarouselPanelProps) {
     const prevChatRef = useRef<CarouselChat | null>(null);
     const [leaving, setLeaving] = useState<CarouselChat | null>(null);
@@ -98,8 +104,11 @@ export default function ChatCarouselPanel({
                         onToggleInfo={noop}
                         onBack={noop}
                         onMarkAsRead={onMarkAsRead}
+                        onChatMetadataUpdate={onChatMetadataUpdate}
                         suppressRootFade
                         subscribeSocket={false}
+                        chatBgImage={chatBgImage}
+                        chatBgImageBlur={chatBgImageBlur}
                     />
                 </div>
             ) : null}
@@ -115,7 +124,10 @@ export default function ChatCarouselPanel({
                     onToggleInfo={onToggleInfo}
                     onBack={onBack}
                     onMarkAsRead={onMarkAsRead}
+                    onChatMetadataUpdate={onChatMetadataUpdate}
                     suppressRootFade
+                    chatBgImage={chatBgImage}
+                    chatBgImageBlur={chatBgImageBlur}
                 />
             </div>
         </div>

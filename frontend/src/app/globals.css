@@ -27,9 +27,25 @@
   /* RGB for Tailwind arbitrary rgba(var(--glass-rgb), a) — GlassPharm-style panels */
   --glass-rgb: 30, 41, 59;
 
-  /* Background gradients */
-  --bg-gradient-start: #0f172a;
-  --bg-gradient-end: #1e293b;
+  /* Telegram Web K — night */
+  --tg-chat-bg: #181818;
+  --tg-surface: #212121;
+  --tg-sidebar: #212121;
+  --tg-bubble-out: #8774e1;
+  --tg-bubble-in: #212121;
+  --tg-accent: #8774e1;
+  --tg-secondary: #aaaaaa;
+  --tg-radius-big: 15px;
+  --tg-radius-tail: 5px;
+  --tg-header-h: 3rem;
+  --tg-chat-width: 696px;
+  --tg-plate-radius: 24px;
+  /* Telegram Web K: $border-radius-big / --main-column-border-radius */
+  --tg-column-radius: 24px;
+  --tg-page-chats-padding: 16px;
+  --tg-column-shadow: 0px 0px 4px 0px rgba(0, 0, 0, 0.24);
+  --tg-plate-shadow: 0px 1px 5px -1px rgba(0, 0, 0, 0.21);
+  --tg-input-shadow: 0px 1px 8px 1px rgb(0 0 0 / 12%);
 }
 
 /* Fonts */
@@ -100,13 +116,7 @@ html,
 body {
   margin: 0;
   padding: 0;
-  /* Mobil status bar / overscroll: och rasmdan oldin qorong‘i qatlam (oq “yo‘nalish” bo‘lmaydi) */
-  background-color: #0f172a;
-  /* Default fon: faqat manzara (local PNG skrinshot bo‘lsa chat fonida “takrorlanadi”) */
-  background-image: url("https://images.unsplash.com/photo-1454496522488-7a8e488e8606?q=80&w=2676&auto=format&fit=crop");
-  background-size: cover;
-  background-position: center;
-  background-attachment: fixed;
+  background-color: #0e0e0e;
   color: var(--text-primary);
   font-family: var(--font-sans);
   min-height: 100vh;
@@ -115,23 +125,7 @@ body {
   width: 100%;
 }
 
-/* Overlay for better text readability but keeping background clear */
-/* Blur and Cold Overlay */
-body::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(15, 23, 42, 0.4);
-  /* Dark blue overlay */
-  backdrop-filter: blur(8px);
-  /* Blur effect requested */
-  -webkit-backdrop-filter: blur(8px);
-  z-index: -1;
-  pointer-events: none;
-}
+/* body overlay removed — background is now solid #0e0e0e */
 
 /* Glassmorphism Utilities */
 @layer utilities {
@@ -316,8 +310,26 @@ body::before {
   border-radius: 9999px;
 }
 
-.nav-scroll-x::-webkit-scrollbar-track {
+.tg-chat-row {
   background: transparent;
+  cursor: pointer;
+}
+.tg-chat-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+.tg-chat-row.is-active {
+  background: #2b2b2b;
+}
+.tg-folder-tabs {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Telegram Web K night doodle wallpaper */
+.tg-chat-wallpaper {
+  background-color: var(--tg-chat-bg);
+  background-image: url('/tg-chat-pattern.svg');
+  background-repeat: repeat;
+  background-size: 280px 280px;
 }
 
 /* Messages: kategoriya pager — brauzer snap ishlamasa ham o‘rtada qolmasin */
@@ -528,20 +540,20 @@ body::before {
 }
 
 .chat-carousel-panel-exit {
-  animation: chat-carousel-exit-left 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: chat-carousel-exit-left 0.7s cubic-bezier(0.25, 0.85, 0.35, 1);
   animation-fill-mode: both;
   will-change: transform, opacity;
 }
 
 .chat-carousel-panel-enter {
-  animation: chat-carousel-enter-right 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: chat-carousel-enter-right 0.7s cubic-bezier(0.25, 0.85, 0.35, 1);
   animation-fill-mode: both;
   will-change: transform, opacity;
 }
 
 /** Guruh/kanal/shaxs info paneli — o‘ngdan kirish (chat karusel bilan bir xil ritm) */
 .chat-info-panel-enter {
-  animation: chat-carousel-enter-right 0.42s cubic-bezier(0.32, 0.72, 0, 1);
+  animation: chat-carousel-enter-right 0.7s cubic-bezier(0.25, 0.85, 0.35, 1);
   animation-fill-mode: both;
   will-change: transform, opacity;
 }
@@ -556,6 +568,14 @@ body::before {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
   }
+}
+
+/** Telegram-style call screen gradient (§5B) */
+.call-screen-gradient {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -10%, rgba(135, 116, 225, 0.45), transparent 55%),
+    radial-gradient(ellipse 90% 60% at 80% 100%, rgba(59, 130, 246, 0.25), transparent 50%),
+    linear-gradient(165deg, #1a1433 0%, #2d2458 38%, #1e3a5f 72%, #0f172a 100%);
 }
 
 /** ChatList: yuqori kategoriya (yoki ro‘yxatda swipe) almashganda kontent oqimi */
@@ -776,13 +796,33 @@ body::before {
   box-shadow: 0 4px 20px rgba(0,0,0,0.4) !important;
 }
 
-/* Chat MessageBubble — matn va media bir xil vertikal oqim */
+/* Telegram Web K: header / bubbles / composer share one centred column */
+.tg-chat-column {
+  width: 100%;
+  max-width: var(--tg-chat-width);
+  margin-inline: auto;
+}
+
+/* Xabarlar kam bo‘lsa pastda turadi — Telegram `.bubbles-inner` */
+.tg-chat-bubbles-inner {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 100%;
+  width: 100%;
+}
+
+.tg-chat-scroll {
+  overflow-anchor: none;
+  scroll-behavior: auto;
+}
+
 .message-row {
   display: flex;
   flex-direction: column;
   width: 100%;
   min-width: 0;
-  margin-bottom: 0.25rem;
+  margin-bottom: 0.125rem;
 }
 
 .message-bubble {

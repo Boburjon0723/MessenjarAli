@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { useRouter } from 'next/navigation';
 import { MessageSquare, User } from 'lucide-react';
 
 export type MessagesMobileBottomNavProps = {
@@ -14,6 +15,7 @@ export function MessagesMobileBottomNav({
     selectedChat,
     onSelectCategory,
 }: MessagesMobileBottomNavProps) {
+    const router = useRouter();
     const tabs = [
         { id: 'all', label: 'Chatlar', icon: <MessageSquare className="h-6 w-6" /> },
         {
@@ -38,18 +40,18 @@ export function MessagesMobileBottomNav({
     ];
 
     return (
-        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-[50] glass-premium border-t border-white/10 flex items-center justify-around px-2 pt-1.5 min-h-[72px] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-[50] bg-[#212121] border-t border-white/[0.06] flex items-center justify-around px-2 pt-1.5 min-h-[64px] pb-[max(0.5rem,env(safe-area-inset-bottom,0px))]">
             {tabs.map((tab) => (
                 <button
                     key={tab.id}
                     type="button"
-                    onClick={() => onSelectCategory(tab.id)}
-                    className={`flex flex-col items-center gap-1 p-2 min-w-[64px] transition-all duration-300 ${
-                        activeCategory === tab.id && !selectedChat ? 'text-blue-500 scale-110' : 'text-white/40'
+                    onClick={() => tab.id === 'wallet' ? router.push('/wallet') : onSelectCategory(tab.id)}
+                    className={`flex flex-col items-center gap-1 p-2 min-w-[64px] ${
+                        activeCategory === tab.id && !selectedChat ? 'text-[#8774e1]' : 'text-[#aaaaaa]'
                     }`}
                 >
                     {tab.icon}
-                    <span className="text-[10px] font-bold uppercase tracking-widest">{tab.label}</span>
+                    <span className="text-[11px]">{tab.label}</span>
                 </button>
             ))}
         </nav>

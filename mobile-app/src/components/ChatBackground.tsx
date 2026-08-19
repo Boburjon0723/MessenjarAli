@@ -39,7 +39,7 @@ export function ChatBackground({ children, contentStyle, isChatWindow }: Props) 
 
   // For solid colors, we use black overlay to "dim" the solid base color.
   // For image backgrounds, we use the theme color to "tint" the image.
-  const overlayBaseColor = shouldUseSolidColor ? "0, 0, 0" : ((isTelegram || isPureDark) ? "14, 22, 33" : "15, 23, 42");
+  const overlayBaseColor = (isTelegram || isPureDark) ? "14, 22, 33" : (shouldUseSolidColor ? "0, 0, 0" : "15, 23, 42");
   const finalOverlay = `rgba(${overlayBaseColor}, ${overlayA})`;
 
 

@@ -198,6 +198,15 @@ const runAutoMigration = async () => {
 
         await runQuery('AddCol_TokenBalance_Locked', 'ALTER TABLE token_balances ADD COLUMN IF NOT EXISTS locked_balance DECIMAL(20, 4) DEFAULT 0.00');
 
+        await runQuery('CreateTable_UserCryptoKeys', `
+            CREATE TABLE IF NOT EXISTS user_crypto_keys (
+                user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                alg VARCHAR(16) NOT NULL DEFAULT 'x25519',
+                public_key TEXT NOT NULL,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
+
         // 6. Specialist & Session Extensions
         await runQuery('CreateTable_SessionMaterials', `
             CREATE TABLE IF NOT EXISTS session_materials (
@@ -509,6 +518,32 @@ const runAutoMigration = async () => {
         await runQuery(
             'Idx_ListingDeals_Status',
             'CREATE INDEX IF NOT EXISTS idx_listing_deals_status ON listing_service_deals(status)'
+        );
+
+        // Chat list prefs: pin / mute / archive / unread mark (per user)
+        await runQuery(
+            'AddCol_ChatPart_LastRead',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP'
+        );
+        await runQuery(
+            'AddCol_ChatPart_Pinned',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE'
+        );
+        await runQuery(
+            'AddCol_ChatPart_PinnedAt',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS pinned_at TIMESTAMP WITH TIME ZONE'
+        );
+        await runQuery(
+            'AddCol_ChatPart_Muted',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_muted BOOLEAN DEFAULT FALSE'
+        );
+        await runQuery(
+            'AddCol_ChatPart_Archived',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_archived BOOLEAN DEFAULT FALSE'
+        );
+        await runQuery(
+            'AddCol_ChatPart_UnreadMarked',
+            'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS unread_marked BOOLEAN DEFAULT FALSE'
         );
 
         // Xabarlar o‘qilganligi (socket markAsRead, MessageModel.markAsRead)

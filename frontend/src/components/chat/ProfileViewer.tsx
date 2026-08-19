@@ -1,6 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { GlassCard } from '../ui/GlassCard';
-import { GlassButton } from '../ui/GlassButton';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { GlassDatePicker } from '../ui/GlassDatePicker';
 import { useSocket } from '@/context/SocketContext';
 import { useLanguage } from '@/context/LanguageContext';
@@ -913,12 +911,11 @@ export default function ProfileViewer({
 
     const renderProfile = () => (
         <div
-            className={`w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-[24px] shadow-2xl animate-scale-up border border-white/30 text-white`}
-            style={{ backgroundColor: 'rgba(255, 255, 255, 0.18)', backdropFilter: 'blur(24px)', WebkitBackdropFilter: 'blur(24px)', boxShadow: '0 8px 32px rgba(0,0,0,0.12)' }}
+            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)]"
             onClick={(e) => e.stopPropagation()}
         >
             {/* Header with Big Image — bosish: katta koвЂrinish (Telegram); kamera: yangi rasm */}
-            <div className="relative h-[220px] w-full overflow-hidden flex-shrink-0">
+            <div className="relative h-24 sm:h-28 w-full overflow-hidden flex-shrink-0">
                 <img
                     src={profilePhotoDisplaySrc}
                     alt=""
@@ -947,7 +944,7 @@ export default function ProfileViewer({
                         <div className="h-10 w-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                     </div>
                 )}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#121B22] via-transparent to-black/30 pointer-events-none" />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#212121] via-transparent to-black/40 pointer-events-none" />
 
                 <div
                     className="absolute top-0 inset-x-0 z-10 flex items-center justify-between gap-2 pb-2 pt-[max(1rem,env(safe-area-inset-top))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]"
@@ -978,7 +975,7 @@ export default function ProfileViewer({
 
                 <div className="absolute bottom-4 left-6 right-6 z-10 pointer-events-none">
                     <h2 className="text-white text-2xl font-bold leading-none">{user.name} {user.surname || ''}</h2>
-                    <p className="text-[#00A884] text-[13px] font-medium mt-1">{t('online')}</p>
+                    <p className="text-[#8774e1] text-[13px] font-medium mt-1">{t('online')}</p>
                 </div>
 
                 {!uploadingAvatar && (
@@ -988,7 +985,7 @@ export default function ProfileViewer({
                             e.stopPropagation();
                             handleAvatarClick();
                         }}
-                        className="absolute bottom-4 right-6 w-11 h-11 bg-accent-primary rounded-full flex items-center justify-center text-white shadow-xl hover:bg-blue-600 transition-all transform active:scale-95 z-20 touch-manipulation"
+                        className="absolute bottom-4 right-6 w-11 h-11 bg-[#8774e1] rounded-full flex items-center justify-center text-white shadow-xl hover:bg-[#7b68d4] transition-all transform active:scale-95 z-20 touch-manipulation"
                     >
                         <Camera className="h-5 w-5" />
                     </button>
@@ -1003,52 +1000,40 @@ export default function ProfileViewer({
             </div>
 
             {/* Guruh bilan bir xil: yuklashda havola yoвЂq, `GroupInfoPanel` dagi klasslar */}
-            {!uploadingAvatar && (
-                <div className="flex justify-center px-4 pb-1 relative z-20">
-                    <button
-                        type="button"
-                        onClick={handleAvatarClick}
-                        className="mt-2 text-sm text-blue-300 hover:text-blue-200 underline focus:outline-none touch-manipulation"
-                    >
-                        {profileAvatarUploadLabel}
-                    </button>
-                </div>
-            )}
+            {/* Camera icon on cover replaces this link */}
 
             {verifiedStatus === 'pending' && (
-                <div className="mx-6 mt-4 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-center gap-3 animate-pulse">
-                    <Clock className="h-5 w-5 text-yellow-500" />
-                    <div className="flex flex-col">
-                        <span className="text-yellow-500 font-bold text-xs uppercase tracking-wider">{t('expert_status_pending')}</span>
-                        <span className="text-white/40 text-[10px]">{t('expert_mode_desc')}</span>
-                    </div>
+                <div className="mx-4 mt-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex items-center gap-2">
+                    <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
+                    <span className="text-yellow-500 font-bold text-[11px]">{t('expert_status_pending')}</span>
+                    <span className="text-white/40 text-[10px]">{t('expert_mode_desc')}</span>
                 </div>
             )}
 
             <div className="overflow-y-auto custom-scrollbar flex-1 pb-8">
                 {/* Info Items */}
-                <div className="p-4 space-y-1">
-                    <div className="flex items-center gap-6 px-4 py-3 hover:bg-white/5 rounded-[15px] cursor-default transition-colors group">
-                        <Phone className="h-5 w-5 text-[#00A884]/80" />
+                <div className="p-3 space-y-0.5">
+                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] cursor-default transition-colors group">
+                        <Phone className="h-5 w-5 text-[#8774e1]" />
                         <div className="flex flex-col">
                             <span className="text-white text-[15px]">{user.phone || '+998 -- --- -- --'}</span>
                             <span className="text-white/30 text-[12px]">{t('phone_label')}</span>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-6 px-4 py-3 hover:bg-white/5 rounded-[15px] cursor-pointer group transition-colors"
+                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] cursor-pointer group transition-colors"
                         onClick={() => { setEditUsername(user.username || ""); setShowUsernameModal(true); }}>
-                        <AtSign className="h-5 w-5 text-[#00A884]/80" />
+                        <AtSign className="h-5 w-5 text-[#8774e1]" />
                         <div className="flex flex-col">
                             <span className="text-white text-[15px]">@{user.username || 'username'}</span>
                             <span className="text-white/30 text-[12px]">{t('username')}</span>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-6 px-4 py-3 hover:bg-white/5 rounded-[15px] transition-colors relative group cursor-pointer"
+                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] transition-colors relative group cursor-pointer"
                         onClick={() => setShowDatePicker(true)}
                     >
-                        <AtSign className="h-5 w-5 text-[#00A884]/80 group-hover:scale-110 transition-transform" />
+                        <Calendar className="h-5 w-5 text-[#8774e1] group-hover:scale-110 transition-transform" />
                         <div className="flex flex-col flex-1">
                             <span className="text-white text-[15px]">
                                 {birthday ? new Date(birthday).toLocaleDateString(language === 'ru' ? 'ru-RU' : (language === 'en' ? 'en-US' : 'uz-UZ'), { day: 'numeric', month: 'long', year: 'numeric' }) : t('select')}
@@ -1063,7 +1048,7 @@ export default function ProfileViewer({
                     </div>
                     {displayAge() && !birthday && (
                         <div className="flex items-center gap-6 px-4 py-3 hover:bg-white/5 rounded-[15px] cursor-default transition-colors">
-                            <span className="text-[#00A884]/80 text-[15px] font-medium">{displayAge()!.current}</span>
+                            <span className="text-[#8774e1] text-[15px] font-medium">{displayAge()!.current}</span>
                             <div className="flex flex-col flex-1">
                                 <span className="text-white text-[15px]">
                                     {displayAge()!.current} {t('years_old')} вЂў {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
@@ -1078,11 +1063,11 @@ export default function ProfileViewer({
                 <div className="h-[1px] bg-white/5 mx-6"></div>
 
                 {/* Expert Status */}
-                <div className="p-6">
-                    <div className={`p-5 rounded-[20px] border transition-all cursor-pointer ${showExpertSummary ? 'bg-accent-primary/10 border-accent-primary/30 shadow-lg shadow-accent-primary/5' : 'bg-white/5 border-white/10 hover:border-white/20'}`} onClick={() => setShowExpertModal(true)}>
+                <div className="p-3">
+                    <div className={`p-3 rounded-xl border transition-all cursor-pointer ${showExpertSummary ? 'bg-accent-primary/10 border-accent-primary/30 shadow-lg shadow-accent-primary/5' : 'bg-white/5 border-white/10 hover:border-white/20'}`} onClick={() => setShowExpertModal(true)}>
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <Award className={`h-6 w-6 ${showExpertSummary ? 'text-[#00A884]' : 'text-white/20'}`} />
+                                <Award className={`h-6 w-6 ${showExpertSummary ? 'text-[#8774e1]' : 'text-white/20'}`} />
                                 <div className="flex flex-col">
                                     <h4 className="text-white font-bold text-[16px]">{t('specialist_mode')}</h4>
                                     {verifiedStatus === 'approved' && (
@@ -1102,7 +1087,7 @@ export default function ProfileViewer({
                             <div
                                 className={`w-[52px] h-[30px] rounded-full relative transition-all duration-300 cursor-pointer shrink-0 border-2 ${
                                     isExpert
-                                        ? 'bg-[#00A884] border-emerald-300 shadow-[0_0_0_4px_rgba(16,185,129,0.35)]'
+                                        ? 'bg-[#8774e1] border-[#8774e1] shadow-[0_0_0_4px_rgba(135,116,225,0.28)]'
                                         : 'bg-white/15 border-white/30'
                                 }`}
                                 onClick={(e) => {
@@ -1126,14 +1111,14 @@ export default function ProfileViewer({
                             </div>
                         </div>
                         {showExpertSummary && (
-                            <div className="mt-4 pt-4 border-t border-white/5 space-y-4 animate-fade-in">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
+                            <div className="mt-2 pt-2 border-t border-white/5 space-y-2 animate-fade-in">
+                                <div className="grid grid-cols-2 gap-2">
+                                    <div className="p-2 bg-white/5 rounded-lg border border-white/5">
                                         <span className="text-white/30 text-[10px] uppercase font-bold block mb-1">{t('experience')}</span>
                                         <span className="text-white font-bold text-[14px]">{experience} {t('year')}</span>
                                     </div>
-                                    <div className="p-3 bg-white/5 rounded-xl border border-white/5">
-                                        <span className="text-white/30 text-[10px] uppercase font-bold block mb-1">
+                                    <div className="p-2 bg-white/5 rounded-lg border border-white/5">
+                                        <span className="text-white/30 text-[10px] uppercase font-bold block mb-0.5">
                                             {pricingModel === 'session' ? `${t('price')} (${t('session')})` : `${t('price')} (${t('hourly')})`}
                                         </span>
                                         <span className="text-white font-bold text-[14px]">{price} {currency}</span>
@@ -1143,7 +1128,7 @@ export default function ProfileViewer({
                                     <span className="text-white/30 text-[10px] uppercase font-bold">{t('specialization')}</span>
                                     <span className="text-white text-[13px] font-medium leading-tight">{profession || t('select')} - {specializationDetails || '...'}</span>
                                 </div>
-                                <button onClick={(e) => { e.stopPropagation(); setShowExpertModal(true); }} className="w-full py-3 bg-accent-primary/10 text-[#00A884] text-[13px] font-bold rounded-xl hover:bg-accent-primary/20 transition-all border border-accent-primary/10">{t('edit_profile')}</button>
+                                <button onClick={(e) => { e.stopPropagation(); setShowExpertModal(true); }} className="w-full py-2.5 bg-[#8774e1]/15 text-[#8774e1] text-[13px] font-medium rounded-xl hover:bg-[#8774e1]/25 transition-all">{t('edit_profile')}</button>
                             </div>
                         )}
                     </div>
@@ -1192,7 +1177,7 @@ export default function ProfileViewer({
     );
 
     return (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center lg:p-4 bg-black/40 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+        <div className="fixed inset-0 z-[60] flex items-center justify-center lg:p-4 bg-black/55 animate-fade-in" onClick={onClose}>
             {!showExpertModal &&
                 (currentView === 'chat_settings' ? renderChatSettings() :
                     currentView === 'wallet' ? renderWallet() :

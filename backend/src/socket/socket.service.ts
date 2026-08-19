@@ -1,6 +1,7 @@
 import { Server, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { MessageModel } from '../models/postgres/Message';
+import { isE2eEnvelope } from '../services/e2eEnvelope';
 import { TokenService } from '../services/token.service';
 import { ServiceModel } from '../models/postgres/Service';
 import { UserModel } from '../models/postgres/User';
@@ -258,6 +259,14 @@ export class SocketService {
                                 return authSocket.emit('error', { message: 'Xabar yuborish imkonsiz: Foydalanuvchi bloklangan' });
                             }
                         }
+                        const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [roomId]);
+                        const { parseChatMetadata, isListingMessagingUnlocked } = await import('../services/chatConsent.service');
+                        const chatMeta = parseChatMetadata(metaRow.rows[0]?.metadata);
+                        if (!isListingMessagingUnlocked(chatMeta)) {
+                            return authSocket.emit('error', {
+                                message: 'Murojaat qabul qilinguncha xabar yuborib bo\'lmaydi',
+                            });
+                        }
                     }
 
                     // 1. Save to Postgres
@@ -312,18 +321,34 @@ export class SocketService {
                     };
                     this.io.to(roomId).emit('receive_message', receivePayload);
 
-                    // 2.5 Cache Invalidation
+                    // 2.5 Cache Invalidation + Push for offline users
                     try {
                         const participantsRes = await pool.query('SELECT user_id FROM chat_participants WHERE chat_id = $1', [roomId]);
                         for (const row of participantsRes.rows) {
                             await safeDelCache(`user_chats:${row.user_id}`);
                         }
+                        const offlineRecipients = participantsRes.rows
+                            .map((r: { user_id: string }) => String(r.user_id))
+                            .filter((uid) => {
+                                if (uid === String(authSocket.user.id)) return false;
+                                const sockets = this.io.sockets.adapter.rooms.get(uid);
+                                return !sockets || sockets.size === 0;
+                            });
+                        if (offlineRecipients.length > 0) {
+                            import('../services/push.service').then((pushSvc) => {
+                                const preview = typeof content === 'string' ? content : 'Yangi xabar';
+                                const sName = broadcastSenderName || 'Foydalanuvchi';
+                                for (const uid of offlineRecipients) {
+                                    void pushSvc.pushNewMessage(uid, sName, preview, roomId);
+                                }
+                            }).catch(() => {});
+                        }
                     } catch (cacheErr) {
                         console.error('[Socket Cache Inval] Error:', cacheErr);
                     }
 
-                    // 3. Bot Logic check
-                    if (content.startsWith('/')) {
+                    // 3. Bot Logic check — E2E ciphertext is not a command
+                    if (!isE2eEnvelope(savedMessage.metadata) && typeof content === 'string' && content.startsWith('/')) {
                         await this.handleBotCommand(authSocket, roomId, content);
                     }
 
@@ -356,26 +381,101 @@ export class SocketService {
             });
 
             // WebRTC & LiveKit Call Signaling
-            authSocket.on('call_user', (data: { targetUserId: string; fromName: string; signal: any; callType: string }) => {
-                this.io.to(data.targetUserId).emit('incoming_call', { 
-                    from: authSocket.user.id, 
-                    name: data.fromName || authSocket.user.name || authSocket.user.phone || 'User',
-                    signal: data.signal,
-                    callType: data.callType
-                });
-            });
+            authSocket.on(
+                'call_user',
+                async (data: {
+                    targetUserId: string;
+                    fromName: string;
+                    signal: any;
+                    callType: string;
+                    chatId?: string;
+                }) => {
+                    try {
+                        const { ChatModel } = await import('../models/postgres/Chat');
+                        const { parseChatMetadata, isListingChatMetadata } = await import(
+                            '../services/chatConsent.service'
+                        );
+                        let chatMeta: Record<string, unknown> = {};
+                        if (data.chatId) {
+                            const chat = await ChatModel.findById(data.chatId);
+                            chatMeta = parseChatMetadata(chat?.metadata);
+                        } else {
+                            const chat = await ChatModel.findPrivateChat(
+                                authSocket.user.id,
+                                data.targetUserId
+                            );
+                            chatMeta = parseChatMetadata(chat?.metadata);
+                        }
+                        if (isListingChatMetadata(chatMeta)) {
+                            return authSocket.emit('error', {
+                                message: 'Listing chatda qo\'ng\'iroq faqat xizmat paneli orqali',
+                            });
+                        }
+                    } catch (e) {
+                        console.warn('[Socket] call_user listing check:', e);
+                    }
+                    const displayName =
+                        data.fromName || authSocket.user.name || authSocket.user.phone || 'User';
+                    const { registerOutgoingCall } = await import('../services/callLog.service');
+                    const { callId } = await registerOutgoingCall({
+                        callerId: authSocket.user.id,
+                        calleeId: data.targetUserId,
+                        chatId: data.chatId,
+                        callType: data.callType,
+                    });
+                    this.io.to(data.targetUserId).emit('incoming_call', {
+                        from: authSocket.user.id,
+                        fromName: displayName,
+                        name: displayName,
+                        signal: data.signal,
+                        callType: data.callType,
+                        chatId: data.chatId,
+                        callId,
+                    });
+                }
+            );
 
-            authSocket.on('accept_call', (data: { to: string; signal: any }) => {
+            authSocket.on('accept_call', async (data: { to: string; signal: any; chatId?: string }) => {
+                const { markCallAccepted } = await import('../services/callLog.service');
+                markCallAccepted(data.to, authSocket.user.id);
                 this.io.to(data.to).emit('call_accepted', { signal: data.signal });
             });
 
-            authSocket.on('reject_call', (data: { to: string }) => {
+            authSocket.on('reject_call', async (data: { to: string; chatId?: string }) => {
+                try {
+                    const { finalizePhoneCallLog } = await import('../services/callLog.service');
+                    await finalizePhoneCallLog({
+                        io: this.io,
+                        actorId: authSocket.user.id,
+                        peerId: data.to,
+                        chatId: data.chatId,
+                        reason: 'reject',
+                    });
+                } catch (e) {
+                    console.error('[Socket] reject_call log:', e);
+                }
                 this.io.to(data.to).emit('call_rejected');
             });
 
-            authSocket.on('end_call', (data: { to: string }) => {
-                this.io.to(data.to).emit('call_ended');
-            });
+            authSocket.on(
+                'end_call',
+                async (data: { to: string; chatId?: string; durationSeconds?: number }) => {
+                    try {
+                        const { finalizePhoneCallLog } = await import('../services/callLog.service');
+                        await finalizePhoneCallLog({
+                            io: this.io,
+                            actorId: authSocket.user.id,
+                            peerId: data.to,
+                            chatId: data.chatId,
+                            reason: 'end',
+                            durationSeconds: data.durationSeconds,
+                        });
+                    } catch (e) {
+                        console.error('[Socket] end_call log:', e);
+                    }
+                    this.io.to(data.to).emit('call_ended');
+                }
+            );
 
             authSocket.on('booking_accept', async (data: { studentId: string, url: string }) => {
                 try {

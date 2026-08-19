@@ -33,14 +33,18 @@ export function normalizeCreatedAtIso(raw: unknown): string {
     return '';
 }
 
-/** UI: soat:daqiqa:soniya — bir daqiqada bir nechta xabar ajralib turishi uchun */
-export function formatChatTimeLabel(ms: number, locale = 'uz-UZ'): string {
-    return new Date(ms).toLocaleTimeString(locale, {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-    });
+/** UI: Telegram kabi soat:daqiqa */
+export function formatChatTimeLabel(ms: number, _locale = 'uz-UZ'): string {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+/** Chat list timestamp — Telegram `11:16` (no AM/PM). */
+export function formatDialogClock(ms: number): string {
+    const d = new Date(ms);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    return `${hh}:${mm}`;
 }
 
 /** MessageBubble: vaqt — avvalo `created_at`; faqat u bo‘lmasa `time` (legacy). */
@@ -90,12 +94,25 @@ export function normalizeMessageType(raw: unknown): string {
     if (!s) return 'text';
     const lower = s.toLowerCase();
     const aliases: Record<string, string> = {
+        audio: 'audio',
+        song: 'audio',
         img: 'image',
         photo: 'image',
         picture: 'image',
         pic: 'image',
     };
     return aliases[lower] ?? lower;
+}
+
+/** Telegram Web: faqat matn yoki caption clipboard ga tushadi. Media URL nusxalanmaydi. */
+export function getMessageCopyText(message: Pick<ChatMessage, 'type' | 'text' | 'metadata'>): string {
+    const type = normalizeMessageType(message.type);
+    const meta = normalizeMessageMetadata(message.metadata);
+    const caption = typeof meta.caption === 'string' ? meta.caption.trim() : '';
+    if (caption) return caption;
+    if (type === 'text' || type === '') return String(message.text || '').trim();
+    if (type === 'image' || type === 'video' || type === 'file' || type === 'voice' || type === 'sticker') return '';
+    return String(message.text || '').trim();
 }
 
 /** JSONB ba'zan string sifatida keladi (legacy import) — object ga keltiramiz. */
@@ -124,7 +141,7 @@ export function normalizeMessageMetadata(raw: unknown): ChatMessageMetadata {
 function deriveMediaUrlIfTextEmpty(text: string, type: string, meta: ChatMessageMetadata): string {
     const trimmed = text.trim();
     if (trimmed) return trimmed;
-    const media = new Set(['image', 'video', 'file', 'voice']);
+    const media = new Set(['image', 'video', 'file', 'voice', 'sticker']);
     if (!media.has(type)) return trimmed;
     const o = meta as Record<string, unknown>;
     for (const k of ['url', 'fileUrl', 'src', 'path', 'file_url', 'href', 'link'] as const) {

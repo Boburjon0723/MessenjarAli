@@ -1,10 +1,29 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import type { ServiceSessionPayload, TradeDetails } from '@/types/chat-room';
+import {
+    getChatMetadata,
+    getApplicationStatus,
+    getJobListingIntent,
+    getJobListingSnapshot,
+    isApplicationPending,
+    isApplicationRejected,
+    isExpertListingChat,
+    isJobListingChat,
+    jobListingSubtitle,
+    jobListingTitle,
+} from '@/lib/listing-chat';
+import { getChatConsent, isListingChat, isMessagingUnlocked } from '@/lib/chat-consent';
+import { postListingConsent } from '@/lib/listing-consent-api';
+import { useNotification } from '@/context/NotificationContext';
+import ChatPaymentStatusCard from './ChatPaymentStatusCard';
 
 export type ChatWindowBannersProps = {
     t: (...args: any[]) => string;
+    chat?: any;
+    currentUserId?: string;
+    onChatMetadataUpdate?: (metadata: Record<string, unknown>) => void;
     chatSummary: string | null;
     setChatSummary: (v: string | null) => void;
     summaryError: string | null;
@@ -23,6 +42,9 @@ export type ChatWindowBannersProps = {
 
 export function ChatWindowBanners({
     t,
+    chat,
+    currentUserId,
+    onChatMetadataUpdate,
     chatSummary,
     setChatSummary,
     summaryError,
@@ -38,11 +60,52 @@ export function ChatWindowBanners({
     tradeData,
     activeSession,
 }: ChatWindowBannersProps) {
+    const { showError, showSuccess } = useNotification();
+    const [rejectReason, setRejectReason] = useState('');
+    const [showRejectForm, setShowRejectForm] = useState(false);
+    const [consentLoading, setConsentLoading] = useState(false);
+    const jobSnap = chat ? getJobListingSnapshot(chat) : null;
+    const jobIntent = chat ? getJobListingIntent(chat) : null;
+    const isExpertListing = chat ? isExpertListingChat(chat) : false;
+    const isJobListing = chat ? isJobListingChat(chat) : false;
+    const meta = chat ? getChatMetadata(chat) : {};
+    const consent = chat ? getChatConsent(chat) : {};
+    const uid = currentUserId ? String(currentUserId) : '';
+    const isExpertSide = isExpertListing && String(meta.expert_id) === uid;
+    const isEmployerSide =
+        isJobListing && jobIntent === 'apply' && String(meta.poster_id) === uid;
+    const isClientSide = uid && !isExpertSide && !isEmployerSide;
+
+    const runConsent = async (
+        action: 'client_accept' | 'expert_accept' | 'employer_accept' | 'employer_reject',
+        reason?: string
+    ) => {
+        if (!chat?.id) return;
+        setConsentLoading(true);
+        try {
+            const { metadata } = await postListingConsent(String(chat.id), action, { reason });
+            onChatMetadataUpdate?.(metadata);
+            if (action === 'employer_reject') {
+                setShowRejectForm(false);
+                setRejectReason('');
+            }
+            showSuccess(t('success_update'));
+        } catch (e) {
+            showError(e instanceof Error ? e.message : t('server_error'));
+        } finally {
+            setConsentLoading(false);
+        }
+    };
+
+    const applicationStatus = chat ? getApplicationStatus(chat) : undefined;
+    const applicationPending = chat ? isApplicationPending(chat) : false;
+    const applicationRejected = chat ? isApplicationRejected(chat) : false;
+
     return (
         <>
             {/* AI Summary Banner */}
             {chatSummary && (
-                <div className="z-10 px-4 mt-2">
+                <div className="z-10 mt-2">
                     <div className="bg-purple-900/40 backdrop-blur-xl border border-purple-500/30 rounded-2xl p-4 shadow-lg animate-slide-down relative">
                         <button onClick={() => setChatSummary(null)} className="absolute top-2 right-2 p-1 text-white/50 hover:text-white bg-white/5 rounded-full">
                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -57,7 +120,7 @@ export function ChatWindowBanners({
             )}
 
             {summaryError && (
-                <div className="z-10 px-4 mt-2">
+                <div className="z-10 mt-2">
                     <div className="bg-red-900/40 backdrop-blur-xl border border-red-500/30 rounded-2xl p-3 shadow-lg flex justify-between items-center animate-slide-down">
                         <span className="text-xs text-red-200">{summaryError}</span>
                         <button onClick={() => setSummaryError(null)} className="text-white/50 hover:text-white p-1 ml-2"><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg></button>
@@ -66,10 +129,133 @@ export function ChatWindowBanners({
             )}
 
             {/* Special Banners Container */}
-            <div className="z-10 px-4 space-y-2 mt-2">
+            <div className="z-10 space-y-1">
+                {isJobListing && jobSnap && (
+                    <div className="mt-1 rounded-[24px] bg-[#212121] border border-white/[0.06] p-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-[#777587] mb-1">
+                            {t('job_chat_banner_title')}
+                        </p>
+                        <p className="text-[15px] font-semibold text-white leading-snug">{jobListingTitle(jobSnap)}</p>
+                        <p className="text-[13px] text-[#8774e1] mt-0.5">{jobListingSubtitle(jobSnap)}</p>
+                        <p className="text-[12px] text-[#aaaaaa] mt-2">
+                            {jobIntent === 'apply' ? t('job_chat_banner_apply') : t('job_chat_banner_chat')}
+                        </p>
+                    </div>
+                )}
+                {isExpertListing && !isJobListing && (
+                    <div className="mt-1 rounded-[24px] bg-[#8774e1]/10 border border-[#8774e1]/25 p-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="text-[13px] font-semibold text-[#8774e1] mb-1">{t('expert_chat_banner_title')}</p>
+                        <p className="text-[12px] text-[#aaaaaa] leading-snug">{t('expert_chat_banner_hint')}</p>
+                        <p className="text-[11px] text-[#777587] mt-2 leading-snug">{t('listing_calls_panel_hint')}</p>
+                    </div>
+                )}
+                {chat && isListingChat(chat) && applicationPending && !applicationRejected && (
+                    <div className="mt-1 rounded-[20px] bg-white/[0.04] border border-white/[0.08] px-3 py-2 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="text-[13px] text-white/75 leading-snug">
+                            {isEmployerSide || isExpertSide
+                                ? t('application_pending_applicant')
+                                : t('application_pending_client')}
+                        </p>
+                    </div>
+                )}
+                {chat && isListingChat(chat) && applicationRejected && (
+                    <div className="mt-1 rounded-[20px] bg-red-500/10 border border-red-400/25 px-3 py-2 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="text-[13px] text-red-200/95 leading-snug">{t('application_rejected_banner')}</p>
+                    </div>
+                )}
+                {chat && isListingChat(chat) && !isMessagingUnlocked(chat) && !applicationRejected && (
+                    <div className="mt-1 rounded-[24px] bg-amber-500/10 border border-amber-400/25 px-3 py-2.5 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)] space-y-2">
+                        <p className="text-[13px] text-amber-100/95 leading-snug">{t('consent_waiting_message')}</p>
+                        {isClientSide && !consent.client_accepted_at && (
+                            <button
+                                type="button"
+                                disabled={consentLoading}
+                                onClick={() => void runConsent('client_accept')}
+                                className="w-full py-2 rounded-xl bg-[#8774e1] text-white text-[14px] font-medium disabled:opacity-50"
+                            >
+                                {t('consent_agree_btn')}
+                            </button>
+                        )}
+                        {isExpertSide && !consent.expert_accepted_at && (
+                            <button
+                                type="button"
+                                disabled={consentLoading}
+                                onClick={() => void runConsent('expert_accept')}
+                                className="w-full py-2 rounded-xl bg-emerald-600 text-white text-[14px] font-medium disabled:opacity-50"
+                            >
+                                {t('expert_accept_murojaat_btn')}
+                            </button>
+                        )}
+                        {isEmployerSide && !consent.expert_accepted_at && (
+                            <div className="space-y-2">
+                                {!showRejectForm ? (
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            disabled={consentLoading}
+                                            onClick={() => void runConsent('employer_accept')}
+                                            className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-[14px] font-medium disabled:opacity-50"
+                                        >
+                                            {t('job_accept_application_btn')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={consentLoading}
+                                            onClick={() => setShowRejectForm(true)}
+                                            className="flex-1 py-2 rounded-xl bg-red-600/90 text-white text-[14px] font-medium disabled:opacity-50"
+                                        >
+                                            {t('job_reject_application_btn')}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <textarea
+                                            value={rejectReason}
+                                            onChange={(e) => setRejectReason(e.target.value)}
+                                            placeholder={t('reject_reason_placeholder') as string}
+                                            rows={2}
+                                            className="w-full rounded-xl bg-black/25 border border-white/10 px-3 py-2 text-[13px] text-white placeholder:text-white/35 resize-none"
+                                        />
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                disabled={consentLoading}
+                                                onClick={() => {
+                                                    setShowRejectForm(false);
+                                                    setRejectReason('');
+                                                }}
+                                                className="flex-1 py-2 rounded-xl bg-white/10 text-white/80 text-[14px]"
+                                            >
+                                                {t('cancel')}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={consentLoading}
+                                                onClick={() =>
+                                                    void runConsent(
+                                                        'employer_reject',
+                                                        rejectReason.trim() || undefined
+                                                    )
+                                                }
+                                                className="flex-1 py-2 rounded-xl bg-red-600 text-white text-[14px] font-medium disabled:opacity-50"
+                                            >
+                                                {t('job_reject_application_btn')}
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {chat && isListingChat(chat) && isMessagingUnlocked(chat) && (
+                    <ChatPaymentStatusCard chatId={chat.id} t={t} />
+                )}
+
                 {chatCompliance && !isTrade && !isComplianceDismissed && (
-                    <div className="bg-amber-900/30 backdrop-blur-xl border border-amber-400/30 rounded-2xl p-3 shadow-lg text-[11px] text-amber-50/95 leading-snug">
-                        <p className="font-bold text-amber-100 mb-1">{chatCompliance.title}</p>
+                    <div className="mt-1 rounded-[24px] bg-[#212121] p-3 text-[13px] text-white/90 leading-snug shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="mb-1 font-medium text-[#8774e1]">{chatCompliance.title}</p>
                         <ul className="list-disc list-inside space-y-0.5 text-amber-50/90 mb-3">
                             {chatCompliance.lines.map((ln, i) => (
                                 <li key={i}>{ln}</li>
@@ -77,7 +263,7 @@ export function ChatWindowBanners({
                         </ul>
                         <button
                             onClick={() => setIsComplianceDismissed(true)}
-                            className="w-full py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/30 rounded-xl text-amber-100 font-bold transition-all active:scale-[0.98]"
+                            className="w-full py-2 text-[15px] font-medium text-[#8774e1]"
                         >
                             {t('i_have_read')}
                         </button>
@@ -85,22 +271,22 @@ export function ChatWindowBanners({
                 )}
                 {/* Unknown Contact Bar */}
                 {!isContact && !isTrade && (
-                    <div className="bg-[#1e293b]/80 backdrop-blur-xl border border-white/5 rounded-2xl p-3 flex items-center justify-between shadow-lg animate-slide-up">
-                        <div className="flex items-center gap-3 pl-2">
-                            <div className="text-blue-400">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            </div>
-                            <p className="text-white/80 text-xs font-medium">{t('not_in_contacts')}</p>
-                        </div>
-                        <div className="flex gap-2">
+                    <div className="mt-1 flex h-12 items-center justify-between rounded-[24px] bg-[#212121] px-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="min-w-0 truncate text-[14px] text-white">
+                            {(isExpertListing || isJobListing) ? t('listing_save_contact_hint') : t('not_in_contacts')}
+                        </p>
+                        <div className="flex shrink-0 items-center gap-1">
                             <button
+                                type="button"
                                 onClick={handleAddContact}
                                 disabled={isAddingContact}
-                                className="px-4 py-1.5 bg-blue-500 hover:bg-blue-600 text-white rounded-xl text-[10px] font-bold transition-all disabled:opacity-50"
+                                className="px-3 py-1.5 text-[15px] font-medium text-[#8774e1] disabled:opacity-50"
                             >
                                 {isAddingContact ? t('adding') : t('add')}
                             </button>
-                            <button onClick={handleBlockUser} className="px-4 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-xl text-[10px] font-bold transition-all">{t('block')}</button>
+                            <button type="button" onClick={handleBlockUser} className="px-3 py-1.5 text-[15px] font-medium text-[#e53935]">
+                                {t('block')}
+                            </button>
                         </div>
                     </div>
                 )}

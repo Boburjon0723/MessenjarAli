@@ -43,6 +43,25 @@ describe('corsOrigins', () => {
         ).toBe(false);
     });
 
+    it('allows Electron app:// origin', () => {
+        expect(isOriginAllowed('app://.', ['https://app.example.com'], { allowInDevWhenEmpty: false })).toBe(
+            true
+        );
+    });
+
+    it('allows localhost even when allowlist is production-only', () => {
+        expect(
+            isOriginAllowed('http://localhost:3000', ['https://messenjrali.vercel.app'], {
+                allowInDevWhenEmpty: false,
+            })
+        ).toBe(true);
+        expect(
+            isOriginAllowed('http://127.0.0.1:3000', ['https://messenjrali.vercel.app'], {
+                allowInDevWhenEmpty: false,
+            })
+        ).toBe(true);
+    });
+
     it('allowlist uses patterns', () => {
         expect(
             isOriginAllowed('https://preview-abc.vercel.app', ['*.vercel.app'], {

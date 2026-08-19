@@ -52,6 +52,50 @@ export async function fetchExpertListingSnapshot(expertId: string): Promise<Reco
     };
 }
 
+/** Faol ish e'loni snapshot (serverdan) */
+export async function fetchJobListingSnapshot(jobId: string): Promise<Record<string, unknown> | null> {
+    const res = await pool.query(
+        `
+        SELECT j.id, j.user_id, j.sub_type, j.category_id, j.type, j.status,
+               j.title, j.position, j.company_name, j.full_name, j.short_text,
+               j.location, j.salary_text, j.salary_min, j.work_hours, j.work_type,
+               j.experience_years, j.skills_json,
+               c.name_uz AS category_name_uz, c.icon AS category_icon,
+               u.name AS poster_name, u.surname AS poster_surname
+        FROM jobs j
+        LEFT JOIN job_categories c ON j.category_id = c.id
+        LEFT JOIN users u ON j.user_id = u.id
+        WHERE j.id = $1 AND j.status = 'active'
+        `,
+        [jobId]
+    );
+    const r = res.rows[0];
+    if (!r) return null;
+    return {
+        id: r.id,
+        poster_id: r.user_id,
+        sub_type: r.sub_type,
+        category_id: r.category_id,
+        category_name_uz: r.category_name_uz,
+        category_icon: r.category_icon,
+        type: r.type,
+        title: r.title,
+        position: r.position,
+        company_name: r.company_name,
+        full_name: r.full_name,
+        short_text: r.short_text,
+        location: r.location,
+        salary_text: r.salary_text,
+        salary_min: r.salary_min,
+        work_hours: r.work_hours,
+        work_type: r.work_type,
+        experience_years: r.experience_years,
+        skills_json: r.skills_json,
+        poster_name: r.poster_name,
+        poster_surname: r.poster_surname,
+    };
+}
+
 /** Shaxsiy chat qatorini joriy foydalanuvchi uchun boyitish (e'lon maxfiyligi bilan) */
 export async function enrichPrivateChatRow(chat: any, currentUserId: string): Promise<any> {
     if (chat.type !== 'private' || !chat.participants) {
@@ -92,6 +136,42 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
         }
     }
 
+    if (meta.source === 'job_listing' && meta.snapshot) {
+        const snap = meta.snapshot as Record<string, unknown>;
+        const isPosterSide = String(meta.poster_id) === String(currentUserId);
+        if (isPosterSide) {
+            const user = await UserModel.findById(otherParticipantId);
+            if (user) {
+                return {
+                    ...chat,
+                    otherUser: {
+                        id: user.id,
+                        name: user.name,
+                        surname: user.surname,
+                        avatar: user.avatar_url,
+                        avatar_url: user.avatar_url,
+                        listing_privacy: true,
+                    },
+                };
+            }
+        } else {
+            const posterName =
+                [snap.poster_name, snap.poster_surname].filter(Boolean).join(' ').trim() ||
+                snap.company_name ||
+                snap.full_name ||
+                "E'lon";
+            return {
+                ...chat,
+                otherUser: {
+                    id: meta.poster_id,
+                    listing_privacy: true,
+                    name: posterName,
+                    ...snap,
+                },
+            };
+        }
+    }
+
     try {
         const user = await UserModel.findById(otherParticipantId);
         if (user) {
@@ -114,7 +194,8 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
 
 export const createChat = async (req: Request, res: Response) => {
     try {
-        const { participantId, type, name, participants, fromExpertListing } = req.body;
+        const { participantId, type, name, participants, fromExpertListing, fromJobListing, jobId, jobIntent } =
+            req.body;
         const currentUserId = (req as any).user.id;
 
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -165,28 +246,49 @@ export const createChat = async (req: Request, res: Response) => {
             });
         }
 
+        let jobMeta: Record<string, unknown> | null = null;
+        if (fromJobListing === true) {
+            if (!jobId || typeof jobId !== 'string') {
+                return res.status(400).json({ message: "Ish e'loni ID kerak" });
+            }
+            jobMeta = await fetchJobListingSnapshot(jobId);
+            if (!jobMeta) {
+                return res.status(400).json({ message: "Ish e'loni topilmadi yoki faol emas" });
+            }
+            if (String(jobMeta.poster_id) !== String(participantId)) {
+                return res.status(400).json({ message: "E'lon egasi bilan chat ochish mumkin emas" });
+            }
+        }
+
+        const privateMeta =
+            listingMeta ?
+                {
+                    source: 'expert_listing',
+                    expert_id: participantId,
+                    snapshot: listingMeta,
+                    intent: 'consult',
+                    application_status: 'pending',
+                    listing_chat_kind: 'marketplace',
+                }
+            : jobMeta ?
+                {
+                    source: 'job_listing',
+                    job_id: jobMeta.id,
+                    poster_id: jobMeta.poster_id,
+                    snapshot: jobMeta,
+                    intent: jobIntent === 'apply' ? 'apply' : 'chat',
+                    application_status: jobIntent === 'apply' ? 'pending' : undefined,
+                    listing_chat_kind: 'marketplace',
+                }
+            :   null;
+
         let chat = await ChatModel.findPrivateChat(currentUserId, participantId);
         if (!chat) {
-            const meta =
-                listingMeta ?
-                    {
-                        source: 'expert_listing',
-                        expert_id: participantId,
-                        snapshot: listingMeta,
-                    }
-                :   null;
-            chat = await ChatModel.createPrivate(currentUserId, participantId, meta);
-        } else if (listingMeta) {
+            chat = await ChatModel.createPrivate(currentUserId, participantId, privateMeta);
+        } else if (privateMeta) {
             await pool.query(
                 `UPDATE chats SET metadata = $1::jsonb, updated_at = NOW() WHERE id = $2`,
-                [
-                    JSON.stringify({
-                        source: 'expert_listing',
-                        expert_id: participantId,
-                        snapshot: listingMeta,
-                    }),
-                    chat.id,
-                ]
+                [JSON.stringify(privateMeta), chat.id]
             );
             chat = (await ChatModel.findById(chat.id))!;
         }
@@ -203,6 +305,43 @@ export const createChat = async (req: Request, res: Response) => {
         const partsRes = await pool.query('SELECT user_id FROM chat_participants WHERE chat_id = $1', [chat.id]);
         const row = { ...chat, participants: partsRes.rows.map((r: { user_id: string }) => r.user_id) };
         const enriched = await enrichPrivateChatRow(row, currentUserId);
+
+        if (privateMeta) {
+            const io = req.app.get('io');
+            const { NotificationService } = await import('../../services/notification.service');
+            const pushSvc = await import('../../services/push.service');
+            const actor = await UserModel.findById(currentUserId);
+            const actorName = actor?.name || 'Foydalanuvchi';
+            const chatIdStr = String(chat.id);
+            if (privateMeta.source === 'expert_listing' && privateMeta.expert_id) {
+                await NotificationService.createNotification(
+                    String(privateMeta.expert_id),
+                    'new_murojaat',
+                    'Yangi murojaat',
+                    `${actorName} mutaxassis e'loniga murojaat yubordi`,
+                    { chatId: chatIdStr },
+                    io
+                );
+                void pushSvc.pushNewApplication(String(privateMeta.expert_id), actorName, 'Mutaxassis e\'loni', chatIdStr);
+            } else if (
+                privateMeta.source === 'job_listing' &&
+                privateMeta.intent === 'apply' &&
+                privateMeta.poster_id
+            ) {
+                const snap = privateMeta.snapshot as Record<string, any> | undefined;
+                const jobTitle = snap?.short_text || snap?.company_name || "E'lon";
+                await NotificationService.createNotification(
+                    String(privateMeta.poster_id),
+                    'new_application',
+                    'Yangi ish arizasi',
+                    `${actorName} e'loningizga ariza yubordi`,
+                    { chatId: chatIdStr, jobId: privateMeta.job_id },
+                    io
+                );
+                void pushSvc.pushNewApplication(String(privateMeta.poster_id), actorName, jobTitle, chatIdStr);
+            }
+        }
+
         res.status(201).json(enriched);
     } catch (error: any) {
         console.error('Create Chat Error:', error);
@@ -315,7 +454,7 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             return res.status(400).json({ message: "Noto'g'ri chat ID" });
         }
 
-        const { content, type } = req.body || {};
+        const { content, type, metadata } = req.body || {};
         if (!content || typeof content !== 'string' || !String(content).trim()) {
             return res.status(400).json({ message: 'Xabar matni kerak' });
         }
@@ -346,6 +485,14 @@ export const sendChatMessage = async (req: Request, res: Response) => {
                     return res.status(403).json({ message: 'Xabar yuborish imkonsiz: bloklangan' });
                 }
             }
+            const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [chatId]);
+            const { parseChatMetadata, isListingMessagingUnlocked } = await import('../../services/chatConsent.service');
+            const chatMeta = parseChatMetadata(metaRow.rows[0]?.metadata);
+            if (!isListingMessagingUnlocked(chatMeta)) {
+                return res.status(403).json({
+                    message: "Murojaat qabul qilinguncha xabar yuborib bo'lmaydi",
+                });
+            }
         }
 
         const savedMessage = await MessageModel.create(
@@ -353,7 +500,7 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             currentUserId,
             String(content).trim(),
             (type && typeof type === 'string' ? type : 'text') as string,
-            {},
+            metadata && typeof metadata === 'object' ? metadata : {},
             null
         );
 
@@ -407,9 +554,10 @@ export const getRoomSubscriptionInfo = async (req: Request, res: Response) => {
         const creator = chat.creator_id ? await UserModel.findById(chat.creator_id) : null;
         res.status(200).json({
             chatId,
+            type: chat.type,
             creator_id: chat.creator_id,
             creator_name: creator?.name || null,
-            name: chat.name
+            name: chat.name,
         });
     } catch (error) {
         console.error('getRoomSubscriptionInfo:', error);
@@ -798,9 +946,238 @@ export const markAsRead = async (req: Request, res: Response) => {
         const currentUserId = (req as any).user.id;
 
         await ChatModel.markChatAsRead(chatId as string, currentUserId);
+        await safeDelCache(`user_chats:${currentUserId}`);
         res.status(200).json({ message: 'Chat marked as read' });
     } catch (error) {
         console.error('Mark As Read Error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+export const updateChatPrefs = async (req: Request, res: Response) => {
+    try {
+        const { chatId } = req.params;
+        const currentUserId = (req as any).user.id;
+        const body = req.body || {};
+
+        const ok = await ChatModel.isParticipant(chatId as string, currentUserId);
+        if (!ok) return res.status(403).json({ message: 'Not authorized' });
+
+        const prefs = {
+            pinned: typeof body.pinned === 'boolean' ? body.pinned : undefined,
+            muted: typeof body.muted === 'boolean' ? body.muted : undefined,
+            archived: typeof body.archived === 'boolean' ? body.archived : undefined,
+            unreadMarked: typeof body.unreadMarked === 'boolean' ? body.unreadMarked : undefined,
+        };
+
+        const next = await ChatModel.updateUserChatPrefs(chatId as string, currentUserId, prefs);
+        await safeDelCache(`user_chats:${currentUserId}`);
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(String(currentUserId)).emit('chat_prefs_updated', {
+                chatId,
+                pinned: !!next.pinned,
+                muted: !!next.muted,
+                archived: !!next.archived,
+                unreadMarked: !!next.unreadMarked,
+                pinnedAt: next.pinnedAt ? new Date(next.pinnedAt).getTime() : null,
+            });
+        }
+
+        res.status(200).json({
+            chatId,
+            pinned: !!next.pinned,
+            muted: !!next.muted,
+            archived: !!next.archived,
+            unreadMarked: !!next.unreadMarked,
+            pinnedAt: next.pinnedAt ? new Date(next.pinnedAt).getTime() : null,
+        });
+    } catch (error) {
+        console.error('Update Chat Prefs Error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+/** Listing/murojaat: mijoz, mutaxassis yoki ish beruvchi roziligi */
+export const postListingConsent = async (req: Request, res: Response) => {
+    try {
+        const chatId = String(req.params.chatId || '');
+        const currentUserId = (req as any).user?.id;
+        if (!currentUserId) return res.status(401).json({ message: 'Unauthorized' });
+
+        const action = String((req.body as { action?: string })?.action || '');
+        const rejectReason =
+            typeof (req.body as { reason?: string })?.reason === 'string'
+                ? (req.body as { reason: string }).reason.trim().slice(0, 500)
+                : '';
+        if (!['client_accept', 'expert_accept', 'employer_accept', 'employer_reject'].includes(action)) {
+            return res.status(400).json({ message: 'Noto‘g‘ri action' });
+        }
+
+        const ok = await ChatModel.isParticipant(chatId, currentUserId);
+        if (!ok) return res.status(403).json({ message: 'Not authorized' });
+
+        const row = await pool.query(`SELECT type, metadata FROM chats WHERE id = $1 LIMIT 1`, [chatId]);
+        const chat = row.rows[0];
+        if (!chat || chat.type !== 'private') {
+            return res.status(400).json({ message: 'Faqat shaxsiy murojaat chat' });
+        }
+
+        const meta = parseChatMetadata(chat.metadata);
+        const isExpertListing = meta.source === 'expert_listing' && meta.expert_id;
+        const isJobApply =
+            meta.source === 'job_listing' && meta.intent === 'apply' && meta.poster_id;
+
+        if (!isExpertListing && !isJobApply) {
+            return res.status(400).json({ message: 'Bu chat murojaat emas' });
+        }
+
+        const now = new Date().toISOString();
+        const { computeListingConsentUpdate } = await import('../../services/chatConsent.service');
+        const result = computeListingConsentUpdate({
+            meta,
+            action: action as 'client_accept' | 'expert_accept' | 'employer_accept' | 'employer_reject',
+            currentUserId: String(currentUserId),
+            now,
+            rejectReason,
+        });
+        if (!result.ok) {
+            return res.status(result.status).json({ message: result.message });
+        }
+        const next = result.next;
+
+        await pool.query(`UPDATE chats SET metadata = $1::jsonb, updated_at = NOW() WHERE id = $2`, [
+            JSON.stringify(next),
+            chatId,
+        ]);
+
+        const participants = await pool.query(
+            `SELECT user_id FROM chat_participants WHERE chat_id = $1`,
+            [chatId]
+        );
+        for (const p of participants.rows) {
+            await safeDelCache(`user_chats:${p.user_id}`);
+        }
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(chatId).emit('listing_consent_updated', { chatId, metadata: next });
+        }
+
+        const otherParticipantIds = participants.rows
+            .map((p: { user_id: string }) => String(p.user_id))
+            .filter((id) => id !== String(currentUserId));
+
+        const { NotificationService } = await import('../../services/notification.service');
+        const pushSvc = await import('../../services/push.service');
+        const actor = await UserModel.findById(currentUserId);
+        const actorName = actor?.name || 'Foydalanuvchi';
+        const nextSnap = (next as any).snapshot;
+        const jobTitle = nextSnap?.short_text || nextSnap?.company_name || "E'lon";
+
+        for (const oid of otherParticipantIds) {
+            if (action === 'employer_reject') {
+                await NotificationService.createNotification(
+                    oid,
+                    'application_rejected',
+                    'Ariza rad etildi',
+                    rejectReason
+                        ? `${actorName} arizani rad etdi: ${rejectReason}`
+                        : `${actorName} arizani rad etdi`,
+                    { chatId },
+                    io
+                );
+                void pushSvc.pushApplicationRejected(oid, jobTitle, rejectReason || undefined);
+            } else if (next.application_status === 'accepted') {
+                await NotificationService.createNotification(
+                    oid,
+                    'application_accepted',
+                    'Murojaat qabul qilindi',
+                    `${actorName} murojaatni qabul qildi`,
+                    { chatId },
+                    io
+                );
+                void pushSvc.pushApplicationAccepted(oid, jobTitle, chatId);
+            } else if (action === 'client_accept') {
+                await NotificationService.createNotification(
+                    oid,
+                    'listing_consent',
+                    'Rozilik berildi',
+                    `${actorName} davom etishga rozilik berdi`,
+                    { chatId },
+                    io
+                );
+            }
+        }
+
+        if (action === 'employer_reject' && io) {
+            const content = rejectReason
+                ? `❌ **Ariza rad etildi**\n\nSabab: ${rejectReason}`
+                : '❌ **Ariza rad etildi**';
+            const saved = await MessageModel.create(chatId, currentUserId, content, 'text', {
+                kind: 'application_rejected',
+            });
+            io.to(chatId).emit('receive_message', {
+                id: saved.id,
+                chat_id: chatId,
+                roomId: chatId,
+                sender_id: currentUserId,
+                sender_name: actorName,
+                content,
+                type: 'text',
+                metadata: { kind: 'application_rejected' },
+                created_at: new Date().toISOString(),
+            });
+            for (const oid of otherParticipantIds) {
+                io.to(oid).emit('receive_message', {
+                    id: saved.id,
+                    chat_id: chatId,
+                    roomId: chatId,
+                    sender_id: currentUserId,
+                    sender_name: actorName,
+                    content,
+                    type: 'text',
+                    metadata: { kind: 'application_rejected' },
+                    created_at: new Date().toISOString(),
+                });
+            }
+        }
+
+        res.status(200).json({ chatId, metadata: next });
+    } catch (error) {
+        console.error('postListingConsent error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+/** Konsult/dars paneliga kirish huquqi (eskirgan xona linklarini bloklash) */
+export const getConsultPanelAccessEndpoint = async (req: Request, res: Response) => {
+    try {
+        const chatId = req.params.chatId as string;
+        const currentUserId = (req as any).user.id;
+        const { getConsultPanelAccess } = await import('../../services/panelInvite.service');
+        const result = await getConsultPanelAccess(chatId, String(currentUserId));
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('getConsultPanelAccess error:', error);
+        res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+/** Chat to‘lov holati — service_sessions + listing_deals */
+export const getChatPaymentStatusEndpoint = async (req: Request, res: Response) => {
+    try {
+        const chatId = req.params.chatId as string;
+        const currentUserId = (req as any).user.id;
+        const { getChatPaymentStatusForUser } = await import('../../services/listingPrivacy.service');
+        const result = await getChatPaymentStatusForUser(chatId, String(currentUserId));
+        if ('error' in result) {
+            return res.status(403).json({ message: result.error });
+        }
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('getChatPaymentStatus error:', error);
         res.status(500).json({ message: 'Internal server error' });
     }
 };

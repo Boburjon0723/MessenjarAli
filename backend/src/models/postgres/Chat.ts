@@ -1,4 +1,5 @@
 import { pool } from '../../config/database';
+import { E2E_LIST_PLACEHOLDER, isE2eEnvelope } from '../../services/e2eEnvelope';
 
 export interface Chat {
     id: string;
@@ -21,6 +22,18 @@ export interface IChatModel {
     createChannel(creatorId: string, name: string, description?: string, link?: string): Promise<Chat>;
     findUserChats(userId: string): Promise<any[]>;
     markChatAsRead(chatId: string, userId: string): Promise<void>;
+    isParticipant(chatId: string, userId: string): Promise<boolean>;
+    updateUserChatPrefs(
+        chatId: string,
+        userId: string,
+        prefs: { pinned?: boolean; muted?: boolean; archived?: boolean; unreadMarked?: boolean }
+    ): Promise<{
+        pinned: boolean;
+        muted: boolean;
+        archived: boolean;
+        unreadMarked: boolean;
+        pinnedAt: Date | null;
+    }>;
     deleteChat(chatId: string): Promise<void>;
     addParticipant(chatId: string, userId: string): Promise<void>;
     removeParticipant(chatId: string, userId: string): Promise<void>;
@@ -127,44 +140,128 @@ export const ChatModel: IChatModel = {
             m.content as "lastMessage",
             m.type as "lastMessageType",
             m.created_at as "lastMessageAt",
+            m.metadata as "lastMessageMetaRaw",
+            COALESCE(cp.is_pinned, false) as pinned,
+            cp.pinned_at as "pinnedAt",
+            COALESCE(cp.is_muted, false) as muted,
+            COALESCE(cp.is_archived, false) as archived,
+            COALESCE(cp.unread_marked, false) as "unreadMarked",
             (
                 SELECT COUNT(*)::int FROM messages 
                 WHERE chat_id = c.id 
-                AND created_at > cp.last_read_at
+                AND created_at > COALESCE(cp.last_read_at, TIMESTAMP '1970-01-01')
                 AND sender_id != $1
             ) as unread
             FROM chats c
             JOIN chat_participants cp ON c.id = cp.chat_id
             LEFT JOIN LATERAL (
-                SELECT content, type, created_at 
+                SELECT content, type, created_at, metadata, sender_id
                 FROM messages 
                 WHERE chat_id = c.id 
                 ORDER BY created_at DESC 
                 LIMIT 1
             ) m ON true
             WHERE cp.user_id = $1
-            ORDER BY COALESCE(m.created_at, c.updated_at) DESC
+            ORDER BY
+                COALESCE(cp.is_pinned, false) DESC,
+                cp.pinned_at DESC NULLS LAST,
+                COALESCE(m.created_at, c.updated_at) DESC
         `;
         const result = await pool.query(query, [userId]);
         return result.rows.map(row => {
+            const { lastMessageMetaRaw, ...rest } = row;
             let snippet = row.lastMessage;
-            if (row.lastMessageType === 'image') snippet = '📷 Rasm';
+            const e2e = isE2eEnvelope(lastMessageMetaRaw);
+            if (e2e) snippet = E2E_LIST_PLACEHOLDER;
+            else if (row.lastMessageType === 'image') snippet = '📷 Rasm';
             else if (row.lastMessageType === 'voice') snippet = '🎤 Ovoosli xabar';
             else if (row.lastMessageType === 'file') snippet = '📁 Fayl';
             else if (row.lastMessageType === 'transaction') snippet = '💰 O\'tkazma';
 
             return {
-                ...row,
-                lastMessage: snippet
+                ...rest,
+                lastMessage: snippet,
+                lastMessageMeta: e2e ? lastMessageMetaRaw : undefined,
+                lastMessageCipher: e2e ? row.lastMessage : undefined,
             };
         });
     },
 
     async markChatAsRead(chatId: string, userId: string): Promise<void> {
         await pool.query(
-            'UPDATE chat_participants SET last_read_at = NOW() WHERE chat_id = $1 AND user_id = $2',
+            `UPDATE chat_participants
+             SET last_read_at = NOW(), unread_marked = FALSE
+             WHERE chat_id = $1 AND user_id = $2`,
             [chatId, userId]
         );
+    },
+
+    async isParticipant(chatId: string, userId: string): Promise<boolean> {
+        const result = await pool.query(
+            'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 LIMIT 1',
+            [chatId, userId]
+        );
+        return (result.rowCount ?? 0) > 0;
+    },
+
+    async updateUserChatPrefs(
+        chatId: string,
+        userId: string,
+        prefs: { pinned?: boolean; muted?: boolean; archived?: boolean; unreadMarked?: boolean }
+    ): Promise<{
+        pinned: boolean;
+        muted: boolean;
+        archived: boolean;
+        unreadMarked: boolean;
+        pinnedAt: Date | null;
+    }> {
+        const sets: string[] = [];
+
+        if (prefs.archived === true) {
+            sets.push(`is_archived = TRUE`);
+            sets.push(`is_pinned = FALSE`);
+            sets.push(`pinned_at = NULL`);
+        } else {
+            if (prefs.archived === false) {
+                sets.push(`is_archived = FALSE`);
+            }
+            if (prefs.pinned === true) {
+                sets.push(`is_pinned = TRUE`);
+                sets.push(`pinned_at = COALESCE(pinned_at, NOW())`);
+            } else if (prefs.pinned === false) {
+                sets.push(`is_pinned = FALSE`);
+                sets.push(`pinned_at = NULL`);
+            }
+        }
+        if (prefs.muted === true) sets.push(`is_muted = TRUE`);
+        else if (prefs.muted === false) sets.push(`is_muted = FALSE`);
+        if (prefs.unreadMarked === true) {
+            sets.push(`unread_marked = TRUE`);
+        } else if (prefs.unreadMarked === false) {
+            sets.push(`unread_marked = FALSE`);
+            sets.push(`last_read_at = NOW()`);
+        }
+
+        if (sets.length === 0) {
+            const cur = await pool.query(
+                `SELECT COALESCE(is_pinned, false) AS pinned, pinned_at AS "pinnedAt",
+                        COALESCE(is_muted, false) AS muted, COALESCE(is_archived, false) AS archived,
+                        COALESCE(unread_marked, false) AS "unreadMarked"
+                 FROM chat_participants WHERE chat_id = $1 AND user_id = $2`,
+                [chatId, userId]
+            );
+            return cur.rows[0] || { pinned: false, muted: false, archived: false, unreadMarked: false, pinnedAt: null };
+        }
+
+        const result = await pool.query(
+            `UPDATE chat_participants SET ${sets.join(', ')}
+             WHERE chat_id = $1 AND user_id = $2
+             RETURNING COALESCE(is_pinned, false) AS pinned, pinned_at AS "pinnedAt",
+                       COALESCE(is_muted, false) AS muted, COALESCE(is_archived, false) AS archived,
+                       COALESCE(unread_marked, false) AS "unreadMarked"`,
+            [chatId, userId]
+        );
+        return result.rows[0] || { pinned: false, muted: false, archived: false, unreadMarked: false, pinnedAt: null };
     },
 
     async deleteChat(chatId: string): Promise<void> {

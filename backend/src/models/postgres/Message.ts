@@ -101,6 +101,7 @@ export const MessageModel = {
             FROM messages m
             LEFT JOIN users u ON m.sender_id = u.id
             WHERE m.chat_id = $1 AND m.content ILIKE $2
+              AND COALESCE(m.metadata->>'e2e', 'false') <> 'true'
             ORDER BY m.created_at DESC
         `;
         const result = await pool.query(query, [chatId, `%${queryText}%`]);

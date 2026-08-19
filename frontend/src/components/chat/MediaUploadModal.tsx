@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { GlassCard } from '../ui/GlassCard';
 import { AnimatedModal } from '../ui/AnimatedModal';
 import { X, Smile, Plus, Trash2, Maximize2, MoreVertical, Check } from 'lucide-react';
+import { inferSendTypeFromFile, isArchiveFile } from '@/lib/telegram-message-kind';
 
 interface MediaFile {
     file: File;
@@ -26,27 +27,29 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
 
     useEffect(() => {
         const detectType = (file: File): MediaFile['type'] => {
-            const mime = String(file.type || '').toLowerCase();
-            const name = String(file.name || '').toLowerCase();
-            if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(name)) return 'image';
-            if (mime.startsWith('video/') || /\.(mp4|mov|webm|mkv|avi|m4v)$/.test(name)) return 'video';
-            if (mime.startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(name)) return 'voice';
+            const send = inferSendTypeFromFile(file.name, file.type);
+            if (send === 'image') return 'image';
+            if (send === 'video') return 'video';
             return 'file';
         };
-        const loadPreviews = async () => {
-            const list: MediaFile[] = await Promise.all(
-                initialFiles.map(async (file) => ({
-                    file,
-                    preview: URL.createObjectURL(file),
-                    type: detectType(file)
-                }))
-            );
-            setMediaList(list);
+        let revoked = false;
+        const urls: string[] = [];
+        const loadPreviews = () => {
+            const list: MediaFile[] = initialFiles.map((file) => {
+                const type = detectType(file);
+                const preview = type === 'image' || type === 'video' || String(file.type).startsWith('audio/')
+                    ? URL.createObjectURL(file)
+                    : '';
+                if (preview) urls.push(preview);
+                return { file, preview, type };
+            });
+            if (!revoked) setMediaList(list);
         };
         loadPreviews();
 
         return () => {
-            mediaList.forEach(m => URL.revokeObjectURL(m.preview));
+            revoked = true;
+            urls.forEach((u) => URL.revokeObjectURL(u));
         };
     }, [initialFiles]);
 
@@ -73,9 +76,11 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
                             ? 'Rasm yuborish'
                             : activeMedia.type === 'video'
                               ? 'Video yuborish'
-                              : activeMedia.type === 'voice'
-                                ? 'Audio yuborish'
-                                : 'Fayl yuborish'}
+                              : String(activeMedia.file.type || '').startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(activeMedia.file.name)
+                                ? 'Musiqa yuborish'
+                                : isArchiveFile(activeMedia.file.name, activeMedia.file.type)
+                                  ? 'Arxiv yuborish'
+                                  : 'Fayl yuborish'}
                     </h2>
                     <button className="p-1 text-white/40 hover:text-white transition-colors">
                         <MoreVertical className="h-5 w-5" />
@@ -89,10 +94,10 @@ export default function MediaUploadModal({ open, files: initialFiles, onClose, o
                             <img src={activeMedia.preview} className="w-full h-full object-contain" />
                         ) : activeMedia.type === 'video' ? (
                             <video src={activeMedia.preview} className="w-full h-full object-contain" controls />
-                        ) : activeMedia.type === 'voice' ? (
+                        ) : String(activeMedia.file.type || '').startsWith('audio/') || /\.(mp3|wav|ogg|m4a|aac|flac)$/i.test(activeMedia.file.name) ? (
                             <div className="w-full h-full flex flex-col items-center justify-center gap-3 px-4">
-                                <div className="w-16 h-16 rounded-2xl bg-emerald-500/20 flex items-center justify-center text-emerald-400">
-                                    <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 1v11m0 0a3 3 0 003-3V7a3 3 0 10-6 0v2a3 3 0 003 3zm6 0a6 6 0 01-12 0m12 0v3a6 6 0 01-12 0v-3m6 9v2m-4 0h8" /></svg>
+                                <div className="w-16 h-16 rounded-full bg-[#8774e1]/30 flex items-center justify-center text-[#c4b5fd]">
+                                    <svg className="h-8 w-8" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3v10.55A4 4 0 1014 17V7h4V3h-6z" /></svg>
                                 </div>
                                 <audio src={activeMedia.preview} controls className="w-full max-w-xs" />
                                 <span className="text-white text-sm font-medium truncate max-w-full">{activeMedia.file.name}</span>

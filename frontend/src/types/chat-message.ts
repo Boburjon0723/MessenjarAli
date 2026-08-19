@@ -54,6 +54,8 @@ export interface ChatMessage {
     isUploading?: boolean;
     error?: string;
     clientSideId?: string;
+    e2e?: boolean;
+    e2eFailed?: boolean;
     reactions?: Record<string, { emoji: string; users: string[] }>;
 }
 

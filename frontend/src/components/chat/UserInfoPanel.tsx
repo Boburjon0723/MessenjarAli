@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { isExpertListingChat } from '@/lib/listing-chat';
+import { isExpertListingChat, isJobListingChat, getJobListingIntent, getJobListingSnapshot, jobListingTitle, jobListingSubtitle } from '@/lib/listing-chat';
 import { getExpertListingPitch } from '@/lib/expert-roles';
 import {
     X, MessageCircle, Bell, Gift, Link, Mic, Users, Edit3, Trash2, ShieldAlert, Check, Loader2
@@ -9,6 +9,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
 import { apiFetch } from '@/lib/api';
 import { useNotification } from '@/context/NotificationContext';
+import AvatarLightbox from './AvatarLightbox';
 
 interface UserInfoPanelProps {
     chat: any;
@@ -31,6 +32,8 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     const lastFetchKeyRef = useRef<string>('');
     /** Kontakt qo‘shilgach listing kartasidan to‘liq profilga o‘tish */
     const [contactsBump, setContactsBump] = useState(0);
+    const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
+    const [peerInContacts, setPeerInContacts] = useState(false);
 
     useEffect(() => {
         const onContactsUpdated = () => {
@@ -64,8 +67,13 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
             }
             if (cancelled) return;
 
+            setPeerInContacts(inContacts);
+
             const showListingCard =
-                Boolean(chat.otherUser) && isExpertListingChat(chat) && !inContacts;
+                Boolean(chat.otherUser) &&
+                !inContacts &&
+                (isExpertListingChat(chat) ||
+                    (isJobListingChat(chat) && getJobListingIntent(chat) === 'apply'));
 
             if (showListingCard) {
                 const key = `listing:${chat.id}`;
@@ -211,7 +219,9 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     if (!chat) return null;
 
     const user = fullUserDetails || chat;
-    const listingPitch = listingIntro ? getExpertListingPitch(user) : '';
+    const jobSnap = listingIntro && isJobListingChat(chat) ? getJobListingSnapshot(chat) : null;
+    const isJobListingIntro = Boolean(jobSnap);
+    const listingPitch = listingIntro && !isJobListingIntro ? getExpertListingPitch(user) : '';
     const rawAvatar = user.avatar || user.avatar_url;
     const avatarUrl = rawAvatar && rawAvatar !== 'null' && rawAvatar !== ''
         ? (rawAvatar.startsWith('http') || rawAvatar.startsWith('data:') ? rawAvatar : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${rawAvatar.startsWith('/') ? '' : '/'}${rawAvatar}`)
@@ -222,11 +232,10 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     const username = !listingIntro && user.username ? `@${user.username}` : '';
 
     return (
-        <div className="fixed lg:relative inset-0 lg:inset-auto z-[70] lg:z-0 h-full min-h-0 w-full flex flex-col max-lg:bg-white/[0.07] max-lg:backdrop-blur-2xl max-lg:backdrop-saturate-150 lg:bg-transparent lg:backdrop-blur-none border-l-0 lg:border-l lg:border-white/20 overflow-hidden select-none relative pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:pt-0 lg:pb-0">
-            {/* Close Button Top Right */}
+        <div className="fixed lg:relative inset-0 lg:inset-auto z-[70] lg:z-0 h-full min-h-0 w-full flex flex-col bg-[#212121] overflow-hidden select-none relative pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] lg:pt-0 lg:pb-0">
             <button
                 onClick={onClose}
-                className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-20 p-2 text-white/50 hover:text-white hover:bg-white/5 rounded-full transition-all lg:top-4"
+                className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-20 p-2 text-[#aaaaaa] hover:text-white hover:bg-white/[0.08] rounded-full transition-all lg:top-4"
             >
                 <X className="h-6 w-6" />
             </button>
@@ -234,25 +243,32 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                 <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain custom-scrollbar">
                 {listingIntro && (
                     <div className="mx-4 mt-4 rounded-xl border border-amber-400/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100/95 leading-snug">
-                        <span className="font-bold text-amber-200">{t('listing_chat_prompt')}</span>{' '}
-                        {t('listing_chat_prompt_desc')}
+                        <span className="font-bold text-amber-200">
+                            {isJobListingIntro ? t('job_chat_banner_title') : t('listing_chat_prompt')}
+                        </span>{' '}
+                        {isJobListingIntro ? t('job_chat_banner_apply') : t('listing_chat_prompt_desc')}
                     </div>
                 )}
                 {/* Header Section */}
                 <div className="flex flex-col items-center pt-10 pb-6 px-4">
                     <div className="relative mb-4">
-                        <div className="w-28 h-28 rounded-full p-[2px] bg-gradient-to-br from-blue-400 to-indigo-500 shadow-2xl overflow-hidden flex items-center justify-center text-white text-3xl font-bold">
+                        <button
+                            type="button"
+                            onClick={() => avatarUrl && !imgError && setAvatarLightboxOpen(true)}
+                            className={`w-28 h-28 rounded-full bg-[#8774e1] overflow-hidden flex items-center justify-center text-white text-3xl font-medium ${avatarUrl && !imgError ? 'cursor-zoom-in ring-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8774e1]' : ''}`}
+                            aria-label="Profil rasmi"
+                        >
                             {avatarUrl && !imgError ? (
                                 <img
                                     src={avatarUrl}
-                                    className="w-full h-full rounded-full object-cover border-4 border-[#788296]/30"
+                                    className="w-full h-full rounded-full object-cover"
                                     alt={user.name}
                                     onError={() => setImgError(true)}
                                 />
                             ) : (
                                 <span>{initials}</span>
                             )}
-                        </div>
+                        </button>
                     </div>
 
                     {isEditing ? (
@@ -279,18 +295,18 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                         </div>
                     ) : (
                         <>
-                            <h2 className="text-xl font-bold text-white text-center leading-tight">
+                            <h2 className="text-xl font-medium text-white text-center leading-tight">
                                 {user.name} {user.surname || ''}
                             </h2>
                             {username && (
-                                <p className="text-white/40 text-sm mt-0.5 font-medium">
+                                <p className="text-[#aaaaaa] text-sm mt-0.5">
                                     {username}
                                 </p>
                             )}
                         </>
                     )}
 
-                    <p className="text-blue-400/60 text-[13px] mt-1 font-medium">
+                    <p className="text-[#8774e1] text-[14px] mt-1">
                         {listingIntro ? t('listing_profile') : (user.isOnline ? t('online') : t('last_seen_recent'))}
                     </p>
                 </div>
@@ -303,6 +319,44 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                     <ActionButton icon={<Gift className="h-5 w-5" />} label={t('personal')} />
                 </div>
                 )}
+                {listingIntro && !peerInContacts && (
+                    <div className="px-4 mb-6">
+                        <button
+                            type="button"
+                            disabled={actionLoading === 'add_contact'}
+                            onClick={async () => {
+                                const targetId = getPrivateChatPeerUserId(chat);
+                                if (!targetId) return;
+                                setActionLoading('add_contact');
+                                try {
+                                    const res = await apiFetch('/api/users/contacts', {
+                                        method: 'POST',
+                                        body: JSON.stringify({
+                                            contactUserId: targetId,
+                                            name: chat.otherUser?.name || user.name || 'User',
+                                            surname: chat.otherUser?.surname || '',
+                                        }),
+                                    });
+                                    if (res.ok) {
+                                        setPeerInContacts(true);
+                                        showSuccess(t('success_update'));
+                                        window.dispatchEvent(new Event('contacts_updated'));
+                                    } else {
+                                        showError(t('contact_save_error'));
+                                    }
+                                } catch {
+                                    showError(t('contact_save_error'));
+                                } finally {
+                                    setActionLoading(null);
+                                }
+                            }}
+                            className="w-full py-2.5 rounded-xl bg-[#8774e1]/20 text-[#8774e1] text-[14px] font-medium hover:bg-[#8774e1]/30 disabled:opacity-50"
+                        >
+                            {actionLoading === 'add_contact' ? t('adding') : t('add')}
+                        </button>
+                        <p className="text-center text-[11px] text-[#707579] mt-2">{t('listing_save_contact_hint')}</p>
+                    </div>
+                )}
 
                 {/* Information Section */}
                 <div className="w-full space-y-1">
@@ -310,17 +364,27 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                         <h3 className="text-white text-[15px] font-medium">
                             {listingIntro ? '—' : (hasPhone ? user.phone : t('hidden'))}
                         </h3>
-                        <p className="text-blue-400/40 text-xs">
+                        <p className="text-[#8774e1] text-xs">
                             {listingIntro ? t('telegram_link_desc').replace('Telegram', 'Telegram/Username') : t('phone_number')}
                         </p>
                     </div>
 
-                    {listingIntro && user.profession && (
+                    {listingIntro && isJobListingIntro && jobSnap && (
+                        <>
+                            <div className="h-px bg-white/5 mx-2" />
+                            <div className="px-6 py-4">
+                                <h3 className="text-white text-[14px] font-medium">{jobListingTitle(jobSnap)}</h3>
+                                <p className="text-[#8774e1] text-xs mt-1">{jobListingSubtitle(jobSnap)}</p>
+                            </div>
+                        </>
+                    )}
+
+                    {listingIntro && !isJobListingIntro && user.profession && (
                         <>
                             <div className="h-px bg-white/5 mx-2" />
                             <div className="px-6 py-4">
                                 <h3 className="text-white text-[14px]">{user.profession}</h3>
-                                <p className="text-blue-400/40 text-xs mt-1">{t('listing_profession')}</p>
+                                <p className="text-[#8774e1] text-xs mt-1">{t('listing_profession')}</p>
                             </div>
                         </>
                     )}
@@ -332,7 +396,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                                 <h3 className="text-white text-[14px] leading-relaxed whitespace-pre-wrap">
                                     {listingPitch}
                                 </h3>
-                                <p className="text-blue-400/40 text-xs mt-1">{t('listing_description')}</p>
+                                <p className="text-[#8774e1] text-xs mt-1">{t('listing_description')}</p>
                             </div>
                         </>
                     )}
@@ -344,7 +408,7 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                                 <h3 className="text-white text-[14px] leading-relaxed">
                                     {user.bio}
                                 </h3>
-                                <p className="text-blue-400/40 text-xs mt-1">{t('bio')}</p>
+                                <p className="text-[#8774e1] text-xs mt-1">{t('bio')}</p>
                             </div>
                         </>
                     )}
@@ -390,6 +454,13 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                     </div>
                 </div>
             </div>
+            {avatarLightboxOpen && avatarUrl && (
+                <AvatarLightbox
+                    src={avatarUrl}
+                    alt={user.name || ''}
+                    onClose={() => setAvatarLightboxOpen(false)}
+                />
+            )}
         </div>
     );
 }
@@ -398,12 +469,12 @@ function ActionButton({ icon, label, onClick }: { icon: React.ReactNode, label: 
     return (
         <button
             onClick={onClick}
-            className="flex-1 flex flex-col items-center gap-2 px-2 py-3 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/10 transition-all duration-300 group"
+            className="flex-1 flex flex-col items-center gap-2 px-2 py-3 rounded-xl bg-[#181818] hover:bg-[#2b2b2b] transition-colors group"
         >
-            <div className="text-white/70 group-hover:text-white transition-colors">
+            <div className="text-[#8774e1] group-hover:text-white transition-colors">
                 {icon}
             </div>
-            <span className="text-[11px] font-medium text-white/40 group-hover:text-white/60">
+            <span className="text-[12px] text-[#aaaaaa] group-hover:text-white">
                 {label}
             </span>
         </button>
@@ -414,9 +485,9 @@ function MenuItem({ icon, label, onClick, className = "" }: { icon: React.ReactN
     return (
         <button
             onClick={onClick}
-            className={`w-full flex items-center gap-4 px-6 py-3 hover:bg-white/5 transition-colors group ${className}`}
+            className={`w-full flex items-center gap-4 px-6 py-3 hover:bg-white/[0.04] transition-colors group ${className}`}
         >
-            <div className="w-6 flex items-center justify-center text-white/30 group-hover:text-white/60 transition-colors">
+            <div className="w-6 flex items-center justify-center text-[#aaaaaa] group-hover:text-white transition-colors">
                 {icon}
             </div>
             <span className="text-[14px] font-medium text-white/80 group-hover:text-white">

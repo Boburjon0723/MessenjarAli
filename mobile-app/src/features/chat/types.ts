@@ -7,6 +7,7 @@ export interface Chat {
   /** API: private | group | channel */
   type?: string;
   avatarUrl?: string | null;
+  otherUserId?: string | null;
 }
 
 export interface Message {
@@ -21,5 +22,6 @@ export interface Message {
   /** To‘liq URL — fayl/rasmni yuklab ochish uchun */
   remoteFileUrl?: string | null;
   metadata?: any;
+  e2e?: boolean;
 }
 

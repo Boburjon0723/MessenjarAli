@@ -1,7 +1,6 @@
 'use client';
 
 import React from 'react';
-import { GlassCard } from '../../ui/GlassCard';
 import { GlassButton } from '../../ui/GlassButton';
 import { Award, DollarSign, Lock, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
@@ -29,18 +28,17 @@ export function ProfileWalletView({
     const { t } = useLanguage();
 
     return (
-        <GlassCard
-            className={`w-full h-full lg:h-auto lg:max-w-[420px] !p-0 border-none lg:border flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:!rounded-[25px] shadow-2xl animate-scale-up lg:border-white/10 text-white`}
-            style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
+        <div
+            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)]"
             onClick={(e) => e.stopPropagation()}
         >
-            <div className={`flex items-center gap-4 p-4 px-6 border-b border-white/10`}>
-                <button onClick={onBack} className={`text-white/40 hover:text-white transition-colors p-1`}><X className="h-6 w-6 rotate-90" /></button>
-                <h2 className="font-medium text-[19px]">{t('wallet')}</h2>
+            <div className="flex h-12 items-center gap-2 px-2">
+                <button type="button" onClick={onBack} className="flex h-10 w-10 items-center justify-center rounded-full text-[#aaaaaa] hover:bg-white/[0.08] hover:text-white"><X className="h-6 w-6 rotate-90" /></button>
+                <h2 className="font-medium text-[20px]">{t('wallet')}</h2>
             </div>
 
             <div className="overflow-y-auto custom-scrollbar flex-1 p-6 space-y-6 pb-10">
-                <div className="bg-gradient-to-br from-blue-600 to-indigo-600 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+                <div className="bg-[#8774e1] rounded-2xl p-6 relative overflow-hidden">
                     <div className="absolute -right-10 -bottom-10 w-32 h-32 bg-white/10 rounded-full blur-2xl"></div>
                     <div className="relative z-10 flex flex-col gap-1 text-center">
                         <span className="text-white/60 text-xs font-black uppercase tracking-widest">{t('available_balance')}</span>
@@ -64,10 +62,10 @@ export function ProfileWalletView({
 
                 <div className="bg-white/5 border border-white/10 rounded-2xl p-5 space-y-4">
                     <div className="flex items-center gap-3 mb-2">
-                        <div className="p-3 bg-accent-primary/20 rounded-xl text-[#00A884]"><Award className="h-5 w-5" /></div>
+                        <div className="p-3 bg-[#8774e1]/20 rounded-xl text-[#8774e1]"><Award className="h-5 w-5" /></div>
                         <div className="flex flex-col h-full items-start justify-center">
                             <span className="text-white font-bold leading-none">{t('specialist_subscription')}</span>
-                            <span className="text-[#00A884] font-black text-xs uppercase tracking-widest leading-none mt-1">{t('free_for_now')}</span>
+                            <span className="text-[#8774e1] font-medium text-xs mt-1">{t('free_for_now')}</span>
                         </div>
                     </div>
 
@@ -84,7 +82,7 @@ export function ProfileWalletView({
                     </GlassButton>
                 </div>
             </div>
-        </GlassCard>
+        </div>
     );
 }
 

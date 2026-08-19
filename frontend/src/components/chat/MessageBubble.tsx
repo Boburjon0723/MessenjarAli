@@ -1,11 +1,17 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useSyncExternalStore } from 'react';
 import MediaContextMenu from './MediaContextMenu';
 import { useNotification } from '@/context/NotificationContext';
 import { useLanguage } from '@/context/LanguageContext';
 import type { ChatMessage, ChatMessageMetadata } from '@/types/chat-message';
 import { getDisplayTimeForMessage, normalizeMessageType } from '@/lib/chat-message-cache';
+import { downloadChatFile } from '@/lib/download-file';
+import { classifyTelegramMessage } from '@/lib/telegram-message-kind';
+import { formatPhoneCallLabel, parsePhoneCallMeta } from '@/lib/phone-call-message';
+import { songPlayer } from '@/lib/song-player-store';
+import { apiFetch } from '@/lib/api';
+import { useConfirm } from '@/context/ConfirmContext';
 
 interface MessageBubbleProps {
     message: ChatMessage;
@@ -19,21 +25,28 @@ interface MessageBubbleProps {
     onMediaClick?: (url: string, type: 'image' | 'video' | 'file') => void;
     onForward?: (message: ChatMessage) => void;
     onDelete?: (message: ChatMessage) => void;
+    onEdit?: (message: ChatMessage) => void;
+    onPin?: (message: ChatMessage) => void;
     isContinuation?: boolean;
     onReplyClick?: (parentId: string) => void;
     activeAudioId?: string | null;
     onAudioPlay?: (id: string | null) => void;
-    /** Rasm yuklanganda scroll saqlash (chat oxirida bo‘lsa) */
-    onImageLoad?: () => void;
+    songPlaylist?: import('@/lib/song-player-store').SongTrack[];
+    onImageLoad?: (e?: React.SyntheticEvent<HTMLImageElement>) => void;
+    /** Guruh/kanalda avatar; shaxsiy chatda Telegram kabi yo‘q */
+    showPeerAvatar?: boolean;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message, chatId, onReply, isSelecting, isSelected, onSelect,
-    uploadProgress, onMediaClick, onForward, onDelete,
-    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad
+    uploadProgress, onMediaClick, onForward, onDelete, onEdit, onPin,
+    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad, showPeerAvatar = false, songPlaylist
 }) => {
     const { t, language } = useLanguage();
-    const { showError } = useNotification();
+    const { showError, showSuccess } = useNotification();
+    const { confirm } = useConfirm();
+    const [payLoading, setPayLoading] = useState(false);
+    const [paidPanelOpen, setPaidPanelOpen] = useState(false);
     const isOwn = message.sender === 'me';
     const fileMeta: ChatMessageMetadata = useMemo(() => {
         const md = message.metadata;
@@ -48,6 +61,34 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         return md;
     }, [message.metadata]);
 
+    const inviteKind = paidPanelOpen ? 'panel_open' : String(fileMeta.kind ?? '');
+
+    useEffect(() => {
+        setPaidPanelOpen(false);
+    }, [message.id, fileMeta.kind]);
+
+    const openConsultSession = () => {
+        const sessionId =
+            (fileMeta.sessionId != null && String(fileMeta.sessionId) !== ''
+                ? String(fileMeta.sessionId)
+                : null) ||
+            (fileMeta.chatId != null && String(fileMeta.chatId) !== ''
+                ? String(fileMeta.chatId)
+                : null) ||
+            (chatId ? String(chatId) : '');
+        if (!sessionId) {
+            showError("Xona ID topilmadi. Sahifani yangilab qayta urinib ko'ring.");
+            return;
+        }
+        const rawStyle = fileMeta.sessionStyle;
+        const styleStr = rawStyle != null ? String(rawStyle) : '';
+        const styleQs =
+            styleStr.trim() !== '' && styleStr.toLowerCase() !== 'mentor'
+                ? `&style=${encodeURIComponent(styleStr.trim())}`
+                : '';
+        window.location.href = `/messages?room=${encodeURIComponent(sessionId)}${styleQs}`;
+    };
+
     /** Faqat UI tarmoq tanlash: `img` → `image` (cache/legacy); shartlar message.text ga bog‘lanmaydi */
     const messageType = useMemo(() => normalizeMessageType(message.type), [message.type]);
 
@@ -60,34 +101,44 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
     }, [message.text]);
 
-    /**
-     * Audio UI faqat `voice` yoki `file` + audio mimetype/uzantisi.
-     * Eski xato: `message.text` faqat .mp3 bilan tekshirilgan — `image` ham audio bo‘lib qolishi mumkin edi.
-     */
-    const isAudioFile = useMemo(() => {
-        if (messageType === 'voice') return true;
-        if (messageType === 'image' || messageType === 'video') return false;
-        if (messageType === 'file') {
-            if (typeof fileMeta.mimetype === 'string' && fileMeta.mimetype.startsWith('audio/')) return true;
-            if (message.text && /\.(mp3|wav|m4a|ogg)$/i.test(message.text)) return true;
-        }
-        return false;
-    }, [messageType, fileMeta.mimetype, message.text]);
+    const kind = useMemo(
+        () =>
+            classifyTelegramMessage({
+                type: message.type,
+                mime: typeof fileMeta.mimetype === 'string' ? fileMeta.mimetype : '',
+                filename: `${fileMeta.name || ''} ${fileMeta.file_name || ''} ${message.text || ''}`,
+            }),
+        [message.type, fileMeta.mimetype, fileMeta.name, fileMeta.file_name, message.text]
+    );
+    const isMusic = kind === 'song';
+    const isVoiceBubble = kind === 'voice';
+    const [localPlaying, setLocalPlaying] = useState(false);
+    const [duration, setDuration] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const [mediaLoaded, setMediaLoaded] = useState(false);
+    const songState = useSyncExternalStore(songPlayer.subscribe, songPlayer.getSnapshot, songPlayer.getSnapshot);
+    const songActive = isMusic && songState.track?.id === message.id;
+    const isPlaying = isMusic ? (songActive && songState.playing) : localPlaying;
+    const songTime = songActive ? songState.currentTime : 0;
+    const metaDuration = typeof (fileMeta as { duration?: unknown }).duration === 'number'
+        ? Number((fileMeta as { duration?: number }).duration)
+        : 0;
+    const songDur = (songActive && songState.duration ? songState.duration : 0) || metaDuration || duration;
 
     const parentPreviewType = message.parentMessage
         ? normalizeMessageType(message.parentMessage.type ?? 'text')
         : 'text';
 
-    /** Vaqt: avvalo `created_at` / `createdAt` (getDisplayTimeForMessage), keyin legacy `time` */
     const displayTime = useMemo(() => {
         const loc = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
         return getDisplayTimeForMessage(message, loc);
     }, [message.time, message.created_at, message.createdAt, language]);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [duration, setDuration] = useState(0);
-    const [currentTime, setCurrentTime] = useState(0);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-    const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+    useEffect(() => {
+        setMediaLoaded(false);
+    }, [message.id, message.text]);
 
     const handleMediaContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -102,6 +153,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         const i = Math.floor(Math.log(bytes) / Math.log(k));
         return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
     };
+
+    const musicTitle = useMemo(() => {
+        const raw = String(fileMeta.name || fileMeta.file_name || '').trim();
+        if (raw) return raw.replace(/\.[^.]+$/, '') || raw;
+        const fromUrl = (mediaSrc || message.text || '').split('/').pop() || '';
+        try {
+            const decoded = decodeURIComponent(fromUrl.split('?')[0]);
+            return decoded.replace(/\.[^.]+$/, '') || decoded || t('file');
+        } catch {
+            return fromUrl.replace(/\.[^.]+$/, '') || t('file');
+        }
+    }, [fileMeta.name, fileMeta.file_name, mediaSrc, message.text, t]);
 
     const fileName = useMemo(() => {
         return (
@@ -128,18 +191,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const handleDownload = async () => {
         if (!mediaSrc) return;
         try {
-            const res = await fetch(mediaSrc);
-            const blob = await res.blob();
-            const u = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = u;
-            a.download = fileName || 'file';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(u);
+            await downloadChatFile(mediaSrc, fileName || 'file');
         } catch {
-            window.open(mediaSrc, '_blank');
+            showError(t('upload_error') || 'Download failed');
         }
     };
 
@@ -148,7 +202,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         if (!audio) return;
         const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
         const handleLoadedMetadata = () => setDuration(audio.duration);
-        const handleEnded = () => setIsPlaying(false);
+        const handleEnded = () => setLocalPlaying(false);
         audio.addEventListener('timeupdate', handleTimeUpdate);
         audio.addEventListener('loadedmetadata', handleLoadedMetadata);
         audio.addEventListener('ended', handleEnded);
@@ -158,13 +212,6 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             audio.removeEventListener('ended', handleEnded);
         };
     }, []);
-
-    const togglePlay = () => {
-        if (!audioRef.current) return;
-        if (isPlaying) audioRef.current.pause();
-        else audioRef.current.play();
-        setIsPlaying(!isPlaying);
-    };
 
     const formatDuration = (seconds: number) => {
         if (isNaN(seconds)) return "0:00";
@@ -235,42 +282,235 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     };
 
     useEffect(() => {
-        if (activeAudioId && activeAudioId !== message.id && isPlaying) {
-            setIsPlaying(false);
+        if (isMusic) return;
+        if (activeAudioId && activeAudioId !== message.id && localPlaying) {
+            setLocalPlaying(false);
             if (audioRef.current) audioRef.current.pause();
         }
-    }, [activeAudioId, message.id, isPlaying]);
+    }, [activeAudioId, message.id, localPlaying, isMusic]);
 
     const handlePlayPause = () => {
+        if (isMusic) {
+            if (!mediaSrc) return;
+            try { audioRef.current?.pause(); } catch { /* ignore */ }
+            songPlayer.play(
+                { id: message.id, url: mediaSrc, title: musicTitle, filename: fileName || `${musicTitle}.mp3` },
+                songPlaylist && songPlaylist.length ? songPlaylist : undefined
+            );
+            onAudioPlay?.(message.id);
+            return;
+        }
+        if (songPlayer.getSnapshot().playing) songPlayer.pause();
         if (!audioRef.current) return;
-        if (isPlaying) {
+        if (localPlaying) {
             audioRef.current.pause();
-            setIsPlaying(false);
+            setLocalPlaying(false);
             onAudioPlay?.(null);
         } else {
-            audioRef.current.play();
-            setIsPlaying(true);
+            void audioRef.current.play();
+            setLocalPlaying(true);
             onAudioPlay?.(message.id);
         }
     };
 
-    return (
-        <div id={`msg-${message.id}`} className={`message-row ${isOwn ? 'items-end' : 'items-start'} ${isContinuation ? 'mt-1' : 'mt-2'}`}>
-            <div className={`relative flex items-end gap-1 max-w-[92%] sm:max-w-[70%] min-w-0 group`}>
-                {isSelecting && (
+    const isService =
+        messageType === 'lesson_end' ||
+        messageType === 'lesson_start' ||
+        messageType === 'consult_panel_invite' ||
+        messageType === 'phone_call';
+
+    if (isService) {
+        const isConsult =
+            messageType === 'consult_panel_invite' ||
+            String(fileMeta.sessionStyle ?? '') === 'consult' ||
+            /\bkonsultatsiy/i.test(message.text || '');
+
+        if (messageType === 'phone_call') {
+            const phoneMeta = parsePhoneCallMeta(fileMeta);
+            const label = formatPhoneCallLabel(phoneMeta, isOwn, t);
+            const isMissedOrCancelled =
+                phoneMeta.status === 'missed' && !isOwn;
+            return (
+                <div id={`msg-${message.id}`} className="message-row items-center my-2">
                     <div
-                        className={`absolute inset-0 z-10 flex items-center ${isOwn ? 'justify-start pl-4' : 'justify-end pr-4'} bg-black/0 hover:bg-white/5 transition-colors rounded-xl cursor-pointer`}
-                        onClick={onSelect}
+                        className={`inline-flex max-w-[85%] items-center justify-center gap-1.5 rounded-full px-3 py-1 text-[13px] leading-[18px] ${
+                            isMissedOrCancelled && !isOwn
+                                ? 'bg-[#e53935]/20 text-[#ff8a80]'
+                                : 'bg-black/35 text-white/80'
+                        }`}
                     >
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-white/20'}`}>
-                            {isSelected && <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>}
+                        {phoneMeta.callType === 'video' ? (
+                            <svg className="h-3.5 w-3.5 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                        ) : (
+                            <svg className="h-3.5 w-3.5 shrink-0 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                        )}
+                        <span>{label}</span>
+                        <span className="text-[11px] text-white/45 tabular-nums">{displayTime}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        return (
+            <div id={`msg-${message.id}`} className="message-row items-center my-2">
+                <div className="max-w-[85%] rounded-[14px] bg-black/35 px-2.5 py-1.5 text-center text-[13px] leading-[18px] text-white">
+                    {renderText()}
+                </div>
+                {messageType === 'consult_panel_invite' &&
+                    inviteKind === 'panel_open' && (
+                        <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-3 shadow-lg">
+                            <div className="flex items-center justify-center gap-2 mb-3">
+                                <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <span className="text-[13px] font-bold text-emerald-300 uppercase tracking-wide">
+                                    {t('consult_paid_badge')}
+                                </span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={openConsultSession}
+                                className="w-full py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[13px] font-semibold flex items-center justify-center gap-2"
+                            >
+                                <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                {t('consult_join_session_btn')}
+                            </button>
+                        </div>
+                    )}
+                {messageType === 'consult_panel_invite' &&
+                    (inviteKind === 'payment_request' || fileMeta.serviceAmountMali) &&
+                    inviteKind !== 'panel_open' &&
+                    !isOwn && (
+                        <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-blue-500/30 bg-blue-950/40 p-3 shadow-lg">
+                            <p className="text-[13px] font-semibold text-blue-200 mb-2">
+                                {t('consult_payment_title')}
+                            </p>
+                            <p className="text-[15px] font-bold text-white tabular-nums mb-3">
+                                {Number(fileMeta.serviceAmountMali) || 0} MALI
+                            </p>
+                            <button
+                                type="button"
+                                disabled={payLoading}
+                                onClick={async () => {
+                                    const amount = Number(fileMeta.serviceAmountMali) || 0;
+                                    const expertId =
+                                        message.senderId ||
+                                        (message as { sender_id?: string }).sender_id;
+                                    if (!expertId || !chatId || amount <= 0) {
+                                        showError(t('server_error') as string);
+                                        return;
+                                    }
+                                    const ok = await confirm({
+                                        title: t('consult_payment_title') as any,
+                                        description: `${amount} MALI`,
+                                        confirmLabel: t('consult_pay_now_btn') as any,
+                                    });
+                                    if (!ok) return;
+                                    setPayLoading(true);
+                                    try {
+                                        const res = await apiFetch('/api/service/initiate', {
+                                            method: 'POST',
+                                            body: JSON.stringify({
+                                                expert_id: String(expertId),
+                                                amount_mali: amount,
+                                                chat_id: String(chatId),
+                                            }),
+                                        });
+                                        const data = await res.json().catch(() => ({}));
+                                        if (!res.ok) {
+                                            throw new Error(
+                                                typeof data?.message === 'string'
+                                                    ? data.message
+                                                    : t('server_error')
+                                            );
+                                        }
+                                        showSuccess(t('success_update') as string);
+                                        setPaidPanelOpen(true);
+                                    } catch (e) {
+                                        showError(
+                                            e instanceof Error ? e.message : (t('server_error') as string)
+                                        );
+                                    } finally {
+                                        setPayLoading(false);
+                                    }
+                                }}
+                                className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold disabled:opacity-50"
+                            >
+                                {payLoading ? '...' : t('consult_pay_now_btn')}
+                            </button>
+                        </div>
+                    )}
+                {(messageType === 'lesson_start' || messageType === 'consult_panel_invite') && (() => {
+                    const inviteExpired =
+                        fileMeta.invite_status === 'expired' || fileMeta.status === 'expired';
+                    const hideJoinForPayment =
+                        messageType === 'consult_panel_invite' &&
+                        (inviteKind === 'panel_open' ||
+                            inviteKind === 'payment_request' ||
+                            (Boolean(fileMeta.serviceAmountMali) && inviteKind !== 'panel_open' && !isOwn));
+                    if (hideJoinForPayment && !inviteExpired) return null;
+                    if (inviteExpired) {
+                        return (
+                            <div className="mt-1.5 flex flex-col items-center gap-0.5">
+                                <button
+                                    type="button"
+                                    disabled
+                                    className="rounded-full bg-[#212121]/60 px-4 py-1.5 text-[14px] font-medium text-white/35 cursor-not-allowed"
+                                >
+                                    {t('invite_expired')}
+                                </button>
+                                <span className="text-[11px] text-white/40 max-w-[240px] text-center leading-snug">
+                                    {t('invite_expired_hint')}
+                                </span>
+                            </div>
+                        );
+                    }
+                    return (
+                    <button
+                        type="button"
+                        onClick={openConsultSession}
+                        className="mt-1.5 rounded-full bg-[#212121] px-4 py-1.5 text-[14px] font-medium text-[#8774e1] shadow-[0_1px_8px_rgba(0,0,0,0.25)]"
+                    >
+                        {isConsult ? t('joined_meeting') : t('joined_lesson')}
+                    </button>
+                    );
+                })()}
+            </div>
+        );
+    }
+
+    return (
+        <div
+            id={`msg-${message.id}`}
+            className={`message-row select-none ${isOwn ? 'items-end' : 'items-start'} ${isContinuation ? 'mt-0.5' : 'mt-2'} ${isSelecting ? 'cursor-pointer' : ''} ${isSelected ? 'bg-[#8774e1]/[0.08]' : ''}`}
+            onClick={isSelecting ? onSelect : undefined}
+        >
+            <div className={`relative flex items-end gap-1.5 max-w-[min(85%,30rem)] min-w-0 group ${isSelecting ? 'pointer-events-none' : ''}`}>
+                {isSelecting && (
+                    <div className={`absolute ${isOwn ? '-left-8' : '-left-8'} top-1/2 -translate-y-1/2 z-10 pointer-events-auto`}>
+                        <div className={`w-[22px] h-[22px] rounded-full border-2 flex items-center justify-center transition-all duration-150 ${
+                            isSelected
+                                ? 'bg-[#8774e1] border-[#8774e1] scale-100'
+                                : 'border-white/40 bg-transparent scale-90'
+                        }`}>
+                            {isSelected && (
+                                <svg className="w-3.5 h-3.5 text-white" viewBox="0 0 24 24" fill="none">
+                                    <path d="M5 13l4 4L19 7" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                            )}
                         </div>
                     </div>
                 )}
 
-                {!isOwn && (
+                {showPeerAvatar && !isOwn && (
                     !isContinuation ? (
-                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex-shrink-0 bg-blue-500/20 border border-white/10 flex items-center justify-center overflow-hidden text-[10px] font-bold">
+                        <div className="w-8 h-8 rounded-full flex-shrink-0 bg-[#8774e1] flex items-center justify-center overflow-hidden text-[12px] font-medium text-white">
                             {message.senderAvatar || message.sender_avatar || message.avatar ? (
                                 <img
                                     src={message.senderAvatar || message.sender_avatar || message.avatar}
@@ -281,42 +521,84 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     }}
                                 />
                             ) : null}
-                            <span className="text-blue-400">{(message.senderName || "?")[0].toUpperCase()}</span>
+                            <span>{(message.senderName || "?")[0].toUpperCase()}</span>
                         </div>
                     ) : (
-                        <div className="w-7 sm:w-8 flex-shrink-0" />
+                        <div className="w-8 flex-shrink-0" />
                     )
                 )}
 
-                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} gap-1 min-w-0 flex-1`}>
-                    {!isOwn && !isContinuation && message.senderName && (
-                        <span className="text-[10px] text-white/40 font-bold uppercase tracking-wider px-2">{message.senderName}</span>
+                <div className={`flex flex-col ${isOwn ? 'items-end' : 'items-start'} min-w-0 flex-1`}>
+                    {showPeerAvatar && !isOwn && !isContinuation && message.senderName && (
+                        <span className="px-2 pb-0.5 text-[13px] font-medium text-[#8774e1]">{message.senderName}</span>
                     )}
 
-                    <div className={`message-bubble relative shadow-sm overflow-hidden min-w-0
-                        ${messageType === 'image' || messageType === 'video' ? 'rounded-2xl' : 'px-4 py-3 rounded-2xl'}
-                        ${isOwn ? 'bg-blue-600 text-white rounded-br-sm' : 'bg-white/10 backdrop-blur-xl text-white border border-white/5 rounded-bl-sm'}
+                    {messageType === 'sticker' ? (
+                        <div className="relative" onContextMenu={isSelecting ? undefined : handleMediaContextMenu}>
+                            {!mediaLoaded && (
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="h-8 w-8 rounded-full border-2 border-white/20 border-t-white/70 animate-spin" />
+                                </div>
+                            )}
+                            <img
+                                src={mediaSrc || message.text}
+                                alt=""
+                                className={`w-[150px] h-[150px] object-contain drop-shadow-lg ${mediaLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity`}
+                                loading="lazy"
+                                onLoad={() => setMediaLoaded(true)}
+                                onError={() => setMediaLoaded(true)}
+                            />
+                            <div className="absolute bottom-[2px] right-[2px] flex items-center gap-0.5 rounded px-1 bg-black/35">
+                                <span className="text-[11px] text-white/90 leading-none whitespace-nowrap">{displayTime}</span>
+                                {isOwn && (
+                                    message.isPending ? (
+                                        <svg className="h-3.5 w-3.5 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                    ) : message.is_read ? (
+                                        <svg className="h-4 w-4 text-white" viewBox="0 0 18 18" fill="none">
+                                            <path d="M3.5 9.5l3 3 7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path d="M7 12.5l7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                    ) : (
+                                        <svg className="h-4 w-4 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
+                                        </svg>
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                    <div className={`message-bubble relative min-w-[56px] min-w-0 shadow-[0_1px_2px_rgba(16,35,47,0.3)]
+                        ${messageType === 'image' || messageType === 'video' ? 'overflow-hidden' : 'px-2 pt-1 pb-[18px]'}
+                        ${isOwn
+                            ? 'bg-[#8774e1] text-white rounded-[16px] rounded-br-[4px]'
+                            : 'bg-[#212121] text-white rounded-[16px] rounded-bl-[4px]'}
                     `} onContextMenu={isSelecting ? undefined : handleMediaContextMenu}>
 
                         {message.parentMessage && (
-                            <div className="mb-2 px-3 py-1.5 bg-black/10 border-l-2 border-blue-400 rounded-lg cursor-pointer hover:bg-black/20 transition-colors"
+                            <div className="mb-1.5 px-2 py-1 bg-black/15 border-l-2 border-white/80 rounded-r cursor-pointer hover:bg-black/25 transition-colors"
                                 onClick={(e) => {
                                     e.stopPropagation();
                                     const rid =
                                         message.parent_id ?? message.parentId ?? message.parentMessage?.id;
                                     if (rid) onReplyClick?.(String(rid));
                                 }}>
-                                <p className="text-[10px] font-bold text-blue-400 uppercase tracking-wider truncate">
-                                    {message.parentMessage.sender === (isOwn ? 'me' : 'them') ? t('me') : (message.parentMessage.senderName || t('interlocutor'))} {t('reply_to')}
+                                <p className="text-[13px] font-medium text-white/90 truncate">
+                                    {message.parentMessage.sender === (isOwn ? 'me' : 'them') ? t('me') : (message.parentMessage.senderName || t('interlocutor'))}
                                 </p>
-                                <p className="text-[11px] text-white/60 truncate italic">
+                                <p className="text-[13px] text-white/70 truncate">
                                     {parentPreviewType === 'text'
                                         ? message.parentMessage.text
                                         : parentPreviewType === 'image'
-                                          ? `🖼️ ${t('image')}`
+                                          ? `🖼 ${t('image')}`
                                           : parentPreviewType === 'video'
                                             ? `🎥 ${t('video')}`
-                                            : `📄 ${t('file')}`}
+                                            : parentPreviewType === 'voice'
+                                              ? `🎤 ${t('voice_message')}`
+                                              : parentPreviewType === 'sticker'
+                                                ? `✨ ${t('sticker') || 'Sticker'}`
+                                                : `📄 ${t('file')}`}
                                 </p>
                             </div>
                         )}
@@ -345,16 +627,22 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         {messageType === 'image' ? (
                             <div className="message-bubble-body">
                                 <div
-                                    className="image-wrapper relative group/img cursor-pointer"
+                                    className="image-wrapper relative group/img cursor-pointer min-h-[80px]"
                                     onClick={() => onMediaClick?.(mediaSrc, 'image')}
                                 >
+                                    {!mediaLoaded && (
+                                        <div className="absolute inset-0 z-[1] flex items-center justify-center bg-black/20 min-h-[120px]">
+                                            <div className="h-8 w-8 rounded-full border-2 border-white/20 border-t-white/80 animate-spin" />
+                                        </div>
+                                    )}
                                     {mediaSrc ? (
                                         <img
                                             src={mediaSrc}
                                             alt=""
                                             className="bg-white/5"
                                             decoding="async"
-                                            onLoad={onImageLoad}
+                                            onLoad={(e) => { setMediaLoaded(true); onImageLoad?.(e); }}
+                                            onError={() => setMediaLoaded(true)}
                                         />
                                     ) : (
                                         <div className="min-h-[120px] flex items-center justify-center bg-white/5 text-white/45 text-xs px-4">
@@ -383,54 +671,88 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     <div className="px-4 py-2 text-sm text-white/90 border-t border-white/5">{String(fileMeta.caption)}</div>
                                 )}
                             </div>
-                        ) : isAudioFile ? (
-                            <div className="message-bubble-body flex items-center gap-3 w-full py-2 px-1 min-w-0">
-                                <button onClick={handlePlayPause} className={`w-12 h-12 rounded-full flex items-center justify-center text-white shadow-lg active:scale-95 transition-all ${isPlaying ? 'bg-blue-600 shadow-blue-500/50' : 'bg-blue-500 hover:bg-blue-400'}`}>
+                        ) : isMusic ? (
+                            <div className="message-bubble-body flex items-center gap-3 w-full py-1 px-0.5 min-w-[240px]">
+                                <button
+                                    type="button"
+                                    onClick={handlePlayPause}
+                                    className={`relative w-12 h-12 rounded-full flex items-center justify-center shrink-0 active:scale-95 transition-colors ${isOwn ? 'bg-white/20 hover:bg-white/30 text-white' : 'bg-[#8774e1] hover:bg-[#7b68d9] text-white'}`}
+                                    aria-label={isPlaying ? 'Pause' : 'Play'}
+                                >
+                                    {isPlaying && songDur > 0 && (
+                                        <svg className="absolute inset-0 w-12 h-12 -rotate-90" viewBox="0 0 48 48">
+                                            <circle cx="24" cy="24" r="22" fill="none" stroke="currentColor" strokeOpacity="0.25" strokeWidth="2.5" />
+                                            <circle
+                                                cx="24" cy="24" r="22" fill="none" stroke="currentColor" strokeWidth="2.5"
+                                                strokeDasharray={`${2 * Math.PI * 22}`}
+                                                strokeDashoffset={`${2 * Math.PI * 22 * (1 - songTime / songDur)}`}
+                                                strokeLinecap="round"
+                                            />
+                                        </svg>
+                                    )}
                                     {isPlaying ? (
-                                        <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                        <svg className="h-5 w-5 relative" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
                                     ) : (
-                                        <svg className="h-6 w-6 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                        <svg className="h-6 w-6 ml-0.5 relative" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
                                     )}
                                 </button>
-                                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                    <div className="flex items-center justify-between gap-2 mb-1">
-                                        <p className="text-[13px] font-bold text-white truncate min-w-0">
-                                            {fileName}
-                                        </p>
-                                        <span className="text-[11px] font-bold text-white/60 tabular-nums flex-shrink-0">
-                                            {formatDuration(isPlaying ? currentTime : duration)}
-                                        </span>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[16px] leading-[21px] font-medium text-white truncate">{musicTitle}</p>
+                                    <p className={`text-[14px] leading-[18px] truncate ${isOwn ? 'text-white/70' : 'text-[#aaaaaa]'}`}>
+                                        {formatDuration(isPlaying ? songTime : songDur)}
+                                        {typeof fileMeta.size === 'number' && fileMeta.size > 0 ? ` • ${formatFileSize(fileMeta.size)}` : ''}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); void handleDownload(); }}
+                                    className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${isOwn ? 'text-white/80 hover:bg-white/10' : 'text-[#aaaaaa] hover:bg-white/10'}`}
+                                    title={t('save') as string}
+                                >
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ) : isVoiceBubble ? (
+                            <div className="message-bubble-body flex items-center gap-3 w-full py-1.5 px-0.5 min-w-[200px]">
+                                <button
+                                    type="button"
+                                    onClick={handlePlayPause}
+                                    className={`w-10 h-10 rounded-full flex items-center justify-center text-white shrink-0 active:scale-95 transition-colors ${isOwn ? 'bg-white/20 hover:bg-white/30' : 'bg-[#8774e1] hover:bg-[#7b68d9]'}`}
+                                >
+                                    {isPlaying ? (
+                                        <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                                    ) : (
+                                        <svg className="h-5 w-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                                    )}
+                                </button>
+                                <div className="flex-1 min-w-0 flex flex-col justify-center pr-10">
+                                    <div className="flex items-end gap-[2px] h-[22px] cursor-pointer" onClick={handleProgressClick}>
+                                        {Array.from({ length: 28 }, (_, i) => {
+                                            const seed = (message.id.charCodeAt(i % message.id.length) || 7) + i * 13;
+                                            const h = 4 + (seed % 18);
+                                            const filled = duration ? (i / 28) <= (currentTime / duration) : false;
+                                            const active = !isPlaying || filled;
+                                            return (
+                                                <span
+                                                    key={i}
+                                                    className={`w-[3px] rounded-full ${active ? (isOwn ? 'bg-white/90' : 'bg-[#8774e1]') : (isOwn ? 'bg-white/30' : 'bg-white/25')}`}
+                                                    style={{ height: `${h}px` }}
+                                                />
+                                            );
+                                        })}
                                     </div>
-                                    <div className="flex items-center gap-2 mb-1 cursor-pointer" onClick={handleProgressClick}>
-                                        <div className="flex-1 h-1.5 bg-white/20 hover:bg-white/30 rounded-full overflow-hidden transition-colors relative">
-                                            <div className="absolute top-0 left-0 h-full bg-blue-400" style={{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }} />
-                                        </div>
-                                    </div>
-                                    <div className="flex items-center justify-between mt-0.5">
-                                        <span className="text-[10px] font-bold text-white/50">{formatDuration(isPlaying ? currentTime : duration)}</span>
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[9px] font-bold text-white/30 uppercase">
-                                                {messageType === 'voice' ? t('active') : formatFileSize(typeof fileMeta.size === 'number' ? fileMeta.size : undefined)}
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation();
-                                                    void handleDownload();
-                                                }}
-                                                className="text-[9px] font-bold uppercase text-blue-300 hover:text-blue-200"
-                                            >
-                                                {t('save')}
-                                            </button>
-                                        </div>
-                                    </div>
+                                    <span className="text-[12px] mt-0.5 tabular-nums text-white/70">
+                                        {formatDuration(isPlaying ? currentTime : duration)}
+                                    </span>
                                 </div>
                                 <audio preload="metadata" ref={audioRef} src={mediaSrc || undefined} className="hidden" />
                             </div>
-                        ) : messageType === 'file' ? (
+                        ) : messageType === 'file' || kind === 'file' ? (
                             <div className="message-bubble-body flex items-center gap-4 w-full py-2 px-1 min-w-0 cursor-pointer group/file" onClick={() => {
                                 if (!message.isUploading) {
-                                    onMediaClick?.(mediaSrc, 'file');
+                                    void handleDownload();
                                 }
                             }}>
                                 <div className="w-12 h-12 rounded-2xl bg-white/10 group-hover/file:bg-blue-500/20 border border-white/5 transition-colors flex items-center justify-center text-blue-400 relative">
@@ -463,92 +785,37 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     </div>
                                 </div>
                             </div>
-                        ) : messageType === 'lesson_start' || messageType === 'consult_panel_invite' ? (
-                            <div className="message-bubble-body flex flex-col gap-2 w-full min-w-0">
-                                <p className="text-sm leading-relaxed font-semibold text-white">
-                                    {renderText()}
-                                </p>
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        const sessionId =
-                                            (fileMeta.sessionId != null && String(fileMeta.sessionId) !== ''
-                                                ? String(fileMeta.sessionId)
-                                                : null) ||
-                                            (fileMeta.chatId != null && String(fileMeta.chatId) !== ''
-                                                ? String(fileMeta.chatId)
-                                                : null) ||
-                                            (chatId ? String(chatId) : '');
-                                        if (!sessionId) {
-                                            showError("Xona ID topilmadi. Sahifani yangilab qayta urinib ko'ring.");
-                                            return;
-                                        }
-                                        const rawStyle = fileMeta.sessionStyle;
-                                        const styleStr = rawStyle != null ? String(rawStyle) : '';
-                                        const styleQs =
-                                            styleStr.trim() !== '' && styleStr.toLowerCase() !== 'mentor'
-                                                ? `&style=${encodeURIComponent(styleStr.trim())}`
-                                                : '';
-                                        window.location.href = `/messages?room=${encodeURIComponent(sessionId)}${styleQs}`;
-                                    }}
-                                    className="mt-2 w-full py-2 bg-blue-500 hover:bg-blue-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
-                                >
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    {(() => {
-                                        const isConsult =
-                                            messageType === 'consult_panel_invite' ||
-                                            String(fileMeta.sessionStyle ?? '') === 'consult' ||
-                                            /\bkonsultatsiy/i.test(message.text || '');
-                                        return isConsult ? t('joined_meeting') : t('joined_lesson');
-                                    })()}
-                                </button>
-                            </div>
-                        ) : messageType === 'lesson_end' ? (
-                            <div className="message-bubble-body w-full min-w-0 rounded-xl border border-emerald-500/30 bg-emerald-500/15 px-3 py-2.5">
-                                <p className="text-sm font-semibold leading-relaxed text-white">{renderText()}</p>
-                            </div>
                         ) : (
-                            <div className="message-bubble-body flex flex-col gap-1 w-full min-w-0">
-                                <p className="text-sm leading-relaxed">{renderText()}</p>
+                            <div className="message-bubble-body flex flex-col gap-0.5 w-full min-w-0">
+                                <p className="pr-12 text-[16px] leading-[21px]">{renderText()}</p>
                             </div>
                         )}
-                    </div>
-                    <div className="flex items-center gap-1 px-1 mt-0.5">
-                        <span className="text-[9px] text-white/30 font-bold">{displayTime}</span>
+                    <div className={`absolute bottom-[3px] right-[6px] flex items-center gap-0.5 ${messageType === 'image' || messageType === 'video' ? 'rounded px-1 bg-black/35' : ''}`}>
+                        {message.e2e && (
+                            <svg className="h-2.5 w-2.5 text-white/70" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                                <path d="M12 1a5 5 0 00-5 5v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V6a5 5 0 00-5-5zm-3 8V6a3 3 0 016 0v3H9z" />
+                            </svg>
+                        )}
+                        <span className={`text-[11px] leading-4 ${isOwn ? 'text-white/80' : 'text-[#aaaaaa]'}`}>{displayTime}</span>
                         {isOwn && (
                             message.isPending ? (
-                                <svg
-                                    className="h-3 w-3 text-white/40"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
+                                <svg className="h-3.5 w-3.5 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
                             ) : message.is_read ? (
-                                <div className="flex -space-x-1.5 opacity-90">
-                                    <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                    <svg className="h-3 w-3 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                                    </svg>
-                                </div>
+                                <svg className="h-4 w-4 text-white" viewBox="0 0 18 18" fill="none">
+                                    <path d="M3.5 9.5l3 3 7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                    <path d="M7 12.5l7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
                             ) : (
-                                <svg
-                                    className="h-3 w-3 text-white/50"
-                                    fill="none"
-                                    viewBox="0 0 24 24"
-                                    stroke="currentColor"
-                                >
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                                <svg className="h-4 w-4 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
                                 </svg>
                             )
                         )}
                     </div>
+                    </div>
+                    )}
                 </div>
             </div>
 
@@ -556,10 +823,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 <MediaContextMenu
                     x={contextMenu.x} y={contextMenu.y}
                     message={message}
+                    isOwn={isOwn}
                     onClose={() => setContextMenu(null)}
                     onReply={() => onReply?.(message)}
+                    onEdit={() => onEdit?.(message)}
                     onForward={() => onForward?.(message)}
                     onDelete={() => onDelete?.(message)}
+                    onSelect={onSelect}
+                    onPin={() => onPin?.(message)}
                 />
             )}
         </div>

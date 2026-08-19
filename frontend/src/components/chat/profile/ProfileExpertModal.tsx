@@ -116,7 +116,7 @@ export function ProfileExpertModal({
                         role="dialog"
                         aria-modal="true"
                         aria-labelledby="expert-profile-title"
-                        className="w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-[500px] rounded-none sm:rounded-[24px] shadow-2xl border-0 sm:border border-white/30 flex flex-col overflow-hidden text-white"
+                        className="w-full h-[100dvh] sm:h-auto sm:max-h-[90vh] max-w-lg rounded-none sm:rounded-[20px] shadow-2xl border-0 sm:border border-white/30 flex flex-col overflow-hidden text-white"
                         style={{
                             backgroundColor: 'rgba(255, 255, 255, 0.18)',
                             backdropFilter: 'blur(24px)',
@@ -125,11 +125,11 @@ export function ProfileExpertModal({
                         }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <div className="px-4 sm:px-8 pt-5 sm:pt-7 pb-4 flex-shrink-0 border-b border-white/10">
-                            <div className="flex items-center justify-between gap-4">
-                                <h3 id="expert-profile-title" className="text-white font-bold text-xl sm:text-2xl flex items-center gap-3">
-                                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white/10 border border-white/10">
-                                        <Award className="h-6 w-6 text-[#00A884]" />
+                        <div className="px-4 sm:px-6 pt-4 sm:pt-5 pb-3 flex-shrink-0 border-b border-white/10">
+                            <div className="flex items-center justify-between gap-3">
+                                <h3 id="expert-profile-title" className="text-white font-bold text-lg sm:text-xl flex items-center gap-2.5">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 border border-white/10">
+                                        <Award className="h-5 w-5 text-[#00A884]" />
                                     </span>
                                     {t('specialist_profile')}
                                 </h3>
@@ -144,56 +144,29 @@ export function ProfileExpertModal({
                         </div>
 
                         {(verifiedStatus === 'pending' || verifiedStatus === 'approved') && (
-                            <div className={`mx-4 sm:mx-8 mt-4 sm:mt-5 mb-2 p-4 rounded-[18px] flex flex-col gap-3 ${verifiedStatus === 'pending' ? 'bg-amber-500/[0.12] border border-amber-400/25' : 'bg-[#00A884]/10 border border-[#00A884]/30'}`}>
-                                <div className="flex items-center gap-3">
-                                    {verifiedStatus === 'pending' ? <Clock className="h-6 w-6 text-yellow-500" /> : <CheckCircle className="h-6 w-6 text-emerald-500" />}
-                                    <div className="flex flex-col">
-                                        <span className={`font-bold text-sm uppercase tracking-wider ${verifiedStatus === 'pending' ? 'text-yellow-500' : 'text-emerald-500'}`}>
-                                            {verifiedStatus === 'pending' ? t('wait_admin_generic') : t('verified')}
-                                        </span>
-                                        <span className="text-white/60 text-xs mt-0.5">
-                                            {verifiedStatus === 'pending' ? t('expert_pending_desc') : t('expert_confirmed_desc')}
-                                        </span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-between mt-1 text-[9px] text-white/60">
-                                    {[
-                                        { id: 'sent', label: t('step_sent') },
-                                        { id: 'review', label: t('step_review') },
-                                        { id: 'done', label: t('step_confirmed') }
-                                    ].map((step, index) => {
-                                        const isActive =
-                                            verifiedStatus === 'pending'
-                                                ? index <= 1
-                                                : verifiedStatus === 'approved'
-                                                    ? index <= 2
-                                                    : index === 0;
-                                        return (
-                                            <div key={step.id} className="flex-1 flex items-center">
-                                                <div className={`w-2.5 h-2.5 rounded-full mr-2 ${isActive ? 'bg-emerald-400' : 'bg-white/20'}`} />
-                                                <span className={`${isActive ? 'text-emerald-100' : 'text-white/30'}`}>{step.label}</span>
-                                                {index < 2 && (
-                                                    <div className={`flex-1 h-px ml-2 ${isActive ? 'bg-emerald-400/60' : 'bg-white/10'}`} />
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
+                            <div className={`mx-4 sm:mx-6 mt-2 mb-0.5 px-3 py-2 rounded-xl flex items-center gap-2 ${verifiedStatus === 'pending' ? 'bg-amber-500/[0.12] border border-amber-400/25' : 'bg-[#00A884]/10 border border-[#00A884]/30'}`}>
+                                {verifiedStatus === 'pending' ? <Clock className="h-4 w-4 text-yellow-500 shrink-0" /> : <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />}
+                                <span className={`font-bold text-xs ${verifiedStatus === 'pending' ? 'text-yellow-500' : 'text-emerald-500'}`}>
+                                    {verifiedStatus === 'pending' ? t('wait_admin_generic') : `✓ ${t('verified')}`}
+                                </span>
+                                {verifiedStatus === 'pending' && (
+                                    <span className="text-white/50 text-[11px] ml-1">{t('expert_pending_desc')}</span>
+                                )}
                             </div>
                         )}
 
-                        <div className="flex-1 overflow-y-auto px-4 sm:px-8 custom-scrollbar space-y-8 py-5 sm:py-6 min-h-0">
+                        <div className="flex-1 overflow-y-auto px-4 sm:px-6 custom-scrollbar space-y-4 py-3 sm:py-4 min-h-0">
                             {/* SECTION 1: BASIC INFO */}
-                            <div className="space-y-4">
-                                <h4 className="text-[#00A884] font-bold text-xs uppercase tracking-widest border-b border-white/15 pb-2">{t('basic_info')}</h4>
-                                <div className="space-y-4">
+                            <div className="space-y-3">
+                                <h4 className="text-[#00A884] font-bold text-[10px] uppercase tracking-widest border-b border-white/15 pb-1.5">{t('basic_info')}</h4>
+                                <div className="space-y-3">
                                     <div className="space-y-1.5">
                                         <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('profession_type')}</label>
                                         <select
                                             ref={professionRef}
                                             value={profession}
                                             onChange={(e) => setProfession(e.target.value)}
-                                            className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white focus:outline-none appearance-none border ${
+                                            className={`w-full bg-white/5 rounded-xl py-2 px-3 text-sm text-white focus:outline-none appearance-none border ${
                                                 expertErrors.profession ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
                                             }`}
                                         >
@@ -243,7 +216,7 @@ export function ProfileExpertModal({
                                             value={specializationDetails}
                                             onChange={(e) => setSpecializationDetails(e.target.value)}
                                             placeholder={expertFormPh.direction}
-                                            className={`w-full bg-white/5 border rounded-xl py-3.5 px-4 text-white placeholder:text-white/35 focus:outline-none transition-all ${
+                                            className={`w-full bg-white/5 border rounded-xl py-2 px-3 text-sm text-white placeholder:text-white/35 focus:outline-none transition-all ${
                                                 expertErrors.specialization ? 'border-red-500/70' : 'border-white/10 focus:border-[#00A884]'
                                             }`}
                                         />
@@ -260,7 +233,7 @@ export function ProfileExpertModal({
                                                 value={experience || 0}
                                                 onChange={(e) => setExperience(parseInt(e.target.value) || 0)}
                                                 placeholder={expertFormPh.experienceExample}
-                                                className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white placeholder:text-white/35 focus:outline-none border ${
+                                                className={`w-full bg-white/5 rounded-xl py-2 px-3 text-sm text-white placeholder:text-white/35 focus:outline-none border ${
                                                     expertErrors.experience ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
                                                 }`}
                                             />
@@ -271,8 +244,8 @@ export function ProfileExpertModal({
                                         <div className="space-y-1.5">
                                             <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('has_diploma_label')}</label>
                                             <div className="flex gap-2">
-                                                <button onClick={() => setHasDiploma(true)} className={`flex-1 py-3.5 rounded-xl border transition-all font-bold text-xs ${hasDiploma ? 'bg-accent-primary border-accent-primary text-white' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('yes_label')}</button>
-                                                <button onClick={() => setHasDiploma(false)} className={`flex-1 py-3.5 rounded-xl border transition-all font-bold text-xs ${!hasDiploma ? 'bg-red-500/20 border-red-500/40 text-red-500' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('no_label')}</button>
+                                                <button onClick={() => setHasDiploma(true)} className={`flex-1 py-2 rounded-xl border transition-all font-bold text-xs ${hasDiploma ? 'bg-accent-primary border-accent-primary text-white' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('yes_label')}</button>
+                                                <button onClick={() => setHasDiploma(false)} className={`flex-1 py-2 rounded-xl border transition-all font-bold text-xs ${!hasDiploma ? 'bg-red-500/20 border-red-500/40 text-red-500' : 'bg-white/5 border-white/10 text-white/40'}`}>{t('no_label')}</button>
                                             </div>
                                         </div>
                                     </div>
@@ -376,7 +349,7 @@ export function ProfileExpertModal({
                                                 type="number"
                                                 value={price || 0}
                                                 onChange={(e) => setPrice(parseInt(e.target.value) || 0)}
-                                                className={`w-full bg-white/5 rounded-xl py-3.5 px-4 text-white focus:outline-none border ${
+                                                className={`w-full bg-white/5 rounded-xl py-2 px-3 text-sm text-white focus:outline-none border ${
                                                     expertErrors.price ? 'border-red-500/70' : 'border-white/10 focus:border-accent-primary'
                                                 }`}
                                             />
@@ -386,7 +359,7 @@ export function ProfileExpertModal({
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{language === 'uz' ? 'Valyuta' : (language === 'ru' ? 'Валюта' : 'Currency')}</label>
-                                            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none appearance-none">
+                                            <select value={currency} onChange={(e) => setCurrency(e.target.value)} className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:border-accent-primary focus:outline-none appearance-none">
                                                 <option value="MALI" className="bg-[#121B22]">MALI</option>
                                                 <option value="UZS" className="bg-[#121B22]">UZS</option>
                                                 <option value="USD" className="bg-[#121B22]">USD</option>
@@ -399,7 +372,7 @@ export function ProfileExpertModal({
                                             value={serviceLanguages}
                                             onChange={(e) => setServiceLanguages(e.target.value)}
                                             placeholder={t('languages_list')}
-                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-4 text-white focus:border-accent-primary focus:outline-none"
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white focus:border-accent-primary focus:outline-none"
                                         />
                                     </div>
                                     <div className="space-y-1.5">
@@ -412,7 +385,7 @@ export function ProfileExpertModal({
                                                 <button
                                                     key={fmt.key}
                                                     onClick={() => setServiceFormat(fmt.key)}
-                                                    className={`flex-1 py-3 rounded-xl border transition-all text-[11px] font-bold ${
+                                                    className={`flex-1 py-2 rounded-xl border transition-all text-[11px] font-bold ${
                                                         serviceFormat === fmt.key
                                                             ? 'bg-[#00A884] border-[#00A884] text-white shadow-md'
                                                             : 'bg-white/5 border-white/15 text-white/60 hover:bg-white/10 hover:text-white/90'
@@ -541,7 +514,7 @@ export function ProfileExpertModal({
                                             value={specialtyDesc}
                                             onChange={(e) => setSpecialtyDesc(e.target.value)}
                                             placeholder={expertFormPh.listing}
-                                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 px-4 text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[140px] resize-none"
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[100px] resize-none"
                                         />
                                     </div>
                                     <div className="space-y-1.5">
@@ -550,28 +523,22 @@ export function ProfileExpertModal({
                                             value={bioExpert}
                                             onChange={(e) => setBioExpert(e.target.value)}
                                             placeholder={t('bio_expert_placeholder')}
-                                            className="w-full bg-white/5 border border-white/10 rounded-2xl py-3.5 px-4 text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[100px] resize-none"
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl py-2 px-3 text-sm text-white placeholder:text-white/35 focus:border-accent-primary focus:outline-none min-h-[80px] resize-none"
                                         />
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="flex-shrink-0 border-t border-white/10 bg-white/[0.06] px-4 sm:px-8 py-4 sm:py-5 flex flex-col gap-4">
-                            <div className="rounded-[14px] border border-amber-400/25 bg-amber-500/[0.1] px-3 py-3 flex items-start gap-3">
-                                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-300 flex-shrink-0 border border-amber-400/20">
-                                    <Bell className="h-4 w-4" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[10px] font-bold text-amber-300 uppercase tracking-wider mb-1">
-                                        {t('important_info')}
-                                    </p>
-                                    <p className="text-[11px] text-white/80 leading-snug">
-                                        {t('expert_free_hint')}
-                                    </p>
-                                </div>
+                        <div className="flex-shrink-0 border-t border-white/10 bg-white/[0.06] px-4 sm:px-6 py-3 flex flex-col gap-3">
+                            <div className="rounded-xl border border-amber-400/25 bg-amber-500/[0.1] px-3 py-2 flex items-center gap-2">
+                                <Bell className="h-3.5 w-3.5 text-amber-300 shrink-0" />
+                                <p className="text-[11px] text-white/80 leading-snug">
+                                    <span className="font-bold text-amber-300">{t('important_info')}: </span>
+                                    {t('expert_free_hint')}
+                                </p>
                             </div>
-                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                            <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-2">
                                 <button
                                     type="button"
                                     onClick={() => onClose()}

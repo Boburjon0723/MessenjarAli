@@ -2,6 +2,7 @@ import { io, Socket } from "socket.io-client";
 import { API_URL } from "./config";
 import { getToken } from "./auth-storage";
 import { showLocalNotification } from "./notifications";
+import { E2E_PLACEHOLDER, isE2eEnvelope } from "./e2e-envelope";
 
 let socket: Socket | null = null;
 export let currentChatId: string | null = null;
@@ -53,7 +54,9 @@ export const connectSocket = async () => {
          title = meta.name; // Shaxsiy sms bo'lsa uning ismi
       }
 
-      const text = msg.text || '📎 Tasvir/Fayl keldi';
+      const text = isE2eEnvelope(msg.metadata)
+        ? E2E_PLACEHOLDER
+        : msg.text || msg.content || "📎 Tasvir/Fayl keldi";
       showLocalNotification(title, text, 'chat', { chatId, type: meta?.type });
     }
   });
@@ -63,11 +66,27 @@ export const connectSocket = async () => {
     showLocalNotification('Hamyon 💰', "Sizning hisobingizda o'zgarishlar mavjud", 'wallet', data);
   });
 
-  // Oddiy tizim bildirishnomalari
+  // Tizim bildirishnomalari (murojaat, ariza, to'lov va h.k.)
   socket.on('new_notification', (data) => {
     const title = data.title || 'Bildirishnoma 🔔';
     const body = data.body || data.message || 'Sizga yangi xabar keldi';
-    showLocalNotification(title, body, 'default', data);
+    const payload =
+      typeof data?.data === 'string'
+        ? (() => {
+            try {
+              return JSON.parse(data.data);
+            } catch {
+              return {};
+            }
+          })()
+        : data?.data && typeof data.data === 'object'
+          ? data.data
+          : data;
+    const chatId = payload?.chatId ?? payload?.chat_id ?? data?.chatId ?? data?.chat_id;
+    const type = String(data?.type || '');
+    const channel =
+      chatId || /murojaat|application|listing|session|chat/i.test(type) ? 'chat' : 'default';
+    showLocalNotification(title, body, channel, { ...(payload || {}), chatId, type });
   });
 
   return socket;

@@ -25,7 +25,7 @@ export type AppearanceState = {
 export const useAppearanceStore = create<AppearanceState>()(
   persist(
     (set) => ({
-      themeId: "vibrant",
+      themeId: "pure_dark",
       panelBlur: 8,
       imageBlur: 20,
       backgroundUri: DEFAULT_PLATFORM_BACKGROUND,

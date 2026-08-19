@@ -4,6 +4,7 @@ import React from "react";
 import { usePathname } from "next/navigation";
 import WebAppInstallPrompt from "@/components/pwa/WebAppInstallPrompt";
 import AuthSessionRefresh from "@/components/auth/AuthSessionRefresh";
+import E2EKeyBootstrap from "@/components/auth/E2EKeyBootstrap";
 
 interface ClientShellProps {
   children: React.ReactNode;
@@ -19,6 +20,7 @@ export default function ClientShell({ children }: ClientShellProps) {
     >
       {children}
       <AuthSessionRefresh />
+      <E2EKeyBootstrap />
       <WebAppInstallPrompt />
     </div>
   );

@@ -31,6 +31,7 @@ import botRoutes from './api/routes/bot.routes';
 import botApiRoutes from './api/routes/botApi.routes';
 import settlementRoutes from './api/routes/settlement.routes';
 import proxyRoutes from './api/routes/proxy.routes';
+import cryptoRoutes from './api/routes/crypto.routes';
 import { setupSwagger } from './config/swagger';
 import { csrfProtect } from './middleware/csrf.middleware';
 import { isOriginAllowed, buildCorsAllowlist } from './config/corsOrigins';
@@ -53,7 +54,7 @@ app.use(
             if (!origin) return callback(null, true);
             if (isOriginAllowed(origin, httpCorsOrigins)) return callback(null, true);
             console.warn(`[CORS REJECTED] Origin: "${origin}"`);
-            return callback(new Error('CORS origin is not allowed'));
+            return callback(null, false);
         },
         credentials: true,
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
@@ -132,6 +133,7 @@ app.use('/api', desktopRoutes);
 app.use('/api', botRoutes);
 app.use('/api', botApiRoutes);
 app.use('/api/settlement/v1', settlementRoutes);
+app.use('/api/crypto', cryptoRoutes);
 app.use('/api', proxyRoutes);
 
 app.use((req, res) => {

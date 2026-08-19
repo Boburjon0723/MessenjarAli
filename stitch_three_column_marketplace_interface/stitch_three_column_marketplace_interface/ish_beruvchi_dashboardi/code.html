@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Employer Dashboard - Nexus Hub</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "surface": "#f9f9ff",
+                        "tertiary-fixed-dim": "#c0c1ff",
+                        "secondary": "#006c49",
+                        "inverse-primary": "#c3c0ff",
+                        "on-secondary-fixed-variant": "#005236",
+                        "inverse-on-surface": "#ecf1ff",
+                        "on-surface": "#111c2d",
+                        "error-container": "#ffdad6",
+                        "on-tertiary-fixed-variant": "#2f2ebe",
+                        "tertiary-container": "#4b4dd8",
+                        "on-tertiary-container": "#d9d8ff",
+                        "surface-tint": "#4d44e3",
+                        "surface-container-low": "#f0f3ff",
+                        "surface-variant": "#d8e3fb",
+                        "primary-fixed": "#e2dfff",
+                        "surface-container": "#e7eeff",
+                        "outline-variant": "#c7c4d8",
+                        "on-secondary": "#ffffff",
+                        "primary": "#3525cd",
+                        "inverse-surface": "#263143",
+                        "secondary-fixed": "#6ffbbe",
+                        "tertiary": "#3130c0",
+                        "on-primary-container": "#dad7ff",
+                        "on-error-container": "#93000a",
+                        "on-background": "#111c2d",
+                        "tertiary-fixed": "#e1e0ff",
+                        "on-tertiary-fixed": "#07006c",
+                        "on-primary-fixed-variant": "#3323cc",
+                        "on-secondary-fixed": "#002113",
+                        "on-surface-variant": "#464555",
+                        "on-tertiary": "#ffffff",
+                        "surface-bright": "#f9f9ff",
+                        "on-error": "#ffffff",
+                        "error": "#ba1a1a",
+                        "outline": "#777587",
+                        "surface-container-lowest": "#ffffff",
+                        "on-primary-fixed": "#0f0069",
+                        "surface-dim": "#cfdaf2",
+                        "on-secondary-container": "#00714d",
+                        "primary-fixed-dim": "#c3c0ff",
+                        "secondary-fixed-dim": "#4edea3",
+                        "primary-container": "#4f46e5",
+                        "surface-container-highest": "#d8e3fb",
+                        "surface-container-high": "#dee8ff",
+                        "background": "#f9f9ff",
+                        "secondary-container": "#6cf8bb"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "column-right-width": "360px",
+                        "stack-xs": "4px",
+                        "container-padding": "32px",
+                        "stack-sm": "8px",
+                        "column-center-width": "1fr",
+                        "gutter": "20px",
+                        "stack-md": "16px",
+                        "column-left-width": "280px"
+                    },
+                    "fontFamily": {
+                        "label-md": ["Inter"],
+                        "display-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "label-sm": ["Inter"],
+                        "headline-md": ["Inter"],
+                        "title-lg": ["Inter"],
+                        "headline-sm": ["Inter"],
+                        "body-sm": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-md": ["12px", { "lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600" }],
+                        "display-lg": ["36px", { "lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700" }],
+                        "body-md": ["16px", { "lineHeight": "24px", "fontWeight": "400" }],
+                        "label-sm": ["11px", { "lineHeight": "14px", "fontWeight": "500" }],
+                        "headline-md": ["24px", { "lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600" }],
+                        "title-lg": ["18px", { "lineHeight": "24px", "fontWeight": "600" }],
+                        "headline-sm": ["20px", { "lineHeight": "28px", "fontWeight": "600" }],
+                        "body-sm": ["14px", { "lineHeight": "20px", "fontWeight": "400" }]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-background text-on-surface font-body-md h-screen overflow-hidden flex flex-col">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-container-padding h-16 bg-surface border-b border-outline-variant transition-colors duration-200 ease-in-out">
+<div class="flex items-center gap-stack-md">
+<span class="text-title-lg font-title-lg font-bold text-primary">NexusPlatform</span>
+</div>
+<div class="flex items-center gap-stack-md text-on-surface-variant">
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">notifications</span></button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">settings</span></button>
+<button class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container-low transition-colors"><span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">help</span></button>
+<div class="w-8 h-8 rounded-full bg-surface-variant overflow-hidden border border-outline-variant ml-2 cursor-pointer">
+<img alt="User profile photo" class="w-full h-full object-cover" data-alt="A small, professional headshot of a user against a neutral grey background. The lighting is bright and even, casting soft shadows. The overall tone is corporate and approachable, fitting for an enterprise workspace dashboard profile picture." src="https://lh3.googleusercontent.com/aida-public/AB6AXuC5xfjrKmyCIBD2L6MyqN-Fcj8R0QKZNZLN53hJRWag9G1ButHNgl5wHAkGMdw2cFH4-aFH4pIfik24X-gguahS53xNl0NLTc2N6_59KeYSt4v0UkSZNYrk2wwIh77TlkkoLgYseatOHqecwk2T05Y4oIrSsiAfpbBPxYh-mLo0YehMRPMA61EaVVNfgG-aH9wdIPxPgUU2YdpMfMXA2h1EZgX_hcheDYjLsspqwPtwOJsTDuVUnru3jg"/>
+</div>
+</div>
+</header>
+<div class="flex pt-16 h-full w-full max-w-[1920px] mx-auto">
+<!-- SideNavBar (Left Column) -->
+<aside class="hidden xl:flex flex-col fixed left-0 top-16 h-[calc(100vh-64px)] w-[280px] bg-white border-r border-outline-variant py-stack-lg z-40">
+<div class="px-6 mb-8 flex items-center gap-4">
+<div class="w-10 h-10 rounded bg-primary flex items-center justify-center text-on-primary font-bold">NH</div>
+<div>
+<h2 class="text-headline-sm font-headline-sm text-primary">Nexus Hub</h2>
+<p class="text-label-md font-label-md text-on-surface-variant">Enterprise Workspace</p>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-2 px-2">
+<a class="flex items-center gap-stack-md bg-primary/5 text-primary border-l-4 border-primary px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">dashboard</span>
+<span class="text-label-md font-label-md">Ads Panel</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:bg-surface-container px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">work</span>
+<span class="text-label-md font-label-md">Jobs</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:bg-surface-container px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">storefront</span>
+<span class="text-label-md font-label-md">Marketplace</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:bg-surface-container px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">chat</span>
+<span class="text-label-md font-label-md">Chats</span>
+</a>
+<div class="mt-8 px-4">
+<button class="w-full bg-primary text-on-primary py-2 px-4 rounded-lg text-label-md font-label-md font-medium hover:bg-primary/90 transition-colors shadow-sm">
+                        Create New Listing
+                    </button>
+</div>
+</nav>
+<div class="mt-auto px-2 flex flex-col gap-2 pb-4">
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:bg-surface-container px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">archive</span>
+<span class="text-label-md font-label-md">Archive</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant hover:bg-surface-container px-4 py-3 transition-all duration-200" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 0;">contact_support</span>
+<span class="text-label-md font-label-md">Support</span>
+</a>
+</div>
+</aside>
+<!-- Main Content Area (Middle & Right Columns) -->
+<main class="flex-1 flex w-full xl:pl-[280px] h-full overflow-hidden">
+<!-- Middle Column: Candidate List -->
+<section class="flex-1 flex flex-col h-full bg-surface-container-lowest border-r border-outline-variant overflow-hidden min-w-0">
+<!-- Filters Header -->
+<div class="p-6 border-b border-outline-variant bg-white z-10 sticky top-0">
+<div class="flex justify-between items-center mb-6">
+<div>
+<h1 class="text-headline-md font-headline-md text-on-surface mb-1">Senior UX Designer</h1>
+<p class="text-body-sm font-body-sm text-on-surface-variant flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">location_on</span> New York, NY (Hybrid) • 45 Candidates
+                            </p>
+</div>
+<button class="p-2 rounded-lg border border-outline-variant hover:bg-surface-container-low text-on-surface transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined">filter_list</span>
+<span class="text-label-md font-label-md">Filters</span>
+</button>
+</div>
+<div class="flex gap-3 overflow-x-auto pb-2 scrollbar-hide">
+<button class="px-4 py-1.5 rounded-full bg-primary text-on-primary text-label-md font-label-md whitespace-nowrap transition-colors flex items-center gap-1 shadow-sm">
+                            Applied
+                            <span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container text-on-surface-variant text-label-md font-label-md whitespace-nowrap hover:bg-surface-variant transition-colors">
+                            Interviewed
+                        </button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container text-on-surface-variant text-label-md font-label-md whitespace-nowrap hover:bg-surface-variant transition-colors">
+                            Rejected
+                        </button>
+<button class="px-4 py-1.5 rounded-full bg-surface-container text-on-surface-variant text-label-md font-label-md whitespace-nowrap hover:bg-surface-variant transition-colors">
+                            Accepted
+                        </button>
+</div>
+</div>
+<!-- Candidate List Scrollable Area -->
+<div class="flex-1 overflow-y-auto p-4 space-y-3 bg-surface">
+<!-- Candidate Card 1 (Active) -->
+<div class="bg-white border-2 border-primary rounded-xl p-4 shadow-sm cursor-pointer relative group transition-all duration-200">
+<div class="absolute inset-0 bg-primary/5 rounded-lg pointer-events-none"></div>
+<div class="flex items-start justify-between relative z-10">
+<div class="flex gap-4 items-center">
+<div class="w-12 h-12 rounded-full bg-surface-variant overflow-hidden border border-outline-variant shrink-0">
+<img alt="Sarah Jenkins" class="w-full h-full object-cover" data-alt="A professional portrait of a female candidate wearing a blazer. The background is a blurred modern office setting. The lighting is soft and flattering, creating a high-quality, corporate-ready headshot suitable for a premium candidate profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA7kPbXY1ZnoPYyqKyvtXLcFgP6WKlyrJG4Ul7Pfzk7ecCXIv2XXYq_Y76OebXdfYSKh3YfdqE1vFw_MBs2nL2Ogma1N3ae0EiixDRYooexDAkkj1t4VNO_nExn1yOWSg9LrpXJrfZM1RodcsHw7wtYxUHDz46E-uW5nuI5B_SeoCxRQQuqOq_tfjv4LkhH5sd9ZSWE0HHrO1bSq6hY74ElCRoMV3oIRlLMkrrEER536vvqdukbw4Qcmw"/>
+</div>
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface mb-0.5">Sarah Jenkins</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Product Designer at TechFlow</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="inline-flex items-center gap-1 text-label-sm font-label-sm text-secondary bg-secondary-container/30 px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">verified</span> 94% Match
+                                        </span>
+<span class="text-label-sm font-label-sm text-outline">• Applied 2d ago</span>
+</div>
+</div>
+</div>
+<span class="material-symbols-outlined text-primary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</div>
+</div>
+<!-- Candidate Card 2 -->
+<div class="bg-white border border-outline-variant rounded-xl p-4 hover:border-primary hover:shadow-md cursor-pointer group transition-all duration-200">
+<div class="flex items-start justify-between">
+<div class="flex gap-4 items-center">
+<div class="w-12 h-12 rounded-full bg-surface-variant overflow-hidden border border-outline-variant shrink-0 flex items-center justify-center text-outline">
+<span class="text-title-lg font-title-lg">MJ</span>
+</div>
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface mb-0.5">Michael Chang</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Senior UX Researcher</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="inline-flex items-center gap-1 text-label-sm font-label-sm text-primary bg-primary-container/20 px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">psychiatry</span> 88% Match
+                                        </span>
+<span class="text-label-sm font-label-sm text-outline">• Applied 3d ago</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Candidate Card 3 -->
+<div class="bg-white border border-outline-variant rounded-xl p-4 hover:border-primary hover:shadow-md cursor-pointer group transition-all duration-200">
+<div class="flex items-start justify-between">
+<div class="flex gap-4 items-center">
+<div class="w-12 h-12 rounded-full bg-surface-variant overflow-hidden border border-outline-variant shrink-0">
+<img alt="David Miller" class="w-full h-full object-cover" data-alt="A professional headshot of a male candidate with glasses, smiling slightly. He is wearing a button-down shirt. The background is a clean, neutral white wall, providing a simple and focused portrait for a professional networking or recruiting context." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD21ALBMa8OwCsLu41Nw1MyBjLdNkrRSH3p6kikWD09lgkoo4Xzn3j0fuJVBYNiKgbksqeJ4QEWMWjkmFjiwuCQH-KG-BtBbg5IBl3pbZe3zNpsx47YeBSeN0CJ3O7y43VMbza0CWQLJXg10YZzFQbe2nzdd-eSk9nyCGHfVBXdDtNWgtgAQpt0bDVueSVixxVLxJasr2MaqaE6RhWaYBiPwdkf23-6MAzDvU-C2iLxnq39i5Mm_T1lSg"/>
+</div>
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface mb-0.5">David Miller</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">UI/UX Designer at CreativeMinds</p>
+<div class="flex items-center gap-2 mt-2">
+<span class="inline-flex items-center gap-1 text-label-sm font-label-sm text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
+<span class="material-symbols-outlined text-[14px]">analytics</span> 72% Match
+                                        </span>
+<span class="text-label-sm font-label-sm text-outline">• Applied 1w ago</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Right Column: Candidate Details -->
+<section class="w-[360px] lg:w-[480px] xl:w-[500px] hidden md:flex flex-col h-full bg-surface-container-lowest shadow-[-10px_0_15px_-3px_rgb(0,0,0,0.05)] z-20">
+<!-- Detail Header -->
+<div class="p-6 border-b border-outline-variant flex items-start gap-4 bg-white sticky top-0 z-10">
+<div class="w-16 h-16 rounded-full bg-surface-variant overflow-hidden border-2 border-primary shrink-0 relative">
+<img alt="Sarah Jenkins" class="w-full h-full object-cover" data-alt="A professional portrait of a female candidate wearing a blazer. The background is a blurred modern office setting. The lighting is soft and flattering, creating a high-quality, corporate-ready headshot suitable for a premium candidate profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuABwFVV2z_YVY9h0CRQOI7RZddcBGt4PMB5wHbUtd7Yv7BveFfysxUmQTgiR1HtPQI5UlUsjKOKMFCw2qyGu2Gbfs_YTyJJc2RdXYFcxzNbgj9PpGJ_3WhhCkJfA5ngJYbuLuMjUes516I26zDKLChALwCc7AqnuB_TZJVLQpq6cQ1eAbNGhB2eorWbkdREVdMtRfNO8jmpajMsk5yHIaMOyfSDWYHrXmrgi2qMsH_ZfZzVlhcsyPadAQ"/>
+</div>
+<div class="flex-1">
+<div class="flex justify-between items-start">
+<h2 class="text-headline-sm font-headline-sm text-on-surface mb-1">Sarah Jenkins</h2>
+<div class="flex gap-2">
+<button class="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-outline transition-colors"><span class="material-symbols-outlined text-[20px]">bookmark</span></button>
+<button class="w-8 h-8 rounded-full hover:bg-surface-container flex items-center justify-center text-outline transition-colors"><span class="material-symbols-outlined text-[20px]">more_vert</span></button>
+</div>
+</div>
+<p class="text-body-md font-body-md text-on-surface-variant mb-2">Product Designer at TechFlow</p>
+<div class="flex flex-wrap gap-2">
+<span class="text-label-sm font-label-sm bg-surface-container text-on-surface-variant px-2 py-1 rounded">Figma</span>
+<span class="text-label-sm font-label-sm bg-surface-container text-on-surface-variant px-2 py-1 rounded">Design Systems</span>
+<span class="text-label-sm font-label-sm bg-surface-container text-on-surface-variant px-2 py-1 rounded">User Research</span>
+</div>
+</div>
+</div>
+<!-- Scrollable Content -->
+<div class="flex-1 overflow-y-auto p-6 space-y-8 bg-surface">
+<!-- Match Analysis Bento -->
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface mb-4 flex items-center gap-2">
+<span class="material-symbols-outlined text-primary">analytics</span> AI Match Analysis
+                        </h3>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-white p-4 rounded-xl border border-outline-variant shadow-sm flex flex-col justify-center items-center text-center">
+<span class="text-display-lg font-display-lg text-secondary mb-1">94%</span>
+<span class="text-label-md font-label-md text-on-surface-variant uppercase tracking-wider">Overall Match</span>
+</div>
+<div class="flex flex-col gap-2">
+<div class="bg-white p-3 rounded-xl border border-outline-variant shadow-sm flex justify-between items-center">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Skills</span>
+<span class="text-label-md font-label-md text-secondary">Strong</span>
+</div>
+<div class="bg-white p-3 rounded-xl border border-outline-variant shadow-sm flex justify-between items-center">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Experience</span>
+<span class="text-label-md font-label-md text-secondary">Exact</span>
+</div>
+<div class="bg-white p-3 rounded-xl border border-outline-variant shadow-sm flex justify-between items-center">
+<span class="text-body-sm font-body-sm text-on-surface-variant">Culture Fit</span>
+<span class="text-label-md font-label-md text-primary">Good</span>
+</div>
+</div>
+</div>
+</div>
+<!-- CV Preview Section -->
+<div>
+<div class="flex justify-between items-center mb-4">
+<h3 class="text-title-lg font-title-lg text-on-surface flex items-center gap-2">
+<span class="material-symbols-outlined text-on-surface-variant">description</span> Resume
+                            </h3>
+<button class="text-primary text-label-md font-label-md hover:underline flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">download</span> Download PDF
+                            </button>
+</div>
+<!-- PDF Style Container -->
+<div class="bg-white rounded-xl border border-outline-variant shadow-sm p-4 h-[300px] overflow-hidden relative group">
+<!-- Faux PDF Content -->
+<div class="w-full h-[800px] bg-white border border-outline-variant/30 rounded scale-90 origin-top p-8 space-y-4 shadow-sm opacity-80 blur-[1px] group-hover:blur-0 transition-all duration-300">
+<div class="w-1/2 h-8 bg-surface-container rounded mb-8"></div>
+<div class="space-y-2">
+<div class="w-full h-4 bg-surface-container-low rounded"></div>
+<div class="w-5/6 h-4 bg-surface-container-low rounded"></div>
+<div class="w-full h-4 bg-surface-container-low rounded"></div>
+</div>
+<div class="w-1/3 h-6 bg-surface-container rounded mt-8 mb-4"></div>
+<div class="space-y-2">
+<div class="w-full h-4 bg-surface-container-low rounded"></div>
+<div class="w-3/4 h-4 bg-surface-container-low rounded"></div>
+</div>
+</div>
+<!-- Expand Overlay -->
+<div class="absolute inset-0 bg-gradient-to-t from-surface via-transparent to-transparent flex items-end justify-center pb-4 opacity-100 group-hover:opacity-0 transition-opacity">
+<button class="bg-white border border-outline-variant px-4 py-2 rounded-lg text-label-md font-label-md shadow-md flex items-center gap-2 hover:bg-surface-container-low">
+<span class="material-symbols-outlined text-[18px]">open_in_full</span> Expand View
+                                </button>
+</div>
+</div>
+</div>
+</div>
+<!-- Sticky Footer Actions -->
+<div class="p-4 border-t border-outline-variant bg-white mt-auto sticky bottom-0 z-20">
+<div class="flex gap-3">
+<button class="flex-1 bg-white border-2 border-primary text-primary text-label-md font-label-md py-3 rounded-lg hover:bg-primary/5 transition-colors text-center font-medium">
+                            Reject
+                        </button>
+<button class="flex-2 w-2/3 bg-primary text-on-primary text-label-md font-label-md py-3 rounded-lg hover:bg-primary/90 transition-colors shadow-md text-center font-medium flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">event</span> Schedule Interview
+                        </button>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>

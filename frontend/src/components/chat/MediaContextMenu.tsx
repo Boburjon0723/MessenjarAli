@@ -1,61 +1,50 @@
 'use client';
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNotification } from '@/context/NotificationContext';
+import { useLanguage } from '@/context/LanguageContext';
 import type { ChatMessage, ChatMessageMetadata } from '@/types/chat-message';
+import { getMessageCopyText, normalizeMessageType } from '@/lib/chat-message-cache';
+import { downloadChatFile } from '@/lib/download-file';
+import { classifyTelegramMessage } from '@/lib/telegram-message-kind';
 
 function parseMessageMetadata(raw: ChatMessage['metadata']): ChatMessageMetadata {
     if (raw == null) return {};
     if (typeof raw === 'string') {
-        try {
-            return JSON.parse(raw) as ChatMessageMetadata;
-        } catch {
-            return {};
-        }
+        try { return JSON.parse(raw) as ChatMessageMetadata; } catch { return {}; }
     }
     return raw;
-}
-
-function guessExtFromContentType(contentType?: string | null): string {
-    const ct = String(contentType || '').toLowerCase();
-    if (ct.includes('jpeg')) return '.jpg';
-    if (ct.includes('png')) return '.png';
-    if (ct.includes('webp')) return '.webp';
-    if (ct.includes('gif')) return '.gif';
-    if (ct.includes('mp4')) return '.mp4';
-    if (ct.includes('webm')) return '.webm';
-    if (ct.includes('mpeg') || ct.includes('mp3')) return '.mp3';
-    if (ct.includes('wav')) return '.wav';
-    if (ct.includes('ogg')) return '.ogg';
-    if (ct.includes('pdf')) return '.pdf';
-    if (ct.includes('zip')) return '.zip';
-    return '';
 }
 
 interface MediaContextMenuProps {
     x: number;
     y: number;
     message: ChatMessage;
+    isOwn?: boolean;
     onClose: () => void;
     onReply?: () => void;
+    onEdit?: () => void;
     onForward?: () => void;
     onDelete?: () => void;
+    onSelect?: () => void;
+    onPin?: () => void;
 }
 
 export default function MediaContextMenu({
-    x, y, message, onClose, onReply, onForward, onDelete
+    x, y, message, isOwn = false, onClose,
+    onReply, onEdit, onForward, onDelete, onSelect, onPin
 }: MediaContextMenuProps) {
-    const { showError, showSuccess } = useNotification();
+    const { showSuccess, showError } = useNotification();
+    const { t } = useLanguage();
     const menuRef = useRef<HTMLDivElement>(null);
+    const [pos, setPos] = useState({ left: x, top: y });
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-                onClose();
-            }
+            if (menuRef.current && !menuRef.current.contains(e.target as Node)) onClose();
         };
         const handleEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-
         document.addEventListener('mousedown', handleClickOutside);
         document.addEventListener('keydown', handleEsc);
         return () => {
@@ -64,201 +53,286 @@ export default function MediaContextMenu({
         };
     }, [onClose]);
 
-    // Adjust position so menu stays in viewport
-    const adjustedY = typeof window !== 'undefined' && y + 320 > window.innerHeight ? y - 280 : y;
-    const adjustedX = typeof window !== 'undefined' && x + 260 > window.innerWidth ? x - 240 : x;
+    useLayoutEffect(() => {
+        const el = menuRef.current;
+        if (!el) return;
+        const w = el.offsetWidth;
+        const h = el.offsetHeight;
+        const pad = 8;
+        setPos({
+            left: Math.min(Math.max(pad, x), window.innerWidth - w - pad),
+            top: Math.min(Math.max(pad, y), window.innerHeight - h - pad),
+        });
+    }, [x, y]);
 
-    const mediaUrl = (message.text || "").startsWith('http') ? message.text : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`;
-    const isMedia = message.type === 'image' || message.type === 'video' || message.type === 'voice' || message.type === 'file';
+    const type = normalizeMessageType(message.type);
+    const meta = parseMessageMetadata(message.metadata);
+    const kind = classifyTelegramMessage({
+        type: message.type,
+        mime: typeof meta.mimetype === 'string' ? meta.mimetype : '',
+        filename: `${meta.name || ''} ${meta.file_name || ''} ${message.text || ''}`,
+    });
+    const isImage = kind === 'image';
+    const isVideo = kind === 'video';
+    const isVoice = kind === 'voice';
+    const isFile = kind === 'file';
+    const isText = kind === 'text';
+    const canSave = kind === 'image' || kind === 'video' || kind === 'voice' || kind === 'file' || kind === 'song';
+    const copyText = getMessageCopyText(message);
+    const mediaUrl = (message.text || "").startsWith('http')
+        ? message.text
+        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`;
+
+    const handleCopyText = async () => {
+        try {
+            await navigator.clipboard.writeText(copyText);
+            showSuccess(t('msg_copied'));
+        } catch {
+            showError(t('error') || 'Copy failed');
+        }
+        onClose();
+    };
+
+    const handleCopyImage = async () => {
+        try {
+            const res = await fetch(mediaUrl);
+            const blob = await res.blob();
+            const clipType = blob.type && blob.type.startsWith('image/') ? blob.type : 'image/png';
+            await navigator.clipboard.write([new ClipboardItem({ [clipType]: blob })]);
+            showSuccess(t('msg_copied'));
+        } catch {
+            showError(t('error') || 'Copy failed');
+        }
+        onClose();
+    };
 
     const handleSaveAs = async () => {
-        if (!isMedia) return;
-        try {
-            const response = await fetch(mediaUrl);
-            const contentType = response.headers.get('content-type');
-
-            // If response is JSON, it's likely a 404/Error from the server
-            if (contentType && contentType.includes('application/json')) {
-                const errData = await response.json();
-                console.error('Download failed: Server returned error', errData);
-                showError("Xatolik: Fayl serverdan topilmadi (404).");
-                onClose();
-                return;
-            }
-
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-
-            const a = document.createElement('a');
-            a.href = blobUrl;
-            // Use metadata file name if available, otherwise fallback to URL filename
-            const meta = parseMessageMetadata(message.metadata);
-            let downloadName =
-                (typeof meta.file_name === 'string' && meta.file_name) ||
-                (typeof meta.name === 'string' && meta.name) ||
-                message.text.split('/').pop() ||
-                'media';
-            const ext = guessExtFromContentType(contentType);
-            if (ext && !/\.[a-z0-9]{2,5}$/i.test(downloadName)) {
-                downloadName += ext;
-            }
-            a.download = downloadName;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(blobUrl);
-        } catch (error) {
-            console.error('Download failed', error);
-            // Fallback to simple direct link if fetch fails
-            const a = document.createElement('a');
-            a.href = mediaUrl;
-            a.download = message.text.split('/').pop() || 'media';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
+        if (!canSave) return;
+        const meta = parseMessageMetadata(message.metadata);
+        let downloadName =
+            (typeof meta.file_name === 'string' && meta.file_name) ||
+            (typeof meta.name === 'string' && meta.name) ||
+            decodeURIComponent(String(message.text || '').split('/').pop()?.split('?')[0] || 'media');
+        if (!/\.[a-z0-9]{2,8}$/i.test(downloadName)) {
+            if (isImage) downloadName += '.jpg';
+            else if (isVideo) downloadName += '.mp4';
+            else if (isVoice) downloadName += '.ogg';
+            else if (isFile) downloadName += '.bin';
         }
-        onClose();
-    };
-
-    const handleCopy = async () => {
         try {
-            if (message.type === 'image') {
-                const res = await fetch(mediaUrl);
-                const blob = await res.blob();
-                await navigator.clipboard.write([
-                    new ClipboardItem({ [blob.type]: blob })
-                ]);
-            } else if (message.type === 'text') {
-                await navigator.clipboard.writeText(message.text);
-            } else {
-                await navigator.clipboard.writeText(mediaUrl);
-            }
+            await downloadChatFile(mediaUrl, downloadName);
         } catch {
-            navigator.clipboard.writeText(message.type === 'text' ? message.text : mediaUrl);
+            showError(t('upload_error') || 'Download failed');
         }
         onClose();
     };
 
-    const handleOpenFull = () => {
-        if (isMedia) {
-            window.open(mediaUrl, '_blank');
-        }
+    const handlePin = () => {
+        onPin?.();
         onClose();
     };
 
-    const handleShare = async () => {
-        if (navigator.share) {
-            try {
-                await navigator.share({
-                    title: 'ExpertLine',
-                    text: message.type === 'text' ? message.text : 'ExpertLine orqali fayl ulashildi',
-                    url: isMedia ? mediaUrl : window.location.href,
-                });
-            } catch (err) {
-                console.error('Sharing failed', err);
-            }
-        } else {
-            // Fallback: Copy link
-            handleCopy();
-            showSuccess('Ulashish havolasi nusxalandi');
-        }
+    const handleEdit = () => {
+        onEdit?.();
         onClose();
     };
 
-    const menuItems = [
-        {
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M3 10h10a2 2 0 012 2v8a2 2 0 01-2 2H3a2 2 0 01-2-2v-8a2 2 0 012-2z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M7 10v4m4-4v4" />
-                </svg>
-            ),
-            label: 'Javob berish',
-            action: () => { onReply?.(); onClose(); },
-        },
-        ...(isMedia ? [
-            {
-                icon: (
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                    </svg>
-                ),
-                label: 'Saqlash',
-                action: handleSaveAs,
-            },
-        ] : []),
-        {
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8 5l8 7-8 7V5z" />
-                </svg>
-            ),
-            label: 'Yuborish (Forward)',
-            action: () => { onForward?.(); onClose(); },
-        },
-        {
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
-                </svg>
-            ),
-            label: 'Ulashish (Share)',
-            action: handleShare,
-        },
-        {
-            icon: (
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.8} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                </svg>
-            ),
-            label: 'O\'chirish',
-            labelClass: 'text-red-400',
-            action: () => { onDelete?.(); onClose(); },
-        },
-    ];
+    type MenuItem = {
+        id: string;
+        icon: React.ReactNode;
+        label: string;
+        danger?: boolean;
+        action: () => void;
+    };
 
-    return (
-        <div
-            className="fixed z-[9999] pointer-events-none"
-            style={{ top: 0, left: 0, right: 0, bottom: 0 }}
-        >
+    const items: MenuItem[] = [];
+
+    // Reply
+    if (onReply) {
+        items.push({
+            id: 'reply',
+            icon: <IconReply />,
+            label: t('reply'),
+            action: () => { onReply(); onClose(); },
+        });
+    }
+
+    // Edit (only own text messages)
+    if (isOwn && isText && onEdit) {
+        items.push({
+            id: 'edit',
+            icon: <IconEdit />,
+            label: t('edit_msg'),
+            action: handleEdit,
+        });
+    }
+
+    if (copyText) {
+        items.push({
+            id: 'copy',
+            icon: <IconCopy />,
+            label: t('copy_text'),
+            action: handleCopyText,
+        });
+    }
+
+    if (isImage) {
+        items.push({
+            id: 'copy-image',
+            icon: <IconCopy />,
+            label: t('copy_image') || t('copy_text'),
+            action: handleCopyImage,
+        });
+    }
+
+    if (canSave) {
+        items.push({
+            id: 'save',
+            icon: <IconSave />,
+            label: t('save_file'),
+            action: handleSaveAs,
+        });
+    }
+
+    // Pin
+    items.push({
+        id: 'pin',
+        icon: <IconPin />,
+        label: t('pin_msg'),
+        action: handlePin,
+    });
+
+    // Forward
+    if (onForward) {
+        items.push({
+            id: 'forward',
+            icon: <IconForward />,
+            label: t('forward'),
+            action: () => { onForward(); onClose(); },
+        });
+    }
+
+    // Select
+    if (onSelect) {
+        items.push({
+            id: 'select',
+            icon: <IconSelect />,
+            label: t('select_messages'),
+            action: () => { onSelect(); onClose(); },
+        });
+    }
+
+    // Delete
+    if (onDelete) {
+        items.push({
+            id: 'delete',
+            icon: <IconDelete />,
+            label: t('delete'),
+            danger: true,
+            action: () => { onDelete(); onClose(); },
+        });
+    }
+
+    if (typeof document === 'undefined') return null;
+
+    return createPortal(
+        <>
+            <div
+                className="fixed inset-0 z-[9998]"
+                onMouseDown={onClose}
+                onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+            />
             <div
                 ref={menuRef}
-                className="absolute pointer-events-auto"
-                style={{ top: adjustedY, left: adjustedX }}
+                className="fixed z-[9999] min-w-[200px] overflow-hidden rounded-xl bg-[#212121] py-1 shadow-[0_2px_16px_rgba(0,0,0,0.45)]"
+                style={{ top: pos.top, left: pos.left }}
+                role="menu"
             >
-                {/* Glass menu card */}
-                <div
-                    className="rounded-2xl overflow-hidden shadow-2xl border border-white/10 min-w-[220px]"
-                    style={{
-                        background: 'rgba(28, 31, 44, 0.96)',
-                        backdropFilter: 'blur(32px)',
-                        WebkitBackdropFilter: 'blur(32px)',
-                    }}
-                >
-                    {menuItems.map((item, idx) => (
-                        <React.Fragment key={idx}>
-                            {idx === menuItems.length - 1 && (
-                                <div className="h-px bg-white/10 mx-3" />
-                            )}
-                            <button
-                                onClick={item.action}
-                                className="w-full flex items-center gap-3.5 px-4 py-3 hover:bg-white/8 active:bg-white/12 transition-colors text-left group"
-                                style={{ background: 'transparent' }}
-                            >
-                                <span className={`flex-shrink-0 ${item.labelClass ? 'text-red-400' : 'text-white/60'} group-hover:text-white transition-colors`}>
-                                    {item.icon}
-                                </span>
-                                <span className={`text-[14px] font-medium ${item.labelClass || 'text-white/85'}`}>
-                                    {item.label}
-                                </span>
-                            </button>
-                        </React.Fragment>
-                    ))}
-                </div>
+                {items.map((item, idx) => (
+                    <React.Fragment key={item.id}>
+                        {item.danger && idx > 0 && (
+                            <div className="h-px bg-white/[0.06] mx-3 my-0.5" />
+                        )}
+                        <button
+                            type="button"
+                            onClick={item.action}
+                            className="w-full flex items-center gap-4 px-4 py-[10px] hover:bg-white/[0.06] active:bg-white/[0.1] transition-colors text-left"
+                        >
+                            <span className={`flex-shrink-0 w-5 h-5 ${item.danger ? 'text-[#e53935]' : 'text-[#aaaaaa]'}`}>
+                                {item.icon}
+                            </span>
+                            <span className={`text-[15px] ${item.danger ? 'text-[#e53935]' : 'text-white'}`}>
+                                {item.label}
+                            </span>
+                        </button>
+                    </React.Fragment>
+                ))}
             </div>
-        </div>
+        </>,
+        document.body
     );
 }
 
+function IconReply() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z" fill="currentColor" />
+        </svg>
+    );
+}
 
+function IconEdit() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconCopy() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconSave() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconPin() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconForward() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M14 9V5l7 7-7 7v-4.1c-5 0-8.5 1.6-11 5.1 1-5 4-10 11-11z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconSelect() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" fill="currentColor" />
+        </svg>
+    );
+}
+
+function IconDelete() {
+    return (
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5">
+            <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" fill="currentColor" />
+        </svg>
+    );
+}

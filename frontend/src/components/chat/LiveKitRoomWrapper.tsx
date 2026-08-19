@@ -19,9 +19,11 @@ import { apiFetch } from '@/lib/api';
 interface LiveKitRoomWrapperProps {
     sessionId: string;
     onDisconnected: () => void;
+    /** Ovozli chaqiruv: faqat audio, video yo'q */
+    audioOnly?: boolean;
 }
 
-export default function LiveKitRoomWrapper({ sessionId, onDisconnected }: LiveKitRoomWrapperProps) {
+export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnly = false }: LiveKitRoomWrapperProps) {
     const [token, setToken] = useState("");
     const [wsUrl, setWsUrl] = useState("");
 
@@ -49,19 +51,25 @@ export default function LiveKitRoomWrapper({ sessionId, onDisconnected }: LiveKi
 
     return (
         <LiveKitRoom
-            video={true}
+            video={!audioOnly}
             audio={true}
             token={token}
             serverUrl={wsUrl}
-            // Use the default LiveKit components logic.
-            // Automatically manages connection handling
             data-lk-theme="default"
-            style={{ height: '100%', width: '100%', backgroundColor: 'transparent' }}
+            style={
+                audioOnly ?
+                    { position: 'absolute', width: 1, height: 1, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }
+                :   { height: '100%', width: '100%', backgroundColor: 'transparent' }
+            }
             onDisconnected={onDisconnected}
         >
-            <VideoConference />
-            {/* The RoomAudioRenderer takes care of track playback for all participants */}
-            <RoomAudioRenderer />
+            {audioOnly ?
+                <RoomAudioRenderer />
+            :   <>
+                    <VideoConference />
+                    <RoomAudioRenderer />
+                </>
+            }
         </LiveKitRoom>
     );
 }

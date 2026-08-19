@@ -30,6 +30,8 @@ import {
 } from "../chat-shell-menu";
 import { AvatarImage } from "../../../components/AvatarImage";
 import { getSocket, chatMetadataMap } from "../../../lib/socket";
+import { E2E_PLACEHOLDER, isE2eEnvelope } from "../../../lib/e2e-envelope";
+import { decryptListPreview } from "../../../lib/e2e-chat";
 import PagerView from "react-native-pager-view";
 import { useChatStore } from "../../../store/chatStore";
 import { useAuthLocale } from "../../auth/locale";
@@ -154,8 +156,13 @@ export function ChatListScreen({ navigation }: any) {
 
       const chat = chats.find(c => String(c.id) === String(chatId));
       if (chat) {
-          let text = msg.text || "📎 Rasm/Fayl";
-          if (text === "📎 Fayl" || text === "📎 Rasm/Fayl") text = t('msgFile');
+          let text = msg.text || msg.content || "📎 Rasm/Fayl";
+          if (isE2eEnvelope(msg.metadata)) {
+            text = E2E_PLACEHOLDER;
+            void decryptListPreview(String(msg.content || ""), msg.metadata, E2E_PLACEHOLDER).then((plain) => {
+              updateChatLocally(chatId, { lastMessage: plain });
+            });
+          } else if (text === "📎 Fayl" || text === "📎 Rasm/Fayl") text = t('msgFile');
           else if (text === "📷 Rasm") text = t('msgPhoto');
           else if (text === "🎤 Ovozli xabar") text = t('msgVoice');
 
@@ -578,22 +585,24 @@ const styles = StyleSheet.create({
   categoryChipTextActive: { color: "#0f172a" },
   loadingBox: { flex: 1, justifyContent: "center", alignItems: "center" },
   emptyList: { textAlign: "center", color: "rgba(255,255,255,0.45)", marginTop: 24, fontSize: 15 },
-  listPadding: { paddingHorizontal: 20, paddingBottom: 120 },
+  listPadding: { paddingHorizontal: 12, paddingBottom: 120 },
   chatItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.1)",
-    padding: 15,
-    borderRadius: 25,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)"
+    backgroundColor: "transparent",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+    borderRadius: 0,
+    marginBottom: 0,
+    borderWidth: 0,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.06)",
   },
   chatInfo: { marginLeft: 15, flex: 1 },
   chatInfoHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 2 },
   chatName: { color: "#fff", fontSize: 16, fontWeight: "bold", maxWidth: "80%" },
   chatTypeLabel: { color: "#38bdf8", fontSize: 10, marginLeft: 6, fontWeight: "bold", backgroundColor: "rgba(56, 189, 248, 0.15)", paddingHorizontal: 4, paddingVertical: 2, borderRadius: 4 },
-  unreadBadge: { backgroundColor: "#ef4444", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, minWidth: 20, alignItems: "center" },
+  unreadBadge: { backgroundColor: "#5288c1", borderRadius: 10, paddingHorizontal: 6, paddingVertical: 2, minWidth: 20, alignItems: "center" },
   unreadText: { color: "#fff", fontSize: 11, fontWeight: "bold" },
   chatMsg: { color: "rgba(255,255,255,0.5)", fontSize: 13, marginTop: 2 },
 

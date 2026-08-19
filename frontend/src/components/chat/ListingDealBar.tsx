@@ -225,8 +225,8 @@ export default function ListingDealBar({
   const amt = deal ? Number(deal.amount) : 0;
 
   return (
-    <div className="shrink-0 border-t border-emerald-500/25 bg-emerald-950/40 px-3 py-2.5 space-y-2">
-      <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-200/90">
+    <div className="mb-2 rounded-[24px] bg-[#212121] px-3 py-2.5 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)] space-y-2">
+      <p className="text-[13px] font-medium text-[#8774e1]">
         {t('escrow_title')}
       </p>
       {msg && <p className="text-[11px] text-white/80 leading-snug">{msg}</p>}
@@ -235,7 +235,7 @@ export default function ListingDealBar({
         <div className="flex flex-wrap gap-2">
           {(!deal || deal.status === 'pending_payment') && (
             <>
-              <div className="flex w-full sm:w-auto items-center gap-2">
+              <div className="inline-flex flex-wrap items-center gap-2">
                 <input
                   type="number"
                   min="1"
@@ -243,19 +243,20 @@ export default function ListingDealBar({
                   value={amountInput}
                   onChange={(e) => setAmountInput(e.target.value)}
                   placeholder={t('mali_amount') as string}
-                  className="w-full sm:w-[160px] px-3 py-2 rounded-xl bg-black/25 border border-white/20 text-white text-xs outline-none focus:border-emerald-400"
+                  size={Math.max(4, Math.min(12, String(amountInput || '100').length + 1))}
+                  className="inline-block w-auto min-w-[4ch] max-w-[12ch] px-2.5 py-1.5 rounded-xl bg-black/25 border border-white/20 text-white text-xs outline-none focus:border-emerald-400 tabular-nums"
                   disabled={loading}
                 />
-                <span className="text-[11px] text-white/70">MALI</span>
+                <span className="text-[11px] text-white/70 shrink-0">MALI</span>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={requestPay}
+                  className="inline-flex shrink-0 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold disabled:opacity-50"
+                >
+                  {t('request_payment')}
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={loading}
-                onClick={requestPay}
-                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold disabled:opacity-50"
-              >
-                {t('request_payment')}
-              </button>
             </>
           )}
           {deal &&

@@ -37,10 +37,8 @@ import { SupportScreen } from "./src/features/chat/screens/SupportScreen";
 import { JobListScreen } from "./src/features/jobs/screens/JobListScreen";
 import { ExpertDetailScreen } from "./src/features/dashboard/screens/ExpertDetailScreen";
 import { setupNotifications } from "./src/lib/notifications";
-
-
-
-// WebRTC globals are handled above
+import * as Notifications from 'expo-notifications';
+import { navigationRef, navigateToChatFromNotification } from "./src/lib/navigationRef";
 
 type RootStackParamList = {
   Login: undefined;
@@ -78,8 +76,20 @@ export default function App() {
   const lockTriggered = React.useRef(false);
 
   React.useEffect(() => {
-    // Ilova yonganda bildirishnomalarni va ovozli kanallarni ishga tushirish
     setupNotifications();
+
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as Record<string, unknown> | undefined;
+      const chatId =
+        (data?.chatId as string | undefined) ??
+        (data?.chat_id as string | undefined) ??
+        (typeof data?.data === 'object' && data?.data != null
+          ? ((data.data as Record<string, unknown>).chatId as string | undefined)
+          : undefined);
+      if (chatId) {
+        navigateToChatFromNotification(String(chatId));
+      }
+    });
 
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (
@@ -97,6 +107,7 @@ export default function App() {
     });
 
     return () => {
+      sub.remove();
       subscription.remove();
     };
   }, []);
@@ -104,7 +115,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
     <AuthLocaleProvider>
-    <NavigationContainer>
+    <NavigationContainer ref={navigationRef}>
       <Stack.Navigator
         initialRouteName="Login"
         screenOptions={{

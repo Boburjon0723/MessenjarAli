@@ -45,9 +45,16 @@ export const uploadFileWithProgress = (
                 } catch {
                     resolve(xhr.responseText);
                 }
-            } else {
-                reject(new Error(`Upload failed with status ${xhr.status}`));
+                return;
             }
+            let serverMsg = '';
+            try {
+                const parsed = JSON.parse(xhr.responseText);
+                serverMsg = parsed?.message || parsed?.error || '';
+            } catch { /* ignore */ }
+            const err = new Error(serverMsg || `Upload failed with status ${xhr.status}`) as Error & { status?: number };
+            err.status = xhr.status;
+            reject(err);
         };
 
         xhr.onerror = () => reject(new Error('Network error during upload'));
@@ -56,3 +63,26 @@ export const uploadFileWithProgress = (
         xhr.send(formData);
     });
 };
+
+function sleep(ms: number) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
+/** 429 da 2 marta qayta urinadi. */
+export async function uploadFileWithRetry(
+    endpoint: string,
+    formData: FormData,
+    onProgress?: (progress: UploadProgress) => void
+): Promise<any> {
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+            return await uploadFileWithProgress(endpoint, formData, onProgress);
+        } catch (err: any) {
+            lastErr = err;
+            if (err?.status !== 429 || attempt === 2) throw err;
+            await sleep(1500 * (attempt + 1));
+        }
+    }
+    throw lastErr;
+}

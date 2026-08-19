@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>NexusPlatform - Jobs</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+          darkMode: "class",
+          theme: {
+            extend: {
+              "colors": {
+                      "on-primary": "#ffffff",
+                      "surface": "#f9f9ff",
+                      "tertiary-fixed-dim": "#c0c1ff",
+                      "secondary": "#006c49",
+                      "inverse-primary": "#c3c0ff",
+                      "on-secondary-fixed-variant": "#005236",
+                      "inverse-on-surface": "#ecf1ff",
+                      "on-surface": "#111c2d",
+                      "error-container": "#ffdad6",
+                      "on-tertiary-fixed-variant": "#2f2ebe",
+                      "tertiary-container": "#4b4dd8",
+                      "on-tertiary-container": "#d9d8ff",
+                      "surface-tint": "#4d44e3",
+                      "surface-container-low": "#f0f3ff",
+                      "surface-variant": "#d8e3fb",
+                      "primary-fixed": "#e2dfff",
+                      "surface-container": "#e7eeff",
+                      "outline-variant": "#c7c4d8",
+                      "on-secondary": "#ffffff",
+                      "primary": "#3525cd",
+                      "inverse-surface": "#263143",
+                      "secondary-fixed": "#6ffbbe",
+                      "tertiary": "#3130c0",
+                      "on-primary-container": "#dad7ff",
+                      "on-error-container": "#93000a",
+                      "on-background": "#111c2d",
+                      "tertiary-fixed": "#e1e0ff",
+                      "on-tertiary-fixed": "#07006c",
+                      "on-primary-fixed-variant": "#3323cc",
+                      "on-secondary-fixed": "#002113",
+                      "on-surface-variant": "#464555",
+                      "on-tertiary": "#ffffff",
+                      "surface-bright": "#f9f9ff",
+                      "on-error": "#ffffff",
+                      "error": "#ba1a1a",
+                      "outline": "#777587",
+                      "surface-container-lowest": "#ffffff",
+                      "on-primary-fixed": "#0f0069",
+                      "surface-dim": "#cfdaf2",
+                      "on-secondary-container": "#00714d",
+                      "primary-fixed-dim": "#c3c0ff",
+                      "secondary-fixed-dim": "#4edea3",
+                      "primary-container": "#4f46e5",
+                      "surface-container-highest": "#d8e3fb",
+                      "surface-container-high": "#dee8ff",
+                      "background": "#f9f9ff",
+                      "secondary-container": "#6cf8bb"
+              },
+              "borderRadius": {
+                      "DEFAULT": "0.125rem",
+                      "lg": "0.25rem",
+                      "xl": "0.5rem",
+                      "full": "0.75rem"
+              },
+              "spacing": {
+                      "stack-lg": "24px",
+                      "column-right-width": "360px",
+                      "stack-xs": "4px",
+                      "container-padding": "32px",
+                      "stack-sm": "8px",
+                      "column-center-width": "1fr",
+                      "gutter": "20px",
+                      "stack-md": "16px",
+                      "column-left-width": "280px"
+              },
+              "fontFamily": {
+                      "label-md": ["Inter"],
+                      "display-lg": ["Inter"],
+                      "body-md": ["Inter"],
+                      "label-sm": ["Inter"],
+                      "headline-md": ["Inter"],
+                      "title-lg": ["Inter"],
+                      "headline-sm": ["Inter"],
+                      "body-sm": ["Inter"]
+              },
+              "fontSize": {
+                      "label-md": ["12px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                      "display-lg": ["36px", {"lineHeight": "44px", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                      "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                      "label-sm": ["11px", {"lineHeight": "14px", "fontWeight": "500"}],
+                      "headline-md": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                      "title-lg": ["18px", {"lineHeight": "24px", "fontWeight": "600"}],
+                      "headline-sm": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                      "body-sm": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+              }
+            }
+          }
+        }
+    </script>
+<style>
+        body { background-color: #F9FAFB; } /* Level 0 Background */
+        .card-surface { background-color: #ffffff; border: 1px solid #E2E8F0; }
+        .card-hover:hover { border-color: #3525cd; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); }
+        .scroll-hidden::-webkit-scrollbar { display: none; }
+        .scroll-hidden { -ms-overflow-style: none; scrollbar-width: none; }
+    </style>
+</head>
+<body class="font-body-md text-on-surface antialiased bg-background overflow-hidden h-screen flex flex-col">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 flex justify-between items-center px-container-padding h-16 bg-surface border-b border-outline-variant flat no shadows transition-colors duration-200 ease-in-out">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary text-[24px] md:hidden cursor-pointer" data-icon="menu">menu</span>
+<div class="text-title-lg font-title-lg font-bold text-primary">NexusPlatform</div>
+</div>
+<div class="flex items-center gap-stack-md text-on-surface-variant">
+<button class="hover:bg-surface-container-low p-2 rounded-full transition-colors"><span class="material-symbols-outlined" data-icon="notifications">notifications</span></button>
+<button class="hover:bg-surface-container-low p-2 rounded-full transition-colors"><span class="material-symbols-outlined" data-icon="settings">settings</span></button>
+<button class="hover:bg-surface-container-low p-2 rounded-full transition-colors"><span class="material-symbols-outlined" data-icon="help">help</span></button>
+<img alt="User profile photo" class="w-8 h-8 rounded-full object-cover ml-2 border border-outline-variant" data-alt="A small circular profile picture of a professional looking individual in a brightly lit modern office setting. The person has a friendly expression and is wearing smart casual clothing, suitable for a corporate tech environment. High key lighting, clean background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAOGudc_3O-v_3z4GFSkoHAzGvkVN07kxHTZWjHxwUliZlvHxG1cnN7iWk-GXO5if9J92fghQlXXibstE4oXboVgXHniuW0BxqQaqbAA4OLzqfpE_Cf0Kian-qXVyo5cBkkiI3EpYEuye9gkALTGWvsTkTXLt2cQvpZLdD8xpSttlMWM-jn52pkTfAJhjGwhoxqMJXA_ZeQrdJB_y1WGX2T1FU5WWvZc6tv3B5i_klo8tLsH1FuQxGbWA"/>
+</div>
+</header>
+<div class="flex flex-1 pt-16 h-full max-w-[1920px] mx-auto w-full">
+<!-- Left Column: SideNavBar (Fixed) -->
+<aside class="hidden md:flex flex-col w-[280px] h-[calc(100vh-64px)] border-r border-outline-variant bg-white py-stack-lg flex-shrink-0">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3 mb-2">
+<div class="w-10 h-10 rounded bg-primary-container flex items-center justify-center text-on-primary">
+<span class="material-symbols-outlined">hub</span>
+</div>
+<div>
+<h2 class="text-headline-sm font-headline-sm text-primary">Nexus Hub</h2>
+<p class="text-label-sm font-label-sm text-on-surface-variant">Enterprise Workspace</p>
+</div>
+</div>
+</div>
+<nav class="flex-1 flex flex-col gap-1 px-2">
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="dashboard">dashboard</span>
+<span class="text-label-md font-label-md">Ads Panel</span>
+</a>
+<a class="flex items-center gap-stack-md bg-primary/5 text-primary border-l-4 border-primary px-4 py-3 rounded transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="work" data-weight="fill">work</span>
+<span class="text-label-md font-label-md">Jobs</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="storefront">storefront</span>
+<span class="text-label-md font-label-md">Marketplace</span>
+</a>
+<a class="flex items-center gap-stack-md text-on-surface-variant px-4 py-3 rounded hover:bg-surface-container transition-all duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="chat">chat</span>
+<span class="text-label-md font-label-md">Chats</span>
+</a>
+<div class="mt-8 mb-4 px-6">
+<h3 class="text-label-sm font-label-sm text-outline uppercase tracking-wider">Categories</h3>
+</div>
+<a class="flex items-center justify-between px-6 py-2 text-on-surface-variant hover:bg-surface-container rounded group" href="#">
+<span class="text-body-sm font-body-sm">Engineering</span>
+<span class="text-label-sm bg-surface-container-high px-2 py-0.5 rounded text-on-surface group-hover:bg-primary-container group-hover:text-on-primary transition-colors">24</span>
+</a>
+<a class="flex items-center justify-between px-6 py-2 text-on-surface-variant hover:bg-surface-container rounded group" href="#">
+<span class="text-body-sm font-body-sm">Marketing</span>
+<span class="text-label-sm bg-surface-container-high px-2 py-0.5 rounded text-on-surface group-hover:bg-primary-container group-hover:text-on-primary transition-colors">12</span>
+</a>
+<a class="flex items-center justify-between px-6 py-2 text-on-surface-variant hover:bg-surface-container rounded group" href="#">
+<span class="text-body-sm font-body-sm">Sales</span>
+<span class="text-label-sm bg-surface-container-high px-2 py-0.5 rounded text-on-surface group-hover:bg-primary-container group-hover:text-on-primary transition-colors">8</span>
+</a>
+</nav>
+<div class="mt-auto px-6 pt-4 border-t border-outline-variant">
+<button class="w-full bg-primary text-on-primary py-2 rounded-lg text-label-md font-label-md shadow-sm hover:shadow-md transition-shadow flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-[18px]">add</span>
+                    Create New Listing
+                </button>
+<div class="flex gap-4 mt-6 justify-center">
+<a class="text-on-surface-variant hover:text-primary transition-colors" href="#" title="Archive"><span class="material-symbols-outlined" data-icon="archive">archive</span></a>
+<a class="text-on-surface-variant hover:text-primary transition-colors" href="#" title="Support"><span class="material-symbols-outlined" data-icon="contact_support">contact_support</span></a>
+</div>
+</div>
+</aside>
+<!-- Middle Column: Job Feed (Fluid) -->
+<main class="flex-1 flex flex-col h-[calc(100vh-64px)] overflow-hidden bg-background">
+<!-- Sticky Search & Filters -->
+<div class="bg-background/95 backdrop-blur-sm p-gutter z-10 border-b border-outline-variant/30">
+<div class="relative mb-4">
+<span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-outline">search</span>
+<input class="w-full pl-10 pr-4 py-3 rounded-xl border border-outline-variant bg-white focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-body-md font-body-md shadow-sm" placeholder="Search roles, companies, or keywords..." type="text"/>
+</div>
+<div class="flex gap-2 overflow-x-auto scroll-hidden pb-1">
+<button class="flex items-center gap-1 bg-primary text-on-primary px-3 py-1.5 rounded-full text-label-sm font-label-sm whitespace-nowrap">
+                        Remote <span class="material-symbols-outlined text-[14px]">close</span>
+</button>
+<button class="flex items-center gap-1 bg-surface-container-high text-on-surface px-3 py-1.5 rounded-full text-label-sm font-label-sm whitespace-nowrap hover:bg-outline-variant transition-colors">
+                        Full-time
+                    </button>
+<button class="flex items-center gap-1 bg-surface-container-high text-on-surface px-3 py-1.5 rounded-full text-label-sm font-label-sm whitespace-nowrap hover:bg-outline-variant transition-colors border border-dashed border-outline">
+<span class="material-symbols-outlined text-[14px]">add</span> Add Filter
+                    </button>
+</div>
+</div>
+<!-- Scrollable Feed -->
+<div class="flex-1 overflow-y-auto p-gutter space-y-4 scroll-hidden pb-24">
+<!-- Job Card 1 (Active) -->
+<div class="card-surface rounded-xl p-4 cursor-pointer border-primary shadow-[0_4px_6px_-1px_rgb(0,0,0,0.1)] relative overflow-hidden group">
+<div class="absolute left-0 top-0 bottom-0 w-1 bg-primary"></div>
+<div class="flex justify-between items-start mb-3">
+<div class="flex gap-3">
+<img class="w-12 h-12 rounded-lg border border-outline-variant object-cover" data-alt="A modern, minimalist corporate logo for a tech company called TechFlow. The logo features a sleek, geometric blue symbol on a clean white background, framed within a subtly rounded square container. High contrast, professional." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAjVYPiaJ9fas_Hlj-VgFndlCcFCu0UVobfQOHyLBrL5pRIV9mf11Ly4Pi3Sc5JTIo9umylKg3ix1RR_Xlt7ThLG7hPCOvLSFXy7P7jCI8NKhEYnKAFogO6qUxbKFN935GykYuR3xUoqHZpUqluGzohpSjsuZ8axrZ9tJnBkfXUzmdzBAxUx8_4Gx2wZkjFDk47_t8gH5WD1pKm6Ak2zHXYBJ4uUCR2xPoB5qm4EIQ_XMjvEXHaQTcNwg"/>
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface group-hover:text-primary transition-colors">Senior UI Designer</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">TechFlow Inc.</p>
+</div>
+</div>
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">bookmark_border</span></button>
+</div>
+<div class="flex flex-wrap gap-2 mb-3">
+<span class="px-2 py-1 rounded bg-surface-container text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">location_on</span> San Francisco (Hybrid)</span>
+<span class="px-2 py-1 rounded bg-surface-container text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">payments</span> $120k - $150k</span>
+</div>
+<p class="text-body-sm font-body-sm text-on-surface-variant line-clamp-2">Looking for an experienced UI designer to lead our core product design system. Must have strong prototyping skills and a minimalist aesthetic.</p>
+<p class="text-label-sm font-label-sm text-outline mt-3">Posted 2 hours ago</p>
+</div>
+<!-- Job Card 2 -->
+<div class="card-surface rounded-xl p-4 cursor-pointer card-hover transition-all">
+<div class="flex justify-between items-start mb-3">
+<div class="flex gap-3">
+<div class="w-12 h-12 rounded-lg border border-outline-variant bg-surface-container flex items-center justify-center text-primary font-bold text-lg">N</div>
+<div>
+<h3 class="text-title-lg font-title-lg text-on-surface">Product Designer</h3>
+<p class="text-body-sm font-body-sm text-on-surface-variant">Nexus Dynamics</p>
+</div>
+</div>
+<button class="text-outline hover:text-primary transition-colors"><span class="material-symbols-outlined">bookmark_border</span></button>
+</div>
+<div class="flex flex-wrap gap-2 mb-3">
+<span class="px-2 py-1 rounded bg-surface-container text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">location_on</span> Remote</span>
+<span class="px-2 py-1 rounded bg-surface-container text-label-sm font-label-sm text-on-surface-variant flex items-center gap-1"><span class="material-symbols-outlined text-[14px]">payments</span> $90k - $120k</span>
+</div>
+<p class="text-label-sm font-label-sm text-outline mt-3">Posted 5 hours ago</p>
+</div>
+</div>
+</main>
+<!-- Right Column: Detail View (Fixed) -->
+<aside class="hidden xl:flex flex-col w-[360px] h-[calc(100vh-64px)] border-l border-outline-variant bg-white flex-shrink-0">
+<!-- Content here... simplified for effort 0.25 -->
+<div class="p-6 overflow-y-auto scroll-hidden flex-1">
+<img class="w-full h-32 rounded-xl object-cover mb-6" data-alt="A large, high-resolution header image for a company profile. It shows a bright, modern open-plan office space with large windows overlooking a city skyline. Employees are collaborating in a relaxed, tech-forward environment. Minimalist furniture, lots of natural light." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQYsaETniET7ElPdztahljv4cuitMIYAZ1hux4pJgZkKu7vjWVifOnlRhf0jtjQ5b7KU5yTM4m_Mnn4LBrPlgQcg-z7tub3cHjsfmEHKJN-glGFSi--Buq1q5OgT7tHVhcgFkP72XCPu3jV_WgpHXALx6JfrYrhmh_GFjyTCDN3lmgYyAqwlzQ4u0Z6lXAHLEgtg4iXzNcwP6X57Hedbsylwy4AOZswHqWl7OY_mgcqDYAgwp4Nvo28Q"/>
+<h2 class="text-headline-md font-headline-md text-on-surface mb-2">Senior UI Designer</h2>
+<p class="text-body-md font-body-md text-primary mb-6">TechFlow Inc. • San Francisco (Hybrid)</p>
+<div class="space-y-6">
+<div>
+<h4 class="text-title-lg font-title-lg mb-2 text-on-surface">About the role</h4>
+<p class="text-body-sm font-body-sm text-on-surface-variant">We are looking for a Senior UI Designer to define and evolve our design system...</p>
+</div>
+</div>
+</div>
+<div class="p-6 border-t border-outline-variant bg-surface/50 backdrop-blur">
+<button class="w-full bg-primary text-on-primary py-3 rounded-xl text-title-lg font-title-lg shadow-sm hover:shadow-md transition-all mb-3">Apply Now</button>
+<button class="w-full bg-white text-primary border border-primary py-3 rounded-xl text-title-lg font-title-lg hover:bg-surface-container-low transition-colors flex items-center justify-center gap-2">
+<span class="material-symbols-outlined">chat</span> Quick Chat
+                </button>
+</div>
+</aside>
+</div>
+</body></html>

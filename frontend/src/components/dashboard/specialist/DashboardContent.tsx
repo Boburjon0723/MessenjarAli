@@ -64,6 +64,8 @@ import { useLanguage } from "@/context/LanguageContext";
 import { TabItem } from "./TabItem";
 import DashboardQuizModal from "./DashboardQuizModal";
 import DashboardTopBar from "./DashboardTopBar";
+import ChatPaymentStatusCard from "@/components/chat/ChatPaymentStatusCard";
+import { mapSessionStatusToPhase, paymentPhaseLabelKey } from "@/lib/chat-payment-status";
 import {
     stripHtmlLite,
     flattenDdgRelatedTopics,
@@ -1949,6 +1951,7 @@ export function DashboardContent({
                             <p className="text-xs text-red-300">{consultAcceptModal.error}</p>
                         ) : consultAcceptModal.prep ? (
                             <div className="space-y-2 text-[11px] text-slate-300">
+                                <ChatPaymentStatusCard chatId={consultAcceptModal.chatId} t={t} />
                                 <div className="rounded-xl bg-white/5 border border-white/10 p-3 space-y-1.5">
                                     <div className="flex justify-between gap-2">
                                         <span className="text-slate-500">{t('consult_accept_modal_locked_balance')}</span>
@@ -1966,13 +1969,21 @@ export function DashboardContent({
                                     </div>
                                     {consultAcceptModal.prep.session ? (
                                         <div className="flex justify-between gap-2">
-                                            <span className="text-slate-500">{t('status_ongoing')}</span>
-                                            <span className="font-bold text-emerald-300">
-                                                {consultAcceptModal.prep.session.status} ·{' '}
-                                                {formatMaliUi(consultAcceptModal.prep.session.amountMali, language)} MALI
+                                            <span className="text-slate-500">{t('payment_status_title')}</span>
+                                            <span className="font-bold text-emerald-300 text-right">
+                                                {t(
+                                                    paymentPhaseLabelKey(
+                                                        mapSessionStatusToPhase(consultAcceptModal.prep.session.status)
+                                                    )
+                                                )}{' '}
+                                                · {formatMaliUi(consultAcceptModal.prep.session.amountMali, language)} MALI
                                             </span>
                                         </div>
-                                    ) : null}
+                                    ) : (
+                                        <p className="text-slate-500 leading-relaxed pt-0.5">
+                                            {t('consult_accept_modal_no_session_hint')}
+                                        </p>
+                                    )}
                                 </div>
                                 <p className="text-slate-500 leading-relaxed">
                                     {panelLabels.consultInviteTooltip || t('send_invite_tooltip')}

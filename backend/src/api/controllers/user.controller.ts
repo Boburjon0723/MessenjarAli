@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { pool } from '../../config/database';
+import { categoryKeywordPatterns } from '../../utils/job-category-keywords';
+import { PushTokenModel } from '../../models/postgres/PushToken';
 
 export const getUsers = async (req: Request, res: Response) => {
     try {
@@ -58,7 +60,14 @@ export const getUserById = async (req: Request, res: Response) => {
         const isBlocked = blockCheck.rows.length > 0;
         const blockedByMe = blockCheck.rows.some(r => r.blocker_id === currentUserId);
 
-        res.json({ ...result.rows[0], isBlocked, blockedByMe });
+        const row = { ...result.rows[0], isBlocked, blockedByMe };
+        const { shouldMaskPhoneBetweenUsers } = await import('../../services/listingPrivacy.service');
+        if (await shouldMaskPhoneBetweenUsers(String(currentUserId), String(userId))) {
+            delete row.phone;
+            row.listing_privacy = true;
+        }
+
+        res.json(row);
     } catch (e: any) {
         console.error('[getUserById] DATABASE ERROR:', e);
         res.status(500).json({ message: 'Server error' });
@@ -260,9 +269,90 @@ export const updateProfile = async (req: Request, res: Response) => {
     }
 };
 
+export const listExperts = async (req: Request, res: Response) => {
+    try {
+        const currentUserId = (req as any).user?.id;
+        const { q, category_id, type, limit = '80', offset = '0' } = req.query;
+
+        let query = `
+            SELECT u.id, u.name, u.surname, u.username, u.avatar_url,
+                   p.is_expert, p.profession, p.specialization, p.specialization_details,
+                   p.experience_years, p.service_price, p.hourly_rate, p.pricing_model, p.currency,
+                   p.verified_status, p.specialty_desc, p.expert_proposal, p.service_format,
+                   p.bio_expert, p.wiloyat, p.rating AS expert_rating
+            FROM users u
+            INNER JOIN user_profiles p ON u.id = p.user_id
+            WHERE p.is_expert = TRUE AND p.verified_status = 'approved'
+        `;
+        const params: any[] = [];
+        let pIndex = 1;
+
+        if (currentUserId) {
+            query += ` AND u.id != $${pIndex}`;
+            params.push(currentUserId);
+            pIndex++;
+        }
+
+        if (q && typeof q === 'string' && q.trim()) {
+            const qs = `%${q.trim()}%`;
+            query += ` AND (
+                u.name ILIKE $${pIndex} OR u.surname ILIKE $${pIndex} OR u.username ILIKE $${pIndex}
+                OR COALESCE(p.profession,'') ILIKE $${pIndex}
+                OR COALESCE(p.specialization,'') ILIKE $${pIndex}
+                OR COALESCE(p.specialization_details,'') ILIKE $${pIndex}
+                OR COALESCE(p.specialty_desc,'') ILIKE $${pIndex}
+            )`;
+            params.push(qs);
+            pIndex++;
+        }
+
+        const catNum = category_id != null ? Number(category_id) : NaN;
+        if (Number.isFinite(catNum) && catNum > 0) {
+            const patterns = categoryKeywordPatterns(catNum);
+            if (patterns?.length) {
+                query += ` AND (
+                    COALESCE(p.profession,'') ILIKE ANY($${pIndex}::text[])
+                    OR COALESCE(p.specialization,'') ILIKE ANY($${pIndex}::text[])
+                    OR COALESCE(p.specialization_details,'') ILIKE ANY($${pIndex}::text[])
+                    OR COALESCE(p.specialty_desc,'') ILIKE ANY($${pIndex}::text[])
+                )`;
+                params.push(patterns);
+                pIndex++;
+            }
+        }
+
+        if (type === 'online') {
+            query += ` AND (
+                COALESCE(p.service_format,'') ILIKE '%online%'
+                OR COALESCE(p.service_format,'') ILIKE '%video%'
+            )`;
+        } else if (type === 'offline') {
+            query += ` AND (
+                COALESCE(p.service_format,'') ILIKE '%offline%'
+                OR COALESCE(p.service_format,'') ILIKE '%joyida%'
+                OR COALESCE(p.wiloyat,'') <> ''
+            )`;
+        }
+
+        const lim = Math.min(Math.max(parseInt(String(limit), 10) || 80, 1), 100);
+        const off = Math.max(parseInt(String(offset), 10) || 0, 0);
+
+        query += ` ORDER BY p.rating DESC NULLS LAST, u.name ASC LIMIT $${pIndex} OFFSET $${pIndex + 1}`;
+        params.push(lim, off);
+
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (e) {
+        console.error('List Experts Error:', e);
+        res.status(500).json({ message: 'Failed to fetch experts' });
+    }
+};
+
 export const searchUsers = async (req: Request, res: Response) => {
     try {
         const { q, phone, expert, profession, searchBy } = req.query;
+        // @ts-ignore
+        const currentUserId = String(req.user?.id || '');
 
         let query = `
             SELECT u.id, u.name, u.surname, u.username, u.avatar_url, u.phone,
@@ -278,6 +368,28 @@ export const searchUsers = async (req: Request, res: Response) => {
         `;
         const params: any[] = [];
         let pIndex = 1;
+        let viewerParamIdx: number | null = null;
+
+        if (currentUserId) {
+            params.push(currentUserId);
+            viewerParamIdx = pIndex;
+            pIndex++;
+        }
+
+        const appendListingPeerExclude = () => {
+            if (viewerParamIdx == null) return;
+            query += `
+            AND NOT EXISTS (
+                SELECT 1 FROM chats lc
+                INNER JOIN chat_participants lcp1 ON lcp1.chat_id = lc.id AND lcp1.user_id = $${viewerParamIdx}::uuid
+                INNER JOIN chat_participants lcp2 ON lcp2.chat_id = lc.id AND lcp2.user_id = u.id
+                WHERE lc.type = 'private'
+                  AND (
+                    (lc.metadata->>'source' = 'expert_listing' AND lc.metadata->>'expert_id' IS NOT NULL)
+                    OR (lc.metadata->>'source' = 'job_listing' AND lc.metadata->>'intent' = 'apply')
+                  )
+            )`;
+        };
 
         const isExpertSearch = expert === 'true';
         const usernameOnly = searchBy === 'username';
@@ -287,6 +399,7 @@ export const searchUsers = async (req: Request, res: Response) => {
             query += ` AND u.phone = $${pIndex}`;
             params.push(phone);
             pIndex++;
+            appendListingPeerExclude();
         } else if (q && typeof q === 'string') {
             const queryStr = q.startsWith('@') ? q.substring(1) : q;
             if (queryStr.length < 2) {
@@ -304,6 +417,7 @@ export const searchUsers = async (req: Request, res: Response) => {
                 query += ` AND (u.phone ILIKE $${pIndex} OR u.username ILIKE $${pIndex} OR u.name ILIKE $${pIndex})`;
                 params.push(`%${queryStr}%`);
                 pIndex++;
+                appendListingPeerExclude();
             } else {
                 query += ` AND (u.username ILIKE $${pIndex} OR u.name ILIKE $${pIndex} OR u.surname ILIKE $${pIndex})`;
                 params.push(`%${queryStr}%`);
@@ -327,7 +441,21 @@ export const searchUsers = async (req: Request, res: Response) => {
         query += ` LIMIT 20`;
 
         const result = await pool.query(query, params);
-        res.json(result.rows);
+        const { shouldMaskPhoneBetweenUsers } = await import('../../services/listingPrivacy.service');
+        const rows = await Promise.all(
+            result.rows.map(async (row: Record<string, unknown>) => {
+                if (
+                    currentUserId &&
+                    (await shouldMaskPhoneBetweenUsers(currentUserId, String(row.id)))
+                ) {
+                    const next = { ...row };
+                    delete next.phone;
+                    return { ...next, listing_privacy: true };
+                }
+                return row;
+            })
+        );
+        res.json(rows);
     } catch (e) {
         console.error('Search Users Error:', e);
         res.status(500).json({ message: 'Search failed' });
@@ -402,15 +530,26 @@ export const getContacts = async (req: Request, res: Response) => {
         `, [userId]);
 
         // Map to standard user object but prioritize custom name if provided
-        const enriched = result.rows.map(row => ({
-            id: row.id,
-            name: row.custom_name || row.original_name,
-            surname: row.custom_surname || row.original_surname,
-            username: row.username,
-            avatar: row.avatar_url,
-            phone: row.phone,
-            status: 'offline' // For now, handle status in real-time if needed
-        }));
+        const { shouldMaskPhoneBetweenUsers } = await import('../../services/listingPrivacy.service');
+        const enriched = await Promise.all(
+            result.rows.map(async (row) => {
+                const contactId = String(row.id);
+                const base = {
+                    id: row.id,
+                    name: row.custom_name || row.original_name,
+                    surname: row.custom_surname || row.original_surname,
+                    username: row.username,
+                    avatar: row.avatar_url,
+                    phone: row.phone as string | undefined,
+                    status: 'offline' as const,
+                };
+                if (await shouldMaskPhoneBetweenUsers(String(userId), contactId)) {
+                    delete base.phone;
+                    return { ...base, listing_privacy: true };
+                }
+                return base;
+            })
+        );
 
         res.json(enriched);
     } catch (err) {
@@ -568,5 +707,18 @@ export const getChatStats = async (req: Request, res: Response) => {
     } catch (e) {
         console.error('Get Chat Stats Error:', e);
         res.status(500).json({ message: 'Statistikani olishda xatolik' });
+    }
+};
+
+export const registerPushToken = async (req: Request, res: Response) => {
+    try {
+        const userId = (req as any).user.id;
+        const { token, platform } = req.body;
+        if (!token) return res.status(400).json({ message: 'token is required' });
+        await PushTokenModel.upsert(userId, token, platform || 'unknown');
+        res.status(200).json({ ok: true });
+    } catch (e) {
+        console.error('Register Push Token Error:', e);
+        res.status(500).json({ message: 'Internal server error' });
     }
 };

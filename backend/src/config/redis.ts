@@ -1,8 +1,21 @@
 import { createClient } from 'redis';
 
+function isUsableRedisUrl(url: string | undefined): boolean {
+    const u = String(url || '').trim();
+    if (!u) return false;
+    if (u.includes('${{') || u.includes('${')) return false;
+    try {
+        // redis:// and rediss://
+        new URL(u);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
 // Determine if we should use Redis based on env var presence.
 // This ensures the app still runs if no Redis server is available locally.
-const redisUrl = process.env.REDIS_URL;
+const redisUrl = isUsableRedisUrl(process.env.REDIS_URL) ? String(process.env.REDIS_URL).trim() : '';
 
 export const redisClient = redisUrl ? createClient({ url: redisUrl }) : null;
 export const subClient = redisUrl ? redisClient?.duplicate() : null;

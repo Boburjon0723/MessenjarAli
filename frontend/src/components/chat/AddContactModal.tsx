@@ -1,36 +1,46 @@
-import React, { useState } from 'react';
-import { GlassCard } from '../ui/GlassCard';
+'use client';
+
+import React, { useEffect, useState } from 'react';
 import { AnimatedModal } from '../ui/AnimatedModal';
 import { X, User, Phone } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
+import { useLanguage } from '@/context/LanguageContext';
 
 interface AddContactModalProps {
     open: boolean;
     onClose: () => void;
-    onStartChat: (user: any) => void;
+    onStartChat: (user: any) => void | Promise<void>;
 }
 
 export default function AddContactModal({ open, onClose, onStartChat }: AddContactModalProps) {
+    const { t } = useLanguage();
     const [name, setName] = useState('');
     const [surname, setSurname] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('+998');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
 
+    useEffect(() => {
+        if (!open) return;
+        setName('');
+        setSurname('');
+        setPhoneNumber('+998');
+        setError('');
+        setLoading(false);
+    }, [open]);
+
     const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        let val = e.target.value;
-        // Keep only digits and +
-        val = val.replace(/[^\d+]/g, '');
+        let val = e.target.value.replace(/[^\d+]/g, '');
         if (!val.startsWith('+998')) {
-            val = '+998' + val.replace(/\+998/g, '');
+            val = '+998' + val.replace(/\+998/g, '').replace(/^\+/, '');
         }
-        setPhoneNumber(val.substring(0, 13)); // Prefix + 9 digits
+        setPhoneNumber(val.substring(0, 13));
     };
 
     const handleAddContact = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!name || phoneNumber.length < 13) {
-            setError('Ism va to\'liq telefon raqamini kiriting');
+        if (!name.trim() || phoneNumber.length < 13) {
+            setError(t('enter_name_and_phone'));
             return;
         }
 
@@ -38,133 +48,123 @@ export default function AddContactModal({ open, onClose, onStartChat }: AddConta
         setError('');
 
         try {
-            // 1. Search for user BY PHONE STRICTLY
             const searchRes = await apiFetch(`/api/users/search?phone=${encodeURIComponent(phoneNumber)}`);
-
-            if (!searchRes.ok) throw new Error('Qidiruvda xato');
+            if (!searchRes.ok) throw new Error('search');
             const users = await searchRes.json();
 
-            if (users.length === 0) {
-                setError('Ushbu raqamli foydalanuvchi topilmadi');
+            if (!Array.isArray(users) || users.length === 0) {
+                setError(t('user_not_found'));
                 setLoading(false);
                 return;
             }
 
             const foundUser = users[0];
-
-            // 2. Add to contacts
             const saveRes = await apiFetch('/api/users/contacts', {
                 method: 'POST',
                 body: JSON.stringify({
                     contactUserId: foundUser.id,
-                    name: name,
-                    surname: surname
-                })
+                    name: name.trim(),
+                    surname: surname.trim(),
+                }),
             });
 
             if (saveRes.ok) {
-                onStartChat({ ...foundUser, name, surname }); // Open chat with custom names
+                await onStartChat({
+                    ...foundUser,
+                    name: name.trim(),
+                    surname: surname.trim(),
+                    avatar: foundUser.avatar_url || foundUser.avatar,
+                });
                 onClose();
             } else {
-                setError('Kontaktni saqlashda xato');
+                setError(t('contact_save_error'));
             }
-        } catch (err) {
-            setError('Xato yuz berdi');
+        } catch {
+            setError(t('contact_search_error'));
         } finally {
             setLoading(false);
         }
     };
 
+    const fieldCls =
+        'w-full bg-transparent border-b border-white/10 py-2 text-white text-[16px] focus:outline-none focus:border-[#8774e1] transition-colors placeholder:text-[#6d6d6d]';
+
     return (
-        <AnimatedModal open={open} zClass="z-[70]" className="bg-black/60 backdrop-blur-sm p-4">
-            <GlassCard className="w-full max-w-[420px] !p-0 border border-white/20 flex flex-col max-h-[85vh] overflow-hidden !rounded-[25px] shadow-2xl">
-                {/* Header */}
-                <div className="px-6 py-5 flex justify-between items-center">
-                    <h2 className="text-[20px] font-bold text-white">Новый контакт</h2>
-                    <button onClick={onClose} className="text-white/40 hover:text-white transition-colors">
+        <AnimatedModal open={open} zClass="z-[80]" onBackdropClick={onClose} className="bg-black/50 p-4">
+            <div className="w-full max-w-[420px] flex flex-col overflow-hidden rounded-[16px] bg-[#212121] shadow-[0_2px_16px_rgba(0,0,0,0.45)]">
+                <div className="px-4 py-3 flex justify-between items-center">
+                    <h2 className="text-[20px] font-medium text-white">{t('new_contact')}</h2>
+                    <button type="button" onClick={onClose} className="text-[#aaaaaa] hover:text-white transition-colors p-1">
                         <X className="h-6 w-6" />
                     </button>
                 </div>
 
-                <form onSubmit={handleAddContact} className="px-8 pb-8 space-y-8">
-                    {/* Name Field */}
-                    <div className="flex items-center gap-6 group">
-                        <div className="p-2 text-white/30 group-focus-within:text-blue-400 transition-colors">
-                            <User className="h-6 w-6" />
-                        </div>
+                <form onSubmit={handleAddContact} className="px-6 pb-5 space-y-7">
+                    <div className="flex items-center gap-5">
+                        <User className="h-6 w-6 shrink-0 text-[#aaaaaa]" />
                         <div className="flex-1 relative">
-                            <label className="absolute -top-5 left-0 text-[13px] text-blue-400 font-medium">Имя</label>
+                            <label className="absolute -top-4 left-0 text-[13px] text-[#8774e1]">{t('name')}</label>
                             <input
                                 type="text"
                                 value={name}
                                 onChange={(e) => setName(e.target.value)}
-                                className="w-full bg-transparent border-b border-white/10 py-2 text-white text-[16px] focus:outline-none focus:border-blue-400 transition-colors placeholder:text-white/20"
-                                placeholder="Имя"
+                                className={fieldCls}
+                                placeholder={t('name')}
                                 autoFocus
+                                maxLength={70}
                             />
                         </div>
                     </div>
 
-                    {/* Surname Field */}
-                    <div className="flex items-center gap-6 group">
-                        <div className="w-6 mx-2"></div> {/* Spacing for alignment with icon above */}
-                        <div className="flex-1 relative">
-                            <input
-                                type="text"
-                                value={surname}
-                                onChange={(e) => setSurname(e.target.value)}
-                                className="w-full bg-transparent border-b border-white/10 py-2 text-white text-[16px] focus:outline-none focus:border-blue-400 transition-colors placeholder:text-white/20"
-                                placeholder="Фамилия"
-                            />
-                        </div>
+                    <div className="flex items-center gap-5">
+                        <div className="w-6 shrink-0" />
+                        <input
+                            type="text"
+                            value={surname}
+                            onChange={(e) => setSurname(e.target.value)}
+                            className={fieldCls}
+                            placeholder={t('surname')}
+                            maxLength={70}
+                        />
                     </div>
 
-                    {/* Phone Field */}
-                    <div className="flex items-center gap-6 group">
-                        <div className="p-2 text-white/30 group-focus-within:text-blue-400 transition-colors">
-                            <Phone className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1 relative pt-2">
-                            <label className="absolute -top-4 left-0 text-[13px] text-white/40 font-medium group-focus-within:text-blue-400 transition-colors">Номер телефона</label>
+                    <div className="flex items-center gap-5">
+                        <Phone className="h-6 w-6 shrink-0 text-[#aaaaaa]" />
+                        <div className="flex-1 relative pt-1">
+                            <label className="absolute -top-4 left-0 text-[13px] text-[#aaaaaa]">{t('phone_number')}</label>
                             <input
-                                type="text"
+                                type="tel"
                                 value={phoneNumber}
                                 onChange={handlePhoneChange}
-                                className="w-full bg-transparent border-b border-white/10 py-2 text-white text-[17px] focus:outline-none focus:border-blue-400 transition-colors"
+                                className={`${fieldCls} text-[17px]`}
                                 placeholder="+998 -- --- -- --"
                             />
                         </div>
                     </div>
 
                     {error && (
-                        <div className="text-red-400 text-sm text-center bg-red-400/10 py-2 rounded-lg">
-                            {error}
-                        </div>
+                        <div className="text-red-400 text-sm text-center bg-red-400/10 py-2 rounded-lg">{error}</div>
                     )}
 
-                    {/* Actions */}
-                    <div className="flex justify-end gap-6 pt-2">
+                    <div className="flex justify-end gap-2 pt-1">
                         <button
                             type="button"
                             onClick={onClose}
-                            className="text-blue-400 font-bold text-[15px] uppercase hover:opacity-80 transition-opacity"
+                            className="px-4 py-2 text-[#8774e1] font-medium text-[15px] uppercase hover:bg-[#8774e1]/10 rounded-lg transition-colors"
                         >
-                            Отмена
+                            {t('cancel')}
                         </button>
                         <button
                             type="submit"
-                            disabled={loading || !name}
-                            className="text-blue-400 font-bold text-[15px] uppercase hover:opacity-80 transition-opacity disabled:opacity-30 flex items-center gap-2"
+                            disabled={loading || !name.trim()}
+                            className="px-4 py-2 text-[#8774e1] font-medium text-[15px] uppercase hover:bg-[#8774e1]/10 rounded-lg transition-colors disabled:opacity-30 flex items-center gap-2"
                         >
-                            {loading && <div className="w-4 h-4 border-2 border-blue-400/30 border-t-blue-400 rounded-full animate-spin"></div>}
-                            Добавить
+                            {loading && <div className="w-4 h-4 border-2 border-[#8774e1]/30 border-t-[#8774e1] rounded-full animate-spin" />}
+                            {t('add')}
                         </button>
                     </div>
                 </form>
-            </GlassCard>
+            </div>
         </AnimatedModal>
     );
 }
-
-
-
