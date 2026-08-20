@@ -620,7 +620,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         chatType === 'group' &&
                         !!groupCreatorId &&
                         String(groupCreatorId) !== String(currentUserId ?? '') &&
-                        mentorSubStatus !== null &&
+                        mentorSubStatus != null &&
                         !mentorSubStatus.active;
                     const lessonSubLoading =
                         messageType === 'lesson_start' &&
@@ -628,7 +628,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         chatType === 'group' &&
                         !!groupCreatorId &&
                         String(groupCreatorId) !== String(currentUserId ?? '') &&
-                        mentorSubStatus === null;
+                        mentorSubStatus == null;
                     if (inviteExpired || lessonSubBlocked) {
                         return (
                             <div className="mt-1.5 flex flex-col items-center gap-0.5">
