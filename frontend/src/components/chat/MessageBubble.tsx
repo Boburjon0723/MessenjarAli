@@ -620,7 +620,15 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         chatType === 'group' &&
                         !!groupCreatorId &&
                         String(groupCreatorId) !== String(currentUserId ?? '') &&
-                        (!mentorSubStatus || !mentorSubStatus.active);
+                        mentorSubStatus !== null &&
+                        !mentorSubStatus.active;
+                    const lessonSubLoading =
+                        messageType === 'lesson_start' &&
+                        !isOwn &&
+                        chatType === 'group' &&
+                        !!groupCreatorId &&
+                        String(groupCreatorId) !== String(currentUserId ?? '') &&
+                        mentorSubStatus === null;
                     if (inviteExpired || lessonSubBlocked) {
                         return (
                             <div className="mt-1.5 flex flex-col items-center gap-0.5">
@@ -642,6 +650,19 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                             : t('subscription_pay_via_invite')
                                         : t('invite_expired_hint')}
                                 </span>
+                            </div>
+                        );
+                    }
+                    if (lessonSubLoading) {
+                        return (
+                            <div className="mt-1.5 flex flex-col items-center gap-0.5">
+                                <button
+                                    type="button"
+                                    disabled
+                                    className="rounded-full bg-[#212121]/60 px-4 py-1.5 text-[14px] font-medium text-white/50 cursor-wait"
+                                >
+                                    ...
+                                </button>
                             </div>
                         );
                     }

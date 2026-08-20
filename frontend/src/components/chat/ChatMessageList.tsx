@@ -109,7 +109,7 @@ export function ChatMessageList({
             return;
         }
         let cancelled = false;
-        (async () => {
+        const load = async () => {
             try {
                 const res = await apiFetch(
                     `/api/wallet/subscription-status?mentorId=${encodeURIComponent(String(groupCreatorId))}`
@@ -124,9 +124,13 @@ export function ChatMessageList({
             } catch {
                 if (!cancelled) setMentorSubStatus(null);
             }
-        })();
+        };
+        void load();
+        const onFocus = () => void load();
+        window.addEventListener('focus', onFocus);
         return () => {
             cancelled = true;
+            window.removeEventListener('focus', onFocus);
         };
     }, [chatType, groupCreatorId, currentUserId]);
 

@@ -230,7 +230,6 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
 
     useEffect(() => {
         if (!socket || !sessionId || sessionId === 'demo-session-id') return;
-        socket.emit('session_join', { sessionId });
 
         const handleNewMaterial = (data: { sessionId: string, material: { id?: string, url: string, title: string, type?: string } }) => {
             if (data.sessionId === sessionId) {
@@ -380,6 +379,12 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
         setActivePoll(null);
         setQuizPanelHighlight(false);
     };
+
+    useEffect(() => {
+        if (!socket || !sessionId || sessionId === 'demo-session-id' || !token) return;
+        socket.emit('join_room', sessionId);
+        socket.emit('session_join', { sessionId });
+    }, [socket, sessionId, token]);
 
     useEffect(() => {
         const fetchToken = async () => {
