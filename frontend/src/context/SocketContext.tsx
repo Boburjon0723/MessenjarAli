@@ -124,7 +124,14 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
                     authRecoveryRef.current = false;
                 }
             }
-            console.error('[SocketContext] Connection error:', err.message);
+            // xhr poll / transport xatolari qayta ulanishda normal — Next.js overlay spam qilmasin
+            const transient =
+                /xhr poll error|transport error|timeout|websocket error|forced close/i.test(msg);
+            if (transient) {
+                console.warn('[SocketContext] Reconnecting:', msg);
+            } else {
+                console.error('[SocketContext] Connection error:', msg);
+            }
         });
     }, [disconnect]);
 

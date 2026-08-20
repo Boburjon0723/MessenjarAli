@@ -73,6 +73,24 @@ function isLoopbackOrigin(origin: string): boolean {
     }
 }
 
+/** Dev: telefon/boshqa qurilmadan `http://192.168.x.x:3000` orqali ochilganda. */
+function isPrivateLanOrigin(origin: string): boolean {
+    try {
+        const { hostname } = new URL(origin);
+        const h = hostname.toLowerCase();
+        if (/^192\.168\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+        if (/^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h)) return true;
+        const m = /^172\.(\d{1,3})\.\d{1,3}\.\d{1,3}$/.exec(h);
+        if (m) {
+            const second = Number(m[1]);
+            return second >= 16 && second <= 31;
+        }
+        return false;
+    } catch {
+        return false;
+    }
+}
+
 export function isOriginAllowed(
     origin: string,
     allowlist: string[],
@@ -85,6 +103,7 @@ export function isOriginAllowed(
     }
     // Local frontend (Next.js / Electron) — production .env often omits localhost.
     if (isLoopbackOrigin(origin)) return true;
+    if (process.env.NODE_ENV !== 'production' && isPrivateLanOrigin(origin)) return true;
     if (allowlist.length === 0) {
         if (opts?.allowInDevWhenEmpty !== false) {
             return process.env.NODE_ENV !== 'production';
