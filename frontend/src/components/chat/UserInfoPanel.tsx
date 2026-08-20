@@ -1,14 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { isExpertListingChat, isJobListingChat, getJobListingIntent, getJobListingSnapshot, jobListingTitle, jobListingSubtitle } from '@/lib/listing-chat';
-import { getExpertListingPitch } from '@/lib/expert-roles';
+import { getExpertListingPitch, getExpertPanelMode, isMentorPanelMode } from '@/lib/expert-roles';
 import {
-    X, MessageCircle, Bell, Gift, Link, Mic, Users, Edit3, Trash2, ShieldAlert, Check, Loader2
+    X, MessageCircle, Bell, Gift, Link, Mic, Users, Edit3, Trash2, ShieldAlert, Check, Loader2, GraduationCap
 } from 'lucide-react';
 import { useConfirm } from '@/context/ConfirmContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
 import { apiFetch } from '@/lib/api';
 import { useNotification } from '@/context/NotificationContext';
+import { getUser } from '@/lib/auth-storage';
 import AvatarLightbox from './AvatarLightbox';
 
 interface UserInfoPanelProps {
@@ -34,6 +35,16 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
     const [contactsBump, setContactsBump] = useState(0);
     const [avatarLightboxOpen, setAvatarLightboxOpen] = useState(false);
     const [peerInContacts, setPeerInContacts] = useState(false);
+    const [studentInfo, setStudentInfo] = useState<{
+        isActiveStudent: boolean;
+        memberGroups: { id: string; name: string }[];
+        canReinviteViaListing?: boolean;
+    } | null>(null);
+
+    const me = getUser() as { id?: string; is_expert?: boolean; profession?: string } | null;
+    const iAmMentor =
+        !!me?.is_expert &&
+        isMentorPanelMode(getExpertPanelMode(me as Parameters<typeof getExpertPanelMode>[0]));
 
     useEffect(() => {
         const onContactsUpdated = () => {
@@ -43,6 +54,34 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
         window.addEventListener('contacts_updated', onContactsUpdated);
         return () => window.removeEventListener('contacts_updated', onContactsUpdated);
     }, []);
+
+    useEffect(() => {
+        if (!chat?.id || chat.type !== 'private' || !iAmMentor) {
+            setStudentInfo(null);
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await apiFetch(
+                    `/api/specialists/mentor/group-invite-eligibility?chatId=${encodeURIComponent(String(chat.id))}`
+                );
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                if (cancelled) return;
+                setStudentInfo({
+                    isActiveStudent: !!data.isActiveStudent,
+                    memberGroups: Array.isArray(data.memberGroups) ? data.memberGroups : [],
+                    canReinviteViaListing: !!data.canReinviteViaListing,
+                });
+            } catch {
+                if (!cancelled) setStudentInfo(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [chat?.id, chat?.type, iAmMentor, contactsBump]);
 
     useEffect(() => {
         if (!chat || chat.type !== 'private') return;
@@ -429,6 +468,36 @@ export default function UserInfoPanel({ chat, onClose }: UserInfoPanelProps) {
                             label={`${stats.commonGroupsCount} ${t('common_groups_count')}`}
                         />
                     </div>
+
+                    {iAmMentor && studentInfo?.isActiveStudent && (
+                        <>
+                            <div className="h-px bg-white/5 mx-2" />
+                            <div className="px-6 py-4">
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-[#8774e1]/15 text-[#8774e1]">
+                                        <GraduationCap className="h-5 w-5" />
+                                    </span>
+                                    <div className="min-w-0">
+                                        <p className="text-white text-[15px] font-medium">
+                                            {t('student_status_label')}
+                                        </p>
+                                        <p className="text-[#8774e1] text-xs mt-0.5">
+                                            {t('student_status_active_desc')}
+                                        </p>
+                                    </div>
+                                </div>
+                                {studentInfo.memberGroups.length > 0 && (
+                                    <ul className="mt-2 space-y-1.5 pl-12">
+                                        {studentInfo.memberGroups.map((g) => (
+                                            <li key={g.id} className="text-[13px] text-white/75">
+                                                · {g.name}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </>
+                    )}
 
                     <div className="h-px bg-white/5 mx-2" />
 

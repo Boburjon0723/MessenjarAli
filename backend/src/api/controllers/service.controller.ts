@@ -229,6 +229,118 @@ export const postGroupJoinInvite = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Mentor Invite bar / profil «Talaba» holati:
+ * - Guruhda bo‘lsa → yashirin
+ * - To‘lov+qo‘shilish bo‘lgan (paid) va e’lon emas → abadiy yashirin (chiqib ketsa ham)
+ * - E’lon murojaati + chiqib ketgan → qayta ko‘rsat
+ */
+export const getGroupInviteEligibility = async (req: Request, res: Response) => {
+    try {
+        const mentorId = String((req as any).user.id);
+        const chatId = String(req.query.chatId || '').trim();
+        if (!chatId) return res.status(400).json({ message: 'chatId kerak' });
+
+        const chatRes = await pool.query(
+            `SELECT id, type, metadata FROM chats WHERE id = $1::uuid LIMIT 1`,
+            [chatId]
+        );
+        const chat = chatRes.rows[0];
+        if (!chat || chat.type !== 'private') {
+            return res.status(400).json({ message: 'Faqat shaxsiy chat' });
+        }
+
+        const partRes = await pool.query(
+            `SELECT user_id::text AS uid FROM chat_participants WHERE chat_id = $1::uuid`,
+            [chatId]
+        );
+        const uids = partRes.rows.map((r: { uid: string }) => String(r.uid));
+        if (!uids.includes(mentorId)) {
+            return res.status(403).json({ message: 'Chat ishtirokchisi emassiz' });
+        }
+        const studentId = uids.find((id: string) => id !== mentorId) || null;
+        if (!studentId) {
+            return res.json({
+                showInviteBar: false,
+                isListingChat: false,
+                isActiveStudent: false,
+                canReinviteViaListing: false,
+                memberGroups: [],
+            });
+        }
+
+        let meta: Record<string, unknown> = {};
+        try {
+            meta =
+                typeof chat.metadata === 'string'
+                    ? JSON.parse(chat.metadata)
+                    : chat.metadata && typeof chat.metadata === 'object'
+                      ? (chat.metadata as Record<string, unknown>)
+                      : {};
+        } catch {
+            meta = {};
+        }
+        const isListingChat =
+            meta.source === 'expert_listing' &&
+            meta.expert_id != null &&
+            String(meta.expert_id) === mentorId;
+
+        const memberRes = await pool.query(
+            `
+            SELECT c.id::text AS id, COALESCE(c.name, 'Guruh') AS name
+            FROM chats c
+            INNER JOIN chat_participants cp ON cp.chat_id = c.id AND cp.user_id = $2::uuid
+            WHERE c.type = 'group'
+              AND c.creator_id = $1::uuid
+            ORDER BY c.name ASC
+            `,
+            [mentorId, studentId]
+        );
+        const memberGroups = memberRes.rows.map((r: { id: string; name: string }) => ({
+            id: String(r.id),
+            name: String(r.name),
+        }));
+        const isActiveStudent = memberGroups.length > 0;
+
+        const paidRes = await pool.query(
+            `
+            SELECT 1
+            FROM messages
+            WHERE chat_id = $1::uuid
+              AND type = 'group_join_invite'
+              AND COALESCE(metadata->>'invite_status', '') = 'paid'
+            LIMIT 1
+            `,
+            [chatId]
+        );
+        const everPaidJoin = (paidRes.rowCount ?? 0) > 0;
+
+        let showInviteBar = true;
+        if (isActiveStudent) {
+            showInviteBar = false;
+        } else if (everPaidJoin && !isListingChat) {
+            showInviteBar = false;
+        } else if (everPaidJoin && isListingChat) {
+            showInviteBar = true;
+        }
+
+        const canReinviteViaListing = Boolean(isListingChat && everPaidJoin && !isActiveStudent);
+
+        res.json({
+            showInviteBar,
+            isListingChat,
+            isActiveStudent,
+            canReinviteViaListing,
+            everPaidJoin,
+            memberGroups,
+            studentId,
+        });
+    } catch (error: any) {
+        console.error('getGroupInviteEligibility:', error);
+        res.status(500).json({ message: error?.message || 'Server xatosi' });
+    }
+};
+
 /** Mentor «Darsni boshlash» — chatga lesson_start xabari (HTTP). */
 export const postLessonStartNotify = async (req: Request, res: Response) => {
     try {
