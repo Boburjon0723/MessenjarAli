@@ -1736,17 +1736,21 @@ export default function ChatWindow({
         ? (t('application_rejected_banner') as string)
         : (t('consent_waiting_message') as string);
     const groupCreatorId = chat?.creator_id ?? chat?.creatorId ?? null;
+    const isMentorMode = isMentorPanelMode(
+        getExpertPanelMode(currentUser as Parameters<typeof getExpertPanelMode>[0])
+    );
     const showMentorGroupInvite =
-        chat?.type === 'private' &&
-        !!currentUser?.is_expert &&
-        isMentorPanelMode(getExpertPanelMode(currentUser as Parameters<typeof getExpertPanelMode>[0]));
+        chat?.type === 'private' && !!currentUser?.is_expert && isMentorMode;
     const mentorDisplayName =
         [currentUser?.name, currentUser?.surname].filter(Boolean).join(' ').trim() ||
         String(currentUser?.name || 'Ustoz');
+    // Mentor: to'lov = guruh taklifi + oylik obuna. Escrow (Job Payment) faqat
+    // maslahat/yurist/psixolog e'lon chatlarida.
     const showListingDealBar =
         chat?.type === 'private' &&
         isExpertListingChat(chat) &&
-        isListingExpertSide(chat, myUserId);
+        isListingExpertSide(chat, myUserId) &&
+        !isMentorMode;
 
     return (
         <div
