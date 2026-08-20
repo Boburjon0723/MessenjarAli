@@ -183,8 +183,15 @@ export const updateProfile = async (req: Request, res: Response) => {
 
                 if (is_expert === true && (existingProfile.verified_status === 'none' || existingProfile.verified_status === 'rejected' || existingProfile.verified_status === 'unverified' || !existingProfile.verified_status)) {
                     newVerifiedStatus = 'pending';
-                } else if (existingProfile.verified_status === 'approved' && criticalFieldsChanged) {
+                } else if (
+                    is_expert === true &&
+                    existingProfile.verified_status === 'approved' &&
+                    criticalFieldsChanged
+                ) {
                     newVerifiedStatus = 'pending';
+                } else if (is_expert === false) {
+                    // Rejim o'chirilganda tasdiq va forma ma'lumotlari saqlanadi
+                    newVerifiedStatus = existingProfile.verified_status;
                 }
 
                 await client.query(

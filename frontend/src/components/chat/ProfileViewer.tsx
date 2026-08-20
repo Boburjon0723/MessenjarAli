@@ -178,12 +178,8 @@ export default function ProfileViewer({
         }
 
         setVerifiedStatus(userToProcess.verified_status || 'none');
-        setIsExpert(
-            Boolean(
-                userToProcess.is_expert ||
-                    userToProcess.verified_status === 'pending'
-            )
-        );
+        // Toggle faqat is_expert — verified_status alohida (approved bo‘lib, rejim o‘chirilgan bo‘lishi mumkin)
+        setIsExpert(Boolean(userToProcess.is_expert));
         setProfession(userToProcess.profession || "");
         setSpecializationDetails(
             userToProcess.specialization_details ||
@@ -871,6 +867,58 @@ export default function ProfileViewer({
         }
     };
 
+    /** Allaqachon tasdiqlangan profil — formani qayta ochmasdan faqat rejimni yoqish */
+    const handleTurnOnExpert = async () => {
+        try {
+            const res = await apiFetch('/api/users/me', {
+                method: 'PUT',
+                body: JSON.stringify({
+                    name: user.name,
+                    surname: user.surname || '',
+                    username: user.username || '',
+                    bio: user.bio,
+                    birthday: user.birthday,
+                    avatar_url: user.avatar_url || user.avatar,
+                    is_expert: true,
+                    profession: user.profession || profession,
+                    specialization: user.specialization_details || user.specialization || specializationDetails,
+                    specialization_details: user.specialization_details || specializationDetails,
+                    experience_years: user.experience_years ?? experience,
+                    service_price: user.service_price ?? price,
+                    hourly_rate: user.hourly_rate ?? price,
+                    working_hours: user.working_hours,
+                    languages: user.languages,
+                    wiloyat: user.wiloyat,
+                    tuman: user.tuman,
+                    expert_groups: user.expert_groups,
+                    currency: user.currency || currency,
+                    pricing_model: user.pricing_model || pricingModel,
+                }),
+            });
+            if (res.ok) {
+                setIsExpert(true);
+                const updated = { ...user, is_expert: true };
+                setLocalUser(updated);
+                try {
+                    setUser(updated as Record<string, unknown>);
+                } catch (_) {}
+                setToast({ type: 'success', message: t('expert_mode_restored') as string });
+                if (socket) socket.emit('update_profile', { is_expert: true });
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setToast({
+                    type: 'error',
+                    message: (err as any)?.message || (t('server_error') as string),
+                });
+                setShowExpertModal(true);
+            }
+        } catch (e) {
+            console.error('Turn on expert error:', e);
+            setToast({ type: 'error', message: "Rejimni yoqishda xatolik. Qayta urinib ko'ring." });
+            setShowExpertModal(true);
+        }
+    };
+
     const getAvatarUrl = (path: string) => {
         if (!path) return null;
         if (path.startsWith('http') || path.startsWith('data:')) return path;
@@ -1070,10 +1118,15 @@ export default function ProfileViewer({
                                 <Award className={`h-6 w-6 ${showExpertSummary ? 'text-[#8774e1]' : 'text-white/20'}`} />
                                 <div className="flex flex-col">
                                     <h4 className="text-white font-bold text-[16px]">{t('specialist_mode')}</h4>
-                                    {verifiedStatus === 'approved' && (
+                                    {isExpert && verifiedStatus === 'approved' && (
                                         <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 text-[10px] font-bold uppercase tracking-wider shadow-sm">
                                             <CheckCircle className="h-3.5 w-3.5 text-emerald-300" />
                                             {t('activated')}
+                                        </span>
+                                    )}
+                                    {!isExpert && verifiedStatus === 'approved' && (
+                                        <span className="text-white/45 text-[10px] font-bold uppercase tracking-wider">
+                                            {t('expert_mode_paused')}
                                         </span>
                                     )}
                                     {verifiedStatus === 'pending' && (
@@ -1094,10 +1147,15 @@ export default function ProfileViewer({
                                     e.stopPropagation();
                                     const nextState = !isExpert;
                                     if (nextState) {
-                                        setIsExpert(true);
-                                        setShowExpertModal(true);
+                                        // Bir marta tasdiqlangan profil — forma qayta ochilmasin
+                                        if (verifiedStatus === 'approved' && hasExpertProfileData) {
+                                            void handleTurnOnExpert();
+                                        } else {
+                                            setIsExpert(true);
+                                            setShowExpertModal(true);
+                                        }
                                     } else {
-                                        handleTurnOffExpert();
+                                        void handleTurnOffExpert();
                                     }
                                 }}
                                 role="switch"

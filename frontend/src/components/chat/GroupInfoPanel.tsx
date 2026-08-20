@@ -79,6 +79,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
             currentUser?.id &&
             String(fullChatDetails.creator_id) === String(currentUser.id)
     );
+    const canSendPaidInvite = isCreator && Boolean(currentUser?.is_expert);
 
     const sendGroupJoinInvite = async (user: any) => {
         if (!chat) return false;
@@ -432,7 +433,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
 
             {/* Actions */}
             <div className="py-1">
-                {isCreator && (
+                {canSendPaidInvite && (
                     <button
                         onClick={() => setShowAddMemberModal(true)}
                         className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
@@ -543,7 +544,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                                     </div>
                                 </div>
 
-                                {isSelected && isCreator && !isCreatorMember && !isMe && (
+                                {isSelected && canSendPaidInvite && !isCreatorMember && !isMe && (
                                     <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1.5">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); void handleSendMemberInvite(member); }}
