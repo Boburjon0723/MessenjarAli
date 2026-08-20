@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead, updateChatPrefs, postListingConsent, getConsultPanelAccessEndpoint, getChatPaymentStatusEndpoint, pinMessage } from '../controllers/chat.controller';
+import { createChat, getUserChats, getMessages, sendChatMessage, getChatDetails, getRoomSubscriptionInfo, addParticipant, joinGroupWithSubscription, leaveGroup, updateGroupChat, getExpertGroups, getCommunities, joinCommunity, searchMessages, clearMessages, deleteChatEndpoint, deleteMessagesBulk, markAsRead, updateChatPrefs, postListingConsent, getConsultPanelAccessEndpoint, getChatPaymentStatusEndpoint, pinMessage, checkChatInvite, joinChatInvite } from '../controllers/chat.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -11,6 +11,9 @@ router.get('/', getUserChats);
 router.get('/communities', getCommunities);
 router.post('/communities/:chatId/join', joinCommunity);
 router.get('/expert/:expertId', getExpertGroups); // Get expert's group chats
+/** Telegram-uslub: havola preview / join (/:chatId dan OLDIN) */
+router.get('/invite/:token', checkChatInvite);
+router.post('/invite/:token/join', joinChatInvite);
 router.get('/:chatId/messages', getMessages);
 router.post('/:chatId/messages', sendChatMessage);
 router.delete('/:chatId/messages', clearMessages);

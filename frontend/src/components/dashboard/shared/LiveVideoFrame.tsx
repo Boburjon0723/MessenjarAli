@@ -1,6 +1,6 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
     useTracks,
     ParticipantTile,
@@ -8,8 +8,8 @@ import {
     useRemoteParticipants,
 } from '@livekit/components-react';
 import { Track } from 'livekit-client';
-import { VideoIcon, Users } from 'lucide-react';
-import { LiveWhiteboard } from './LiveWhiteboard';
+import { VideoIcon, Users, ChevronLeft, ChevronRight, EyeOff, Video } from 'lucide-react';
+import { LiveWhiteboard, bindWhiteboardStrokeCacheSocket } from './LiveWhiteboard';
 
 interface LiveVideoFrameProps {
     isMentor?: boolean;
@@ -25,6 +25,8 @@ interface LiveVideoFrameProps {
     sessionId?: string;
     onCloseWhiteboard?: () => void;
     immersive?: boolean;
+    /** Doska chizma muallifi (talaba o‘z chizmasini o‘chirish) */
+    userId?: string;
     /** Qo'l ko'targan talabalar — mentor rejimida pastki qatorda birinchi o‘rinlarga chiqadi */
     handsRaised?: Record<string, string>;
     /** false bo‘lsa o‘ngdagi materiallar paneli yopilgan — talabalar qatori kengayadi va 2 ustun */
@@ -50,6 +52,30 @@ function getLiveKitRoleFromParticipant(participant: { metadata?: string } | unde
     return null;
 }
 
+/** Video pastidagi yorliq: profil ismi (UUID emas) */
+function getParticipantLabel(
+    participant: { name?: string; identity?: string; metadata?: string; isLocal?: boolean } | undefined,
+    fallback: string
+): string {
+    if (!participant) return fallback;
+    const fromName = String(participant.name || '').trim();
+    if (fromName && !/^[0-9a-f-]{36}$/i.test(fromName)) return fromName;
+    if (participant.metadata) {
+        try {
+            const meta = JSON.parse(participant.metadata) as { displayName?: string };
+            const dn = String(meta.displayName || '').trim();
+            if (dn) return dn;
+        } catch {
+            /* ignore */
+        }
+    }
+    const id = String(participant.identity || '').trim();
+    if (id && /^[0-9a-f-]{36}$/i.test(id)) {
+        return fallback;
+    }
+    return id || fallback;
+}
+
 export function LiveVideoFrame({
     isMentor = false,
     showClassroomLayout = true,
@@ -61,6 +87,7 @@ export function LiveVideoFrame({
     immersive = false,
     handsRaised = {},
     mentorMaterialsPanelOpen = true,
+    userId,
 }: LiveVideoFrameProps) {
     const remoteParticipants = useRemoteParticipants();
     const mentorRemoteParticipant = !isMentor
@@ -115,6 +142,88 @@ export function LiveVideoFrame({
         : baseGridTracks;
 
     const screenShareTrack = tracks.find(t => t.source === Track.Source.ScreenShare);
+    const shareOrBoardActive = Boolean(isWhiteboardOpen || screenShareTrack);
+    /** Screen share / doska rejimida talabalar paneli (2 ustun) */
+    const [showShareStudents, setShowShareStudents] = useState(false);
+    /** PiP (o‘z/ekspert video) — sudraladigan + yashirish */
+    const [pipHidden, setPipHidden] = useState(false);
+    const [pipPos, setPipPos] = useState<{ x: number; y: number } | null>(null);
+    const stageRef = useRef<HTMLDivElement>(null);
+    const pipRef = useRef<HTMLDivElement>(null);
+    const pipDragRef = useRef<{
+        active: boolean;
+        startX: number;
+        startY: number;
+        origX: number;
+        origY: number;
+        moved: boolean;
+    } | null>(null);
+
+    useEffect(() => {
+        if (!shareOrBoardActive) {
+            setShowShareStudents(false);
+            setPipHidden(false);
+            setPipPos(null);
+        }
+    }, [shareOrBoardActive]);
+
+    /** Doska yopiq bo‘lsa ham chizma cache sinxron (qayta ochganda eski chizma qaytmasin) */
+    useEffect(() => {
+        if (!socket || !sessionId || isWhiteboardOpen) return;
+        return bindWhiteboardStrokeCacheSocket(socket, sessionId);
+    }, [socket, sessionId, isWhiteboardOpen]);
+
+    const clampPipPos = (x: number, y: number) => {
+        const stage = stageRef.current;
+        const pip = pipRef.current;
+        if (!stage || !pip) return { x, y };
+        const maxX = Math.max(0, stage.clientWidth - pip.offsetWidth);
+        const maxY = Math.max(0, stage.clientHeight - pip.offsetHeight);
+        return {
+            x: Math.min(Math.max(0, x), maxX),
+            y: Math.min(Math.max(0, y), maxY),
+        };
+    };
+
+    const onPipPointerDown = (e: React.PointerEvent) => {
+        if ((e.target as HTMLElement).closest('[data-pip-action]')) return;
+        if (!stageRef.current || !pipRef.current) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const stageRect = stageRef.current.getBoundingClientRect();
+        const pipRect = pipRef.current.getBoundingClientRect();
+        const curX = pipPos?.x ?? pipRect.left - stageRect.left;
+        const curY = pipPos?.y ?? pipRect.top - stageRect.top;
+        pipDragRef.current = {
+            active: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            origX: curX,
+            origY: curY,
+            moved: false,
+        };
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+
+    const onPipPointerMove = (e: React.PointerEvent) => {
+        const drag = pipDragRef.current;
+        if (!drag?.active) return;
+        const dx = e.clientX - drag.startX;
+        const dy = e.clientY - drag.startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) drag.moved = true;
+        setPipPos(clampPipPos(drag.origX + dx, drag.origY + dy));
+    };
+
+    const onPipPointerUp = (e: React.PointerEvent) => {
+        const drag = pipDragRef.current;
+        if (!drag?.active) return;
+        pipDragRef.current = null;
+        try {
+            (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+        } catch {
+            /* ignore */
+        }
+    };
 
     const participantThumb = (track: (typeof gridTracks)[number], i: number) => {
         const hid = track?.participant?.identity;
@@ -124,7 +233,7 @@ export function LiveVideoFrame({
             ? mainIsClient
                 ? 'Ekspert'
                 : 'Siz'
-            : hid || `Talaba ${i + 1}`;
+            : getParticipantLabel(track?.participant, `Talaba ${i + 1}`);
         return (
             <div
                 key={hid || i}
@@ -132,7 +241,7 @@ export function LiveVideoFrame({
             >
                 {track ? <ParticipantTile trackRef={track} className="w-full h-full [&>video]:object-cover" /> : null}
                 <div className="absolute bottom-2 left-2 right-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-bold text-white bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-md shadow-sm border border-white/10">
-                    {handUp ? `✋ ${handUp}` : thumbLabel}
+                    {handUp ? `✋ ${typeof handUp === 'string' && handUp !== '1' ? handUp : thumbLabel}` : thumbLabel}
                 </div>
             </div>
         );
@@ -142,34 +251,123 @@ export function LiveVideoFrame({
         <div className={`flex flex-col w-full h-full relative ${immersive ? 'bg-black' : 'bg-[#0f172a]'} overflow-hidden`}>
 
             {(isWhiteboardOpen || screenShareTrack) ? (
-                // --- SCREEN SHARE / WHITEBOARD ACTIVE MODE ---
-                <div className="flex-1 relative overflow-hidden w-full h-full min-h-0 bg-black">
-                    <div className="absolute inset-0 z-0 flex items-center justify-center p-0">
-                        {screenShareTrack && (
-                            <div className="w-full h-full">
-                                <ParticipantTile trackRef={screenShareTrack!} className="w-full h-full object-contain [&>video]:object-contain" />
+                // --- SCREEN SHARE / WHITEBOARD: asosiy kontent + strelka bilan talabalar (2 ustun) ---
+                <div className="flex-1 relative overflow-hidden w-full h-full min-h-0 bg-black flex flex-row">
+                    <div ref={stageRef} className="flex-1 relative min-w-0 min-h-0 overflow-hidden">
+                        <div className="absolute inset-0 z-0 flex items-center justify-center p-0">
+                            {screenShareTrack && (
+                                <div className="w-full h-full">
+                                    <ParticipantTile trackRef={screenShareTrack!} className="w-full h-full object-contain [&>video]:object-contain" />
+                                </div>
+                            )}
+                            {isWhiteboardOpen && socket && sessionId && (
+                                <LiveWhiteboard
+                                    socket={socket}
+                                    sessionId={sessionId}
+                                    isMentor={isMentor}
+                                    onClose={onCloseWhiteboard}
+                                    isOverlay={!!screenShareTrack}
+                                    userId={userId}
+                                />
+                            )}
+                        </div>
+
+                        {/* Floating self/expert PiP — sudraladi, yashirish mumkin */}
+                        {mainTrack && !pipHidden && (
+                            <div
+                                ref={pipRef}
+                                onPointerDown={onPipPointerDown}
+                                onPointerMove={onPipPointerMove}
+                                onPointerUp={onPipPointerUp}
+                                onPointerCancel={onPipPointerUp}
+                                className="absolute z-40 w-36 sm:w-52 aspect-video rounded-2xl overflow-hidden bg-black/40 backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.5)] group ring-1 ring-white/10 touch-none select-none cursor-grab active:cursor-grabbing"
+                                style={
+                                    pipPos
+                                        ? { left: pipPos.x, top: pipPos.y }
+                                        : { left: 16, bottom: 16 }
+                                }
+                                title="Sudrab joyini o‘zgartiring"
+                            >
+                                <ParticipantTile trackRef={mainTrack} className="w-full h-full pointer-events-none [&>video]:object-cover" />
+                                <div className="absolute bottom-2 left-2 text-[9px] font-black text-white bg-black/60 px-2 py-1 rounded-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest pointer-events-none">
+                                    {mainIsClient ? 'Mijoz' : isMentor ? 'Siz' : 'Ekspert'}
+                                </div>
+                                <div className="absolute top-1.5 right-1.5 flex items-center gap-1.5 z-10">
+                                    <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.8)] pointer-events-none" />
+                                    <button
+                                        type="button"
+                                        data-pip-action
+                                        onPointerDown={(e) => e.stopPropagation()}
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setPipHidden(true);
+                                        }}
+                                        className="flex h-7 w-7 items-center justify-center rounded-lg bg-black/70 text-white/80 border border-white/15 hover:bg-red-500/80 hover:text-white transition-colors"
+                                        title="Videoni yashirish"
+                                        aria-label="Videoni yashirish"
+                                    >
+                                        <EyeOff className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
                             </div>
                         )}
-                        {isWhiteboardOpen && socket && sessionId && (
-                            <LiveWhiteboard 
-                                socket={socket} 
-                                sessionId={sessionId} 
-                                isMentor={isMentor} 
-                                onClose={onCloseWhiteboard} 
-                                isOverlay={!!screenShareTrack}
-                            />
+
+                        {mainTrack && pipHidden && (
+                            <button
+                                type="button"
+                                onClick={() => setPipHidden(false)}
+                                className="absolute bottom-4 left-4 z-40 flex items-center gap-2 rounded-xl border border-white/15 bg-black/75 px-3 py-2 text-[11px] font-bold text-white/90 shadow-lg backdrop-blur-md hover:bg-[#8774e1]/90 hover:text-white transition-colors"
+                                title="Videoni ko‘rsatish"
+                            >
+                                <Video className="w-3.5 h-3.5" />
+                                Video
+                            </button>
+                        )}
+
+                        {/* Strelka: talabalar videosini ochish / yopish */}
+                        {isMentor && showClassroomLayout && (
+                            <button
+                                type="button"
+                                onClick={() => setShowShareStudents((v) => !v)}
+                                className="absolute right-0 top-1/2 z-50 -translate-y-1/2 flex h-11 w-7 items-center justify-center rounded-l-xl border border-white/15 bg-[#161927]/95 text-white/80 shadow-lg backdrop-blur-md transition-colors hover:bg-[#8774e1]/90 hover:text-white"
+                                title={showShareStudents ? 'Talabalarni yashirish' : 'Talabalarni ko‘rsatish'}
+                                aria-label={showShareStudents ? 'Talabalarni yashirish' : 'Talabalarni ko‘rsatish'}
+                            >
+                                {showShareStudents ? (
+                                    <ChevronRight className="h-5 w-5 shrink-0" aria-hidden />
+                                ) : (
+                                    <ChevronLeft className="h-5 w-5 shrink-0" aria-hidden />
+                                )}
+                            </button>
                         )}
                     </div>
 
-                    {/* Floating Expert Overlay when Whiteboard/Share is active */}
-                    {mainTrack && (
-                        <div className="absolute bottom-4 right-4 z-50 w-40 sm:w-64 aspect-video rounded-3xl overflow-hidden bg-black/40 backdrop-blur-2xl border border-white/20 shadow-[0_8px_32px_rgba(0,0,0,0.5)] transition-all hover:scale-110 group ring-1 ring-white/10">
-                            <ParticipantTile trackRef={mainTrack} className="w-full h-full [&>video]:object-cover" />
-                            <div className="absolute bottom-3 left-3 text-[9px] font-black text-white bg-black/60 px-2.5 py-1 rounded-xl backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest">
-                                {mainIsClient ? 'Mijoz' : isMentor ? "Siz" : "Ekspert"}
+                    {isMentor && showClassroomLayout && showShareStudents && (
+                        <div className="shrink-0 h-full w-[min(31rem,calc(100vw-12rem))] sm:w-[min(31rem,48%)] md:w-[31rem] bg-[#11131a] border-l border-white/10 flex flex-col min-h-0 overflow-hidden z-30 animate-in slide-in-from-right duration-200">
+                            <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2 shrink-0">
+                                <span className="text-[10px] font-black text-white/45 uppercase tracking-widest">
+                                    Talabalar
+                                </span>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowShareStudents(false)}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg text-white/50 hover:bg-white/10 hover:text-white"
+                                    aria-label="Yopish"
+                                >
+                                    <ChevronRight className="h-4 w-4" />
+                                </button>
                             </div>
-                            <div className="absolute top-3 right-3 flex gap-1.5">
-                                <div className="w-2 h-2 bg-emerald-500 rounded-full shadow-[0_0_12px_rgba(16,185,129,0.8)]"></div>
+                            <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3 pb-3 grid grid-cols-2 auto-rows-min content-start gap-2.5">
+                                {gridTracks.length === 0 ? (
+                                    <div className="col-span-2 rounded-xl bg-slate-800/30 border border-white/5 flex flex-col items-center justify-center gap-2 py-8 px-2">
+                                        <Users className="w-5 h-5 text-slate-500" />
+                                        <span className="text-[10px] text-slate-500 font-semibold text-center uppercase tracking-wider leading-snug">
+                                            Kutilmoqda — ulanish yoki kamera yoqilganda shu yerga chiqadi
+                                        </span>
+                                    </div>
+                                ) : (
+                                    gridTracks.map((track, i) => participantThumb(track, i))
+                                )}
                             </div>
                         </div>
                     )}
@@ -218,8 +416,10 @@ export function LiveVideoFrame({
                         {gridTracks.slice(0, 3).map((track, i) => (
                             <div key={track?.participant?.identity || i} className="w-48 aspect-video rounded-2xl overflow-hidden relative bg-black/40 backdrop-blur-xl border border-white/20 shadow-2xl transition-all hover:scale-105 group">
                                 {track ? <ParticipantTile trackRef={track} className="w-full h-full [&>video]:object-cover" /> : null}
-                                <div className="absolute bottom-2 left-2 text-[9px] font-black text-white bg-black/60 px-2 py-1 rounded-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase">
-                                    {track?.participant?.isLocal ? "Siz" : (track?.participant?.identity || `Talaba ${i + 1}`)}
+                                <div className="absolute bottom-2 left-2 text-[9px] font-black text-white bg-black/60 px-2 py-1 rounded-lg backdrop-blur-md border border-white/10 opacity-0 group-hover:opacity-100 transition-opacity uppercase truncate max-w-[90%]">
+                                    {track?.participant?.isLocal
+                                        ? 'Siz'
+                                        : getParticipantLabel(track?.participant, `Talaba ${i + 1}`)}
                                 </div>
                                 {track?.participant?.isLocal && (
                                     <div className="absolute top-2 right-2 w-2 h-2 bg-blue-500 rounded-full shadow-[0_0_10px_rgba(59,130,246,0.8)]"></div>
@@ -375,6 +575,7 @@ export function LiveVideoFrame({
                             gridTracks.map((track, i) => {
                                 const hid = track?.participant?.identity;
                                 const handUp = hid && handsRaised[hid];
+                                const label = getParticipantLabel(track?.participant, `Talaba ${i + 1}`);
                                 return (
                                     <div
                                         key={hid || i}
@@ -382,7 +583,9 @@ export function LiveVideoFrame({
                                     >
                                         {track ? <ParticipantTile trackRef={track} className="w-full h-full [&>video]:object-cover" /> : null}
                                         <div className="absolute bottom-2 left-2 right-2 max-w-[calc(100%-1rem)] truncate text-[10px] font-bold text-white bg-black/70 px-2.5 py-1 rounded-lg backdrop-blur-md shadow-sm border border-white/10">
-                                            {handUp ? `✋ ${handUp}` : hid || `Talaba ${i + 1}`}
+                                            {handUp
+                                                ? `✋ ${typeof handUp === 'string' && handUp.length > 1 && !/^[0-9a-f-]{36}$/i.test(handUp) ? handUp : label}`
+                                                : label}
                                         </div>
                                     </div>
                                 );

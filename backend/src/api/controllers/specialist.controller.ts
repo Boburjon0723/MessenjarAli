@@ -41,13 +41,14 @@ export const saveNote = async (req: Request, res: Response) => {
             specialist_id,
             client_id: isSessionNote ? null : (client_id || specialist_id),
             content,
-            shared_with_client: shared_with_client !== false,
-            is_private: !(shared_with_client !== false),
+            shared_with_client: shared_with_client === true,
+            is_private: shared_with_client !== true,
             note_type: isSessionNote ? 'session' : 'client'
         });
 
         let chatMessage: any = null;
-        if (targetChatId) {
+        const shareToChat = shared_with_client === true;
+        if (targetChatId && shareToChat) {
             chatMessage = await MessageModel.create(
                 targetChatId,
                 specialist_id,

@@ -123,7 +123,12 @@ function Login() {
         if (typeof window !== "undefined") {
           setAuth(data.token, data.refreshToken || "", data.user || {}, rememberMe, data.csrfToken);
         }
-        router.push("/messages");
+        const next = searchParams.get("next");
+        if (next && next.startsWith("/") && !next.startsWith("//")) {
+          router.push(next);
+        } else {
+          router.push("/messages");
+        }
       } else {
         if (res.status === 401) {
           setError(t('error_invalid_credentials') as TranslationKeys);

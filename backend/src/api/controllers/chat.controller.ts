@@ -1357,3 +1357,143 @@ export const pinMessage = async (req: Request, res: Response) => {
         res.status(500).json({ message: 'Internal server error' });
     }
 };
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/** Telegram checkChatInvite: guruh/kanal preview (token = chatId) */
+export const checkChatInvite = async (req: Request, res: Response) => {
+    try {
+        const token = String(req.params.token || '').trim();
+        const currentUserId = (req as any).user?.id;
+        if (!token || !UUID_RE.test(token)) {
+            return res.status(404).json({ status: 'invalid', message: 'Havola yaroqsiz' });
+        }
+
+        const chat = await ChatModel.findById(token);
+        if (!chat || (chat.type !== 'group' && chat.type !== 'channel')) {
+            return res.status(404).json({ status: 'not_found', message: 'Guruh topilmadi yoki havola eskirgan' });
+        }
+
+        const alreadyMember = currentUserId
+            ? await ChatModel.isParticipant(chat.id, currentUserId)
+            : false;
+
+        const countRes = await pool.query(
+            'SELECT COUNT(*)::int AS c FROM chat_participants WHERE chat_id = $1',
+            [chat.id]
+        );
+        const memberCount = Number(countRes.rows[0]?.c || 0);
+
+        const sampleRes = await pool.query(
+            `SELECT u.id::text AS id, u.name, u.surname, u.avatar_url AS avatar
+             FROM chat_participants cp
+             LEFT JOIN users u ON u.id = cp.user_id
+             WHERE cp.chat_id = $1 AND u.id IS NOT NULL
+             ORDER BY u.name ASC NULLS LAST
+             LIMIT 4`,
+            [chat.id]
+        );
+
+        const mentorId = chat.creator_id ? String(chat.creator_id) : null;
+        const requiresSubscription = chat.type === 'group' && !!mentorId;
+        let hasSubscription = false;
+        if (requiresSubscription && currentUserId && mentorId) {
+            if (String(currentUserId) === mentorId) {
+                hasSubscription = true;
+            } else {
+                const active = await TokenService.getActiveSubscription(currentUserId, mentorId);
+                hasSubscription = !!active;
+            }
+        }
+
+        const canJoin =
+            !alreadyMember &&
+            (!requiresSubscription || hasSubscription);
+
+        return res.status(200).json({
+            status: alreadyMember ? 'already' : 'ok',
+            alreadyMember,
+            requiresSubscription,
+            hasSubscription,
+            canJoin,
+            memberCount,
+            sampleMembers: sampleRes.rows,
+            chat: {
+                id: chat.id,
+                name: chat.name,
+                description: chat.description,
+                avatar_url: chat.avatar_url,
+                type: chat.type,
+                creator_id: chat.creator_id,
+            },
+        });
+    } catch (error) {
+        console.error('checkChatInvite:', error);
+        return res.status(500).json({ status: 'error', message: 'Server xatosi' });
+    }
+};
+
+/** Telegram importChatInvite: havola orqali qo‘shilish */
+export const joinChatInvite = async (req: Request, res: Response) => {
+    try {
+        const token = String(req.params.token || '').trim();
+        const currentUserId = (req as any).user?.id;
+        if (!currentUserId) return res.status(401).json({ message: 'Auth required' });
+        if (!token || !UUID_RE.test(token)) {
+            return res.status(404).json({ status: 'invalid', message: 'Havola yaroqsiz' });
+        }
+
+        const chat = await ChatModel.findById(token);
+        if (!chat || (chat.type !== 'group' && chat.type !== 'channel')) {
+            return res.status(404).json({ status: 'not_found', message: 'Guruh topilmadi yoki havola eskirgan' });
+        }
+
+        if (await ChatModel.isParticipant(chat.id, currentUserId)) {
+            return res.status(200).json({
+                status: 'already',
+                message: 'Siz allaqachon a\'zosiz',
+                chatId: chat.id,
+                chat,
+            });
+        }
+
+        const mentorId = chat.creator_id ? String(chat.creator_id) : null;
+        if (chat.type === 'group' && mentorId && String(currentUserId) !== mentorId) {
+            const active = await TokenService.getActiveSubscription(currentUserId, mentorId);
+            if (!active) {
+                return res.status(403).json({
+                    status: 'needs_subscription',
+                    message: 'Obuna talab qilinadi. Avval ustozga obuna bo\'ling.',
+                    chatId: chat.id,
+                    mentorId,
+                });
+            }
+        }
+
+        await ChatModel.addParticipant(chat.id, currentUserId);
+        await safeDelCache(`user_chats:${currentUserId}`);
+
+        const io = req.app.get('io');
+        if (io) io.to(chat.id).emit('participant_joined', { chatId: chat.id, userId: currentUserId });
+
+        if (chat.type === 'group' && mentorId) {
+            try {
+                const { markGroupJoinInvitesPaid } = await import('../../services/panelInvite.service');
+                await markGroupJoinInvitesPaid(String(chat.id), String(currentUserId), io);
+            } catch (e) {
+                console.error('markGroupJoinInvitesPaid (invite join):', e);
+            }
+        }
+
+        return res.status(200).json({
+            status: 'joined',
+            message: 'Guruhga qo\'shildingiz',
+            chatId: chat.id,
+            chat,
+        });
+    } catch (error: any) {
+        console.error('joinChatInvite:', error);
+        return res.status(500).json({ status: 'error', message: error?.message || 'Server xatosi' });
+    }
+};

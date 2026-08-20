@@ -658,11 +658,11 @@ export function DashboardContent({
             <div className="absolute inset-0 pointer-events-none opacity-[0.025]" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '28px 28px' }} />
 
             {Array.isArray(sessionNoticeToasts) && sessionNoticeToasts.length > 0 ? (
-                <div className="relative z-[120] flex flex-col gap-2 px-3 mt-2 pointer-events-none">
+                <div className="absolute top-3 left-1/2 z-[120] flex w-[min(92%,24rem)] -translate-x-1/2 flex-col gap-2 pointer-events-none">
                     {sessionNoticeToasts.map((t) => (
                         <div
                             key={t.id}
-                            className="rounded-xl border border-emerald-500/35 bg-emerald-950/85 px-3 py-2 text-[11px] font-semibold text-emerald-50 shadow-lg backdrop-blur-sm"
+                            className="rounded-xl border border-emerald-500/35 bg-emerald-950/90 px-3 py-2 text-center text-[11px] font-semibold text-emerald-50 shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2 duration-200"
                         >
                             {t.text}
                         </div>
@@ -1419,6 +1419,7 @@ export function DashboardContent({
             onCloseWhiteboard={handleToggleWhiteboard}
             handsRaised={handsRaised}
             mentorMaterialsPanelOpen={mentorRightPanelOpen}
+            userId={user?.id != null ? String(user.id) : undefined}
         />
         </div>
 

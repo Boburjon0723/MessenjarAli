@@ -1003,7 +1003,7 @@ export default function ProfileViewer({
 
         return (
             <div
-                className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#17212b] text-white shadow-[0_2px_16px_rgba(0,0,0,0.45)]"
+                className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.45)] border border-white/[0.06]"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Telegram: til + Edit + Close */}
@@ -1149,7 +1149,7 @@ export default function ProfileViewer({
                     </div>
 
                     {/* Section gap like Telegram */}
-                    <div className="h-3 bg-[#0e1621] my-3" />
+                    <div className="h-3 bg-[#0f0f0f] my-3" />
 
                     {/* Specialist — Story Archive analog */}
                     <button
@@ -1227,7 +1227,7 @@ export default function ProfileViewer({
                         </div>
                     )}
 
-                    <div className="h-3 bg-[#0e1621] my-1" />
+                    <div className="h-3 bg-[#0f0f0f] my-1" />
 
                     {/* Sozlamalar qatorlari — bitta yagona profil */}
                     <button

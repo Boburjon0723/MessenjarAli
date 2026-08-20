@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import type { ServiceSessionPayload, TradeDetails } from '@/types/chat-room';
 import {
     getChatMetadata,
@@ -18,7 +18,22 @@ import { getChatConsent, isListingChat, isMessagingUnlocked } from '@/lib/chat-c
 import { postListingConsent } from '@/lib/listing-consent-api';
 import { useNotification } from '@/context/NotificationContext';
 import { isPrivatePeerUnavailable } from '@/lib/private-chat-peer';
+import { getExpertPanelMode } from '@/lib/expert-roles';
 import ChatPaymentStatusCard from './ChatPaymentStatusCard';
+
+/** Faqat huquqshunos e'lonidan ochilgan chat — Expert service banner */
+function isLegalExpertListingChat(chat: any): boolean {
+    if (!isExpertListingChat(chat)) return false;
+    const meta = getChatMetadata(chat);
+    const snap = meta.snapshot && typeof meta.snapshot === 'object' ? meta.snapshot : {};
+    const mode = getExpertPanelMode({
+        profession: String(snap.profession || ''),
+        specialty: String(snap.specialization_details || snap.specialization || snap.specialty_desc || ''),
+        bio_expert: String(snap.bio_expert || ''),
+        specialty_desc: String(snap.specialty_desc || ''),
+    });
+    return mode === 'legal';
+}
 
 export type ChatWindowBannersProps = {
     t: (...args: any[]) => string;
@@ -69,6 +84,17 @@ export function ChatWindowBanners({
     const jobIntent = chat ? getJobListingIntent(chat) : null;
     const isExpertListing = chat ? isExpertListingChat(chat) : false;
     const isJobListing = chat ? isJobListingChat(chat) : false;
+    const isLegalListingBanner = chat ? isLegalExpertListingChat(chat) : false;
+    const chatIdKey = chat?.id != null ? String(chat.id) : '';
+    const [showLegalServiceBanner, setShowLegalServiceBanner] = useState(true);
+
+    useEffect(() => {
+        setShowLegalServiceBanner(true);
+        if (!isLegalListingBanner || !chatIdKey) return;
+        const timer = window.setTimeout(() => setShowLegalServiceBanner(false), 10_000);
+        return () => window.clearTimeout(timer);
+    }, [chatIdKey, isLegalListingBanner]);
+
     const meta = chat ? getChatMetadata(chat) : {};
     const consent = chat ? getChatConsent(chat) : {};
     const uid = currentUserId ? String(currentUserId) : '';
@@ -143,8 +169,8 @@ export function ChatWindowBanners({
                         </p>
                     </div>
                 )}
-                {isExpertListing && !isJobListing && (
-                    <div className="mt-1 rounded-[24px] bg-[#8774e1]/10 border border-[#8774e1]/25 p-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                {isLegalListingBanner && showLegalServiceBanner && !isJobListing && (
+                    <div className="mt-1 rounded-[24px] bg-[#8774e1]/10 border border-[#8774e1]/25 p-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)] animate-slide-down">
                         <p className="text-[13px] font-semibold text-[#8774e1] mb-1">{t('expert_chat_banner_title')}</p>
                         <p className="text-[12px] text-[#aaaaaa] leading-snug">{t('expert_chat_banner_hint')}</p>
                         <p className="text-[11px] text-[#777587] mt-2 leading-snug">{t('listing_calls_panel_hint')}</p>

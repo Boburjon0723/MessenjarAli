@@ -62,10 +62,26 @@ const createToken = async (req: Request, res: Response): Promise<void> => {
 
         const { apiKey, apiSecret, wsUrl } = getLivekitConfig();
 
-        const participantName = buildParticipantDisplayName(user);
+        // Profil ismi JWT da bo‘lmasa DB dan — video badge da UUID chiqmasin
+        let nameUser = user;
+        if (!user?.name && !user?.username) {
+            try {
+                const ur = await pool.query(
+                    `SELECT name, surname, username, avatar_url FROM users WHERE id = $1 LIMIT 1`,
+                    [userId]
+                );
+                if (ur.rows[0]) {
+                    nameUser = { ...user, ...ur.rows[0] };
+                }
+            } catch {
+                /* keep JWT user */
+            }
+        }
+
+        const participantName = buildParticipantDisplayName(nameUser);
         const role = resolveLiveKitRole(user);
         const isMentor = role === 'mentor';
-        const avatarUrl = user?.avatar_url || user?.avatar || null;
+        const avatarUrl = nameUser?.avatar_url || user?.avatar_url || user?.avatar || null;
         const metadata = JSON.stringify({
             avatar_url: avatarUrl,
             avatar: avatarUrl,

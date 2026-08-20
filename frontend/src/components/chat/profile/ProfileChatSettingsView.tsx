@@ -32,7 +32,7 @@ export function ProfileChatSettingsView({
 
     return (
         <div
-            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)]"
+            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)] border border-white/[0.06]"
             onClick={(e) => e.stopPropagation()}
         >
             <div className="flex h-12 items-center gap-2 px-2">

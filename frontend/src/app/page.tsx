@@ -3,18 +3,34 @@
 import React, { useState, useEffect } from "react";
 import { GlassButton } from "@/components/ui/GlassButton";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ShieldCheck, Sparkles, Wallet } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { TranslationKeys } from "@/lib/translations";
 import { DEFAULT_PLATFORM_BACKGROUND } from "@/lib/default-background";
+import { getToken } from "@/lib/auth-storage";
 
 export default function Home() {
   const { t } = useLanguage();
+  const router = useRouter();
   const [showContent, setShowContent] = useState(false);
 
   useEffect(() => {
     setShowContent(true);
   }, []);
+
+  /** Guruh havolasi: /?invite=<id> → messages yoki login */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const invite = new URLSearchParams(window.location.search).get("invite");
+    if (!invite) return;
+    const dest = `/messages?invite=${encodeURIComponent(invite)}`;
+    if (getToken()) {
+      router.replace(dest);
+    } else {
+      router.replace(`/login?next=${encodeURIComponent(dest)}`);
+    }
+  }, [router]);
 
   return (
     <div className="min-h-screen relative overflow-hidden flex items-center justify-center bg-[#020617] text-white">

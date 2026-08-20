@@ -332,7 +332,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         if (!liveKitRoomId) return;
         try {
             const res = await apiFetch(
-                `/api/livekit/token?room=${encodeURIComponent(liveKitRoomId)}&username=${encodeURIComponent(user?.name || 'Mentor')}`
+                `/api/livekit/token?room=${encodeURIComponent(liveKitRoomId)}&username=${encodeURIComponent([user?.name, user?.surname].filter(Boolean).join(' ').trim() || user?.name || 'Mentor')}`
             );
             if (res.ok) {
                 const data = await res.json();
@@ -948,8 +948,17 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
     const handleRemoveStudent = (participantId: string) => {
         const pid = String(participantId);
         if (socket && selectedGroupId) {
-            socket.emit('kick_student', { sessionId: selectedGroupId, participantId: pid });
+            socket.emit('kick_student', {
+                sessionId: selectedGroupId,
+                studentId: pid,
+                participantId: pid,
+            });
             setAttendees((prev) => prev.filter((p) => String(p.id) !== pid));
+            setHandsRaised((prev) => {
+                const n = { ...prev };
+                delete n[pid];
+                return n;
+            });
         }
     };
 
@@ -1096,7 +1105,9 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                     content: sessionNotes,
                     chat_id: selectedGroupId,
                     session_id: selectedGroupId,
-                    shared_with_client: true
+                    note_type: 'session',
+                    // Faqat mentor uchun — guruh chatiga yuborilmaydi
+                    shared_with_client: false,
                 })
             });
 

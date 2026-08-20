@@ -80,7 +80,7 @@ export function StudentMediaControls() {
             <button
                 type="button"
                 onClick={toggleMic}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isMicEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/10 border-white/10 text-white/80 hover:bg-white/20 hover:border-white/20 hover:text-white shadow-xl shadow-black/20'}`}
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isMicEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/20 border-white/25 text-white hover:bg-white/30 hover:border-white/40 shadow-xl shadow-black/20'}`}
                 title={isMicEnabled ? t('mic_off_title') : t('mic_on_title')}
             >
                 {isMicEnabled ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
@@ -88,7 +88,7 @@ export function StudentMediaControls() {
             <button
                 type="button"
                 onClick={toggleCam}
-                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isCamEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/10 border-white/10 text-white/80 hover:bg-white/20 hover:border-white/20 hover:text-white shadow-xl shadow-black/20'}`}
+                className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-all lg:h-10 lg:w-10 border ${!isCamEnabled ? 'bg-red-500 border-red-400 text-white shadow-lg shadow-red-500/40 ring-1 ring-red-400/30' : 'bg-white/20 border-white/25 text-white hover:bg-white/30 hover:border-white/40 shadow-xl shadow-black/20'}`}
                 title={isCamEnabled ? t('cam_off_title') : t('cam_on_title')}
             >
                 {isCamEnabled ? <Video className="h-5 w-5" /> : <VideoOff className="h-5 w-5" />}
@@ -123,23 +123,23 @@ export function ControlToggleButton({
     const colorClasses = {
         blue: active
             ? 'bg-sky-500 text-white border-sky-400 shadow-lg shadow-sky-500/50 ring-1 ring-sky-400/50'
-            : 'text-sky-300 border-white/10 bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/30 hover:text-sky-200',
+            : 'text-sky-100 border-sky-400/35 bg-sky-500/25 hover:bg-sky-500/40 hover:border-sky-400/55 hover:text-white',
         pink: active
             ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-lg shadow-fuchsia-500/50 ring-1 ring-fuchsia-400/50'
-            : 'text-fuchsia-300 border-white/10 bg-white/5 hover:bg-fuchsia-500/20 hover:border-fuchsia-500/30 hover:text-fuchsia-200',
+            : 'text-fuchsia-100 border-fuchsia-400/35 bg-fuchsia-500/25 hover:bg-fuchsia-500/40 hover:border-fuchsia-400/55 hover:text-white',
         emerald: active
             ? 'bg-emerald-500 text-white border-emerald-400 shadow-lg shadow-emerald-500/50 ring-1 ring-emerald-400/50'
-            : 'text-emerald-300 border-white/10 bg-white/5 hover:bg-emerald-500/20 hover:border-emerald-500/30 hover:text-emerald-200',
+            : 'text-emerald-100 border-emerald-400/35 bg-emerald-500/25 hover:bg-emerald-500/40 hover:border-emerald-400/55 hover:text-white',
         violet: active
             ? 'bg-violet-600 text-white border-violet-400 shadow-lg shadow-violet-500/50 ring-1 ring-violet-400/50'
-            : 'text-violet-300 border-white/10 bg-white/5 hover:bg-violet-500/20 hover:border-violet-500/30 hover:text-violet-200',
+            : 'text-violet-100 border-violet-400/35 bg-violet-500/25 hover:bg-violet-500/40 hover:border-violet-400/55 hover:text-white',
     };
 
     const layout = mobileDock
-        ? 'min-h-[3.25rem] min-w-[3.5rem] flex-col gap-1 rounded-2xl border bg-[#0c0f1a]/95 px-2 py-2 text-[10px] backdrop-blur-2xl shadow-xl'
+        ? 'min-h-[3.25rem] min-w-[3.5rem] flex-col gap-1 rounded-2xl border bg-[#161b2e] px-2 py-2 text-[10px] shadow-xl'
         : compact
           ? 'gap-1.5 rounded-xl px-2.5 py-2 text-[10px] border shadow-md'
-          : 'gap-2.5 rounded-full px-5 py-3 text-xs border bg-black/40 backdrop-blur-xl shadow-xl';
+          : 'gap-2.5 rounded-full px-5 py-3 text-xs border bg-[#1a2035] shadow-xl';
 
     return (
         <button
@@ -148,7 +148,7 @@ export function ControlToggleButton({
             aria-label={label}
             aria-pressed={active}
             onClick={onClick}
-            className={`group relative flex items-center justify-center font-black uppercase tracking-widest transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/35 ${colorClasses[color]} ${layout} ${active ? 'z-10 scale-[1.05]' : 'opacity-80 hover:opacity-100 hover:scale-105'} ${pulse ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-[#05060c] animate-pulse' : ''}`}
+            className={`group relative flex items-center justify-center font-black uppercase tracking-widest transition-all duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/50 ${colorClasses[color]} ${layout} ${active ? 'z-10 scale-[1.05]' : 'opacity-100 hover:scale-105'} ${pulse ? 'ring-2 ring-amber-400 ring-offset-2 ring-offset-[#05060c] animate-pulse' : ''}`}
         >
             <span className="transition-transform group-hover:scale-110">{icon}</span>
             {mobileDock ? <span className="max-w-[4rem] text-center leading-none mt-1">{label}</span> : null}
@@ -156,7 +156,7 @@ export function ControlToggleButton({
             {!compact && !mobileDock ? <span className="ml-1 tracking-[0.2em]">{label}</span> : null}
             
             {/* Glossy overlay */}
-            <div className="absolute inset-0 rounded-inherit bg-gradient-to-tr from-white/10 to-transparent pointer-events-none opacity-50" />
+            <div className="absolute inset-0 rounded-inherit bg-gradient-to-tr from-white/15 to-transparent pointer-events-none opacity-70" />
         </button>
     );
 }

@@ -204,7 +204,11 @@ export class SocketService {
 
             authSocket.on('session_join', async (data: { sessionId: string }) => {
                 const { sessionId } = data;
+                if (!sessionId) return;
                 authSocket.join(sessionId);
+                const sockAny = authSocket as AuthenticatedSocket & { sessionRooms?: Set<string> };
+                if (!sockAny.sessionRooms) sockAny.sessionRooms = new Set();
+                sockAny.sessionRooms.add(String(sessionId));
                 console.log(`[Socket] User ${authSocket.user.id} joined session ${sessionId}`);
 
                 let joinerIsMentor = false;
@@ -256,6 +260,17 @@ export class SocketService {
                     avatar_url: avatarUrl,
                     isMentor: joinerIsMentor
                 });
+            });
+
+            authSocket.on('session_leave', (data: { sessionId?: string }) => {
+                const sessionId = data?.sessionId != null ? String(data.sessionId).trim() : '';
+                if (!sessionId) return;
+                const uid = String(authSocket.user.id);
+                authSocket.leave(sessionId);
+                const sockAny = authSocket as AuthenticatedSocket & { sessionRooms?: Set<string> };
+                sockAny.sessionRooms?.delete(sessionId);
+                authSocket.to(sessionId).emit('participant_left', uid);
+                this.io.to(sessionId).emit('participant_left', { userId: uid });
             });
 
             authSocket.on('send_message', async (data: { roomId: string, content: string, type?: string, clientSideId?: string, caption?: string, metadata?: any, parentId?: string }) => {
@@ -801,13 +816,48 @@ export class SocketService {
             authSocket.on('whiteboard:draw', (data: { sessionId?: string } & Record<string, unknown>) => {
                 const sid = data?.sessionId != null ? String(data.sessionId).trim() : '';
                 if (!sid) return;
-                authSocket.to(sid).emit('whiteboard:draw', data);
+                const uid = String(authSocket.user?.id || '');
+                authSocket.to(sid).emit('whiteboard:draw', {
+                    ...data,
+                    sessionId: sid,
+                    authorId: uid || data.authorId,
+                });
             });
 
-            authSocket.on('whiteboard:clear', (data: { sessionId?: string }) => {
+            /** Talaba faqat o‘z chizmasini; mentor — barchasini (session creator) */
+            authSocket.on('whiteboard:erase_near', async (data: { sessionId?: string; authorId?: string | null } & Record<string, unknown>) => {
                 const sid = data?.sessionId != null ? String(data.sessionId).trim() : '';
                 if (!sid) return;
-                authSocket.to(sid).emit('whiteboard:clear', data);
+                const uid = String(authSocket.user?.id || '');
+                if (!uid) return;
+                const isController = await verifyUserCanControlSession(sid, uid);
+                const payload = {
+                    ...data,
+                    sessionId: sid,
+                    authorId: isController ? (data.authorId ?? null) : uid,
+                };
+                authSocket.to(sid).emit('whiteboard:erase_near', payload);
+            });
+
+            authSocket.on('whiteboard:clear_author', (data: { sessionId?: string; authorId?: string }) => {
+                const sid = data?.sessionId != null ? String(data.sessionId).trim() : '';
+                const uid = String(authSocket.user?.id || '');
+                if (!sid || !uid) return;
+                // Talaba faqat o‘zini tozalashi mumkin
+                authSocket.to(sid).emit('whiteboard:clear_author', {
+                    sessionId: sid,
+                    authorId: uid,
+                });
+            });
+
+            authSocket.on('whiteboard:clear', async (data: { sessionId?: string }) => {
+                const sid = data?.sessionId != null ? String(data.sessionId).trim() : '';
+                if (!sid) return;
+                const uid = String(authSocket.user?.id || '');
+                if (!uid) return;
+                const ok = await verifyUserCanControlSession(sid, uid);
+                if (!ok) return;
+                authSocket.to(sid).emit('whiteboard:clear', { sessionId: sid });
             });
 
             authSocket.on('whiteboard:toggle', (data: { sessionId: string, isOpen: boolean }) => {
@@ -1012,6 +1062,16 @@ export class SocketService {
                 const userId = authSocket.user?.id;
                 console.log(`User disconnected: ${userId}`);
 
+                const sockAny = authSocket as AuthenticatedSocket & { sessionRooms?: Set<string> };
+                if (userId && sockAny.sessionRooms?.size) {
+                    const uid = String(userId);
+                    for (const sid of sockAny.sessionRooms) {
+                        this.io.to(sid).emit('participant_left', uid);
+                        this.io.to(sid).emit('participant_left', { userId: uid });
+                    }
+                    sockAny.sessionRooms.clear();
+                }
+
                 if (userId) {
                     removeUserFromOnline(userId).then((remainingSockets) => {
                         if (remainingSockets <= 0) {
@@ -1027,22 +1087,32 @@ export class SocketService {
             });
 
             // Kick Student from Session
-            authSocket.on('kick_student', async (data: { sessionId: string, studentId: string }) => {
-                const { sessionId, studentId } = data;
-                if (!sessionId || !studentId) return;
-                const canControl = await verifyUserCanControlSession(String(sessionId), String(authSocket.user.id));
-                if (!canControl) {
-                    authSocket.emit('error', { message: 'Bu amal uchun ruxsat yo‘q' });
-                    return;
+            authSocket.on(
+                'kick_student',
+                async (data: { sessionId?: string; studentId?: string; participantId?: string }) => {
+                    const sessionId = data?.sessionId != null ? String(data.sessionId).trim() : '';
+                    const studentId = String(data?.studentId || data?.participantId || '').trim();
+                    if (!sessionId || !studentId) return;
+                    const canControl = await verifyUserCanControlSession(
+                        String(sessionId),
+                        String(authSocket.user.id)
+                    );
+                    if (!canControl) {
+                        authSocket.emit('error', { message: 'Bu amal uchun ruxsat yo‘q' });
+                        return;
+                    }
+                    console.log(
+                        `[Socket] Mentor ${authSocket.user.id} kicking student ${studentId} from session ${sessionId}`
+                    );
+
+                    // 1. Emit to the specific student so their UI can react
+                    this.io.to(studentId).emit('student_kicked', { sessionId });
+
+                    // 2. Notify everyone in the session room (string + object — frontend ikkalasini ham qabul qiladi)
+                    this.io.to(sessionId).emit('participant_left', studentId);
+                    this.io.to(sessionId).emit('participant_left', { userId: studentId });
                 }
-                console.log(`[Socket] Mentor ${authSocket.user.id} kicking student ${studentId} from session ${sessionId}`);
-
-                // 1. Emit to the specific student so their UI can react
-                this.io.to(studentId).emit('student_kicked', { sessionId });
-
-                // 2. Notify everyone in the session room
-                this.io.to(sessionId).emit('participant_left', studentId);
-            });
+            );
         });
     }
 

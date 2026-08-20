@@ -24,6 +24,7 @@ import AddContactModal from "@/components/chat/AddContactModal";
 import CreateGroupModal from "@/components/chat/CreateGroupModal";
 import CreateChannelModal from "@/components/chat/CreateChannelModal";
 import ContactsModal from "@/components/chat/ContactsModal";
+import GroupInvitePreviewModal from "@/components/chat/GroupInvitePreviewModal";
 import { useSocket } from "@/context/SocketContext";
 import { useNotifications } from "@/hooks/useNotifications";
 import NotificationPopover from "@/components/chat/NotificationPopover";
@@ -109,10 +110,13 @@ export function MessagesPageContent() {
     const roomParam = searchParams.get('room');
     /** Guruhga qo'shilgandan keyin chatni ochish (?room= emas — RoomAccessGate ishlamasin) */
     const openChatParam = searchParams.get('openChat');
+    /** Guruh taklif havolasi: /messages?invite=<chatId> yoki /?invite= → redirect */
+    const inviteParam = searchParams.get('invite');
     /** E'lon / havola: mutaxassis kartasini ochish — /messages?expert=<userId> */
     const expertParam = searchParams.get('expert');
     const router = useRouter();
     const [roomGateState, setRoomGateState] = useState<'checking' | 'payment' | 'expired' | 'needs_invite' | 'joined' | 'closed' | null>(roomParam ? 'checking' : null);
+    const [inviteModalToken, setInviteModalToken] = useState<string | null>(null);
 
     // Search State
     const [searchQuery, setSearchQuery] = useState("");
@@ -1279,6 +1283,30 @@ export function MessagesPageContent() {
         router.replace('/messages', { scroll: false });
     }, [openChatParam, chats, currentUser, router]);
 
+    // Guruh invite havolasi → preview modal
+    useEffect(() => {
+        if (!inviteParam || !currentUser?.id) return;
+        setInviteModalToken(String(inviteParam).trim());
+        const next = new URLSearchParams(searchParams.toString());
+        next.delete('invite');
+        const qs = next.toString();
+        router.replace(qs ? `/messages?${qs}` : '/messages', { scroll: false });
+    }, [inviteParam, currentUser?.id, router, searchParams]);
+
+    const closeInviteModal = useCallback(() => {
+        setInviteModalToken(null);
+    }, []);
+
+    const openChatAfterInvite = useCallback(
+        (chatId: string, joined: boolean) => {
+            setInviteModalToken(null);
+            if (joined) showSuccess(t('group_join_success') as string);
+            void fetchChats(true);
+            router.replace(`/messages?openChat=${encodeURIComponent(chatId)}`, { scroll: false });
+        },
+        [fetchChats, router, showSuccess, t]
+    );
+
     // Profil havolasi: expert UUID → Xizmatlar + o'ng panel
     useEffect(() => {
         if (!expertParam || !currentUser?.id) return;
@@ -1499,6 +1527,13 @@ export function MessagesPageContent() {
                     onClose={() => setShowCreateChannelModal(false)}
                     onCreateChannel={handleCreateChannel}
                 />
+                {inviteModalToken ? (
+                    <GroupInvitePreviewModal
+                        inviteToken={inviteModalToken}
+                        onClose={closeInviteModal}
+                        onOpenChat={openChatAfterInvite}
+                    />
+                ) : null}
 
                 {/* Left Panel: ChatList */}
                 <aside className={` ${showDetail && activeCategory !== 'jobs' ? 'hidden lg:flex' : activeCategory === 'jobs' ? 'hidden' : 'flex'} ${isExpertMode || activeCategory === 'jobs' ? 'lg:w-0 lg:p-0 lg:m-0 lg:rounded-none lg:shadow-none w-0 p-0 opacity-0 pointer-events-none absolute lg:relative z-0' : 'lg:w-[420px] w-full opacity-100 relative z-10 lg:rounded-[24px] lg:shadow-[0_0_4px_0_rgba(0,0,0,0.24)]'} transition-all duration-300 ease-in-out lg:h-full flex-1 min-h-0 lg:flex-none lg:min-h-0 min-w-0 flex-col overflow-hidden bg-[#212121]`}>

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSocket } from '@/context/SocketContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
@@ -40,7 +40,7 @@ import { FormattedQuizText, MentorProfileHeader, getAvatarUrl } from './student/
 import { StudentMentorMediaSync, StudentMediaControls, ControlToggleButton } from './student/StudentDashboardControls';
 
 interface StudentDashboardProps {
-    user: { name?: string; id?: string; avatar_url?: string; avatar?: string } | null;
+    user: { name?: string; surname?: string; id?: string; avatar_url?: string; avatar?: string } | null;
     sessionId: string;
     /** `?style=legal|consult|psychology|mentor` — konsultatsiya matnlari va «dars» UI filtari */
     sessionStyle?: ExpertPanelMode;
@@ -86,6 +86,13 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
     const complianceStorageKey =
         sessionId && complianceBlock ? `student_compliance_dismiss_${sessionId}_${style}` : '';
     const [complianceVisible, setComplianceVisible] = useState(false);
+
+    const leaveSession = useCallback(() => {
+        if (socket && sessionId && sessionId !== 'demo-session-id') {
+            socket.emit('session_leave', { sessionId });
+        }
+        onLeave();
+    }, [socket, sessionId, onLeave]);
 
     const loadSessionResources = React.useCallback(async () => {
         if (!sessionId || sessionId === 'demo-session-id') return;
@@ -271,13 +278,13 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
         };
 
         const handleStudentKicked = (data: { sessionId: string }) => {
-            if (data.sessionId === sessionId) {
+            if (String(data.sessionId) === String(sessionId)) {
                 showError(
                     isClassroomMentor
                         ? t('kicked_by_mentor')
                         : t('kicked_by_expert').replace('{role}', expertRoleLabel.toLowerCase())
                 );
-                onLeave();
+                leaveSession();
             }
         };
 
@@ -287,14 +294,14 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                 showSuccess(
                     data?.message || t('lesson_ended_success')
                 );
-                onLeave();
+                leaveSession();
                 return;
             }
 
             // Konsultatsiya yakuni (legal / psychology / consult):
             // chat o‘chirilmaydi; faqat mijoz paneli yopiladi.
             setStudentBanner(t('service_finished_banner'));
-            window.setTimeout(() => onLeave(), 900);
+            window.setTimeout(() => leaveSession(), 900);
         };
 
         const handleHandLoweredBroadcast = (data: { studentId?: string }) => {
@@ -326,7 +333,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
             socket.off('hand_lowered', handleHandLoweredBroadcast);
             window.removeEventListener('socket_reconnected', handleReconnect);
         };
-    }, [socket, sessionId, onLeave, user?.id, isClassroomMentor, expertRoleLabel, loadSessionResources]);
+    }, [socket, sessionId, leaveSession, user?.id, isClassroomMentor, expertRoleLabel, loadSessionResources, showError, showSuccess, t]);
 
     const handleSelectAnswer = (quizId: string | number, questionIndex: number, optionId: string) => {
         const qk = String(quizId);
@@ -385,6 +392,9 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
         if (!socket || !sessionId || sessionId === 'demo-session-id' || !token) return;
         socket.emit('join_room', sessionId);
         socket.emit('session_join', { sessionId });
+        return () => {
+            socket.emit('session_leave', { sessionId });
+        };
     }, [socket, sessionId, token]);
 
     useEffect(() => {
@@ -399,7 +409,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                 return;
             }
             try {
-                const res = await apiFetch(`/api/livekit/token?room=${sessionId}&username=${encodeURIComponent(user?.name || 'Talaba')}`);
+                const res = await apiFetch(`/api/livekit/token?room=${sessionId}&username=${encodeURIComponent([user?.name, user?.surname].filter(Boolean).join(' ').trim() || user?.name || 'Talaba')}`);
                 if (res.ok) {
                     const data = await res.json();
                     setToken(data.token);
@@ -435,7 +445,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                 <p className="text-lg mb-2 font-semibold">{t('could_not_connect_session')}</p>
                 <p className="text-sm mb-6 text-slate-300 max-w-md">{error}</p>
                 <button
-                    onClick={onLeave}
+                    onClick={leaveSession}
                     className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl font-bold transition-all"
                 >
                     {t('back_btn_text')}
@@ -449,7 +459,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
             <div className="flex h-screen w-full flex-col items-center justify-center bg-[#0f1117] text-white">
                 <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                 <p className="text-xl mb-4 font-medium">{t('connecting_to_video')}</p>
-                <button onClick={onLeave} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl font-bold transition-all">{t('cancel_btn')}</button>
+                <button onClick={leaveSession} className="px-6 py-2 bg-white/10 hover:bg-white/20 rounded-xl font-bold transition-all">{t('cancel_btn')}</button>
             </div>
         );
     }
@@ -498,6 +508,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                         socket={socket}
                         sessionId={sessionId}
                         showClassroomLayout={isClassroomMentor}
+                        userId={user?.id != null ? String(user.id) : undefined}
                     />
                     <RoomAudioRenderer />
                 </div>
@@ -594,14 +605,14 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                         />
 
                         {/* Desktop / planshet: pastki action bar o‘rniga header ichida */}
-                        <div className="hidden lg:flex items-center gap-2 rounded-2xl border border-white/10 bg-black/45 px-2 py-1.5 backdrop-blur-xl">
+                        <div className="hidden lg:flex items-center gap-2 rounded-2xl border border-white/20 bg-[#1c2238]/95 px-2 py-1.5 shadow-xl shadow-black/30">
                             <StudentMediaControls />
-                            <div className="mx-0.5 h-7 w-px bg-white/15" />
+                            <div className="mx-0.5 h-7 w-px bg-white/25" />
                             {isClassroomMentor ? (
                                 <button
                                     type="button"
                                     onClick={toggleHand}
-                                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-all ${handRaised ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40 ring-1 ring-amber-400/50' : 'bg-white/5 text-white/85 hover:bg-white/10 border border-white/5'}`}
+                                    className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide transition-all ${handRaised ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/40 ring-1 ring-amber-400/50' : 'bg-white/15 text-white hover:bg-white/25 border border-white/20'}`}
                                     title={handRaised ? t('hand_down_title') : t('hand_up_title')}
                                 >
                                     <Hand className="h-4 w-4" />
@@ -650,7 +661,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
 
                         <button
                             type="button"
-                            onClick={onLeave}
+                            onClick={leaveSession}
                             className="group flex items-center gap-2 rounded-xl border border-red-500/35 bg-red-500/15 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-red-100 transition-all hover:bg-red-500 hover:text-white sm:px-4 sm:py-2.5 shadow-lg shadow-red-500/20"
                         >
                             <LogOut className="h-3.5 w-3.5 shrink-0 transition-transform group-hover:-translate-x-1" />
@@ -837,6 +848,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                                                             socket={socket}
                                                             sessionId={sessionId}
                                                             isMentor={false}
+                                                            userId={user?.id != null ? String(user.id) : undefined}
                                                         />
                                                     </div>
                                                 ) : null}
@@ -851,7 +863,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                     <div className="hidden lg:flex absolute right-6 top-1/2 -translate-y-1/2 z-[40] pointer-events-none">
                         <button
                             onClick={() => setSidebarVisible(!sidebarVisible)}
-                            className={`pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-black/40 text-white/50 backdrop-blur-xl transition-all hover:bg-black/60 hover:text-white ${!sidebarVisible ? 'rotate-180' : ''}`}
+                            className={`pointer-events-auto flex h-10 w-10 items-center justify-center rounded-full border border-white/25 bg-[#1c2238] text-white shadow-lg transition-all hover:bg-[#2a3350] hover:text-white ${!sidebarVisible ? 'rotate-180' : ''}`}
                             title={sidebarVisible ? "Panelni yashirish" : "Panelni ko'rsatish"}
                         >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -864,14 +876,14 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                 {/* 4. Mobil: pastki action bar (desktopda boshqaruvlar headerda) */}
                 <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 pb-[max(0.65rem,env(safe-area-inset-bottom))] pt-10 lg:hidden">
                     <div className="pointer-events-auto mx-auto flex max-w-lg flex-wrap items-center justify-center gap-2 px-2">
-                        <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-[#0c0f1a]/90 px-2 py-2 shadow-xl backdrop-blur-xl">
+                        <div className="flex items-center gap-2 rounded-2xl border border-white/25 bg-[#1c2238] px-2 py-2 shadow-xl">
                             <StudentMediaControls />
                         </div>
                         {isClassroomMentor ? (
                             <button
                                 type="button"
                                 onClick={toggleHand}
-                                className={`flex min-h-[44px] items-center gap-2 rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${handRaised ? 'border border-amber-400/40 bg-amber-500 text-white shadow-lg' : 'border border-white/10 bg-[#0c0f1a]/90 text-white/90 backdrop-blur-xl'}`}
+                                className={`flex min-h-[44px] items-center gap-2 rounded-2xl px-3 py-2 text-[10px] font-bold uppercase tracking-wide ${handRaised ? 'border border-amber-400/40 bg-amber-500 text-white shadow-lg' : 'border border-white/25 bg-[#1c2238] text-white'}`}
                             >
                                 <Hand className="h-5 w-5 shrink-0" />
                                 <span className="max-w-[5.5rem] leading-tight">
