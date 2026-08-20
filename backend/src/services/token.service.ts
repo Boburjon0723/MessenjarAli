@@ -436,18 +436,41 @@ export class TokenService {
                 note: 'Mentor 30 kun obuna (escrow — 30 kundan keyin ustoz hisobiga)'
             });
 
-            await client.query(
+            // Production bazada UNIQUE(student_id, mentor_id) bo'lmasa ham ishlashi uchun
+            // ON CONFLICT o'rniga explicit upsert ishlatamiz.
+            const existingSubRes = await client.query(
                 `
-                INSERT INTO student_mentor_subscriptions (student_id, mentor_id, started_at, expires_at, amount_paid, transaction_id)
-                VALUES ($1, $2, NOW(), NOW() + INTERVAL '30 days', $3, $4)
-                ON CONFLICT (student_id, mentor_id) DO UPDATE SET
-                    started_at = NOW(),
-                    expires_at = NOW() + INTERVAL '30 days',
-                    amount_paid = student_mentor_subscriptions.amount_paid + EXCLUDED.amount_paid,
-                    transaction_id = EXCLUDED.transaction_id
+                SELECT id
+                FROM student_mentor_subscriptions
+                WHERE student_id = $1 AND mentor_id = $2
+                ORDER BY created_at DESC
+                LIMIT 1
+                FOR UPDATE
                 `,
-                [studentId, mentorId, amount, tx.id]
+                [studentId, mentorId]
             );
+
+            if (existingSubRes.rows.length > 0) {
+                await client.query(
+                    `
+                    UPDATE student_mentor_subscriptions
+                    SET started_at = NOW(),
+                        expires_at = NOW() + INTERVAL '30 days',
+                        amount_paid = amount_paid + $1,
+                        transaction_id = $2
+                    WHERE id = $3
+                    `,
+                    [amount, tx.id, existingSubRes.rows[0].id]
+                );
+            } else {
+                await client.query(
+                    `
+                    INSERT INTO student_mentor_subscriptions (student_id, mentor_id, started_at, expires_at, amount_paid, transaction_id)
+                    VALUES ($1, $2, NOW(), NOW() + INTERVAL '30 days', $3, $4)
+                    `,
+                    [studentId, mentorId, amount, tx.id]
+                );
+            }
 
             await client.query('COMMIT');
 

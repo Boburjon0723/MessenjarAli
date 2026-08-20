@@ -13,6 +13,9 @@ export type WalletPinSetupCardProps = {
     onConfirmPinChange: (v: string) => void;
     onSave: () => void;
     onCancel: () => void;
+    mode?: 'setup' | 'change';
+    oldPin?: string;
+    onOldPinChange?: (v: string) => void;
 };
 
 export function WalletPinSetupCard({
@@ -23,20 +26,34 @@ export function WalletPinSetupCard({
     onConfirmPinChange,
     onSave,
     onCancel,
+    mode = 'setup',
+    oldPin = '',
+    onOldPinChange,
 }: WalletPinSetupCardProps) {
     const { t } = useLanguage();
+    const isChange = mode === 'change';
 
     return (
         <GlassCard className="p-6 border-amber-500/20 bg-amber-900/10">
-            <h3 className="text-white font-bold mb-4">{t('setup_pin')}</h3>
+            <h3 className="text-white font-bold mb-4">{isChange ? t('change_pin') : t('setup_pin')}</h3>
             <div className="space-y-4 max-w-xs">
+                {isChange && onOldPinChange && (
+                    <input
+                        type="password"
+                        maxLength={4}
+                        placeholder={t('current_pin')}
+                        className="w-full p-3 rounded-lg bg-black/20 border border-white/10 text-white text-center tracking-widest"
+                        value={oldPin}
+                        onChange={(e) => onOldPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    />
+                )}
                 <input
                     type="password"
                     maxLength={4}
                     placeholder={t('new_pin')}
                     className="w-full p-3 rounded-lg bg-black/20 border border-white/10 text-white text-center tracking-widest"
                     value={newPin}
-                    onChange={(e) => onNewPinChange(e.target.value)}
+                    onChange={(e) => onNewPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 />
                 <input
                     type="password"
@@ -44,7 +61,7 @@ export function WalletPinSetupCard({
                     placeholder={t('confirm_pin_label')}
                     className="w-full p-3 rounded-lg bg-black/20 border border-white/10 text-white text-center tracking-widest"
                     value={confirmPin}
-                    onChange={(e) => onConfirmPinChange(e.target.value)}
+                    onChange={(e) => onConfirmPinChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
                 />
                 {pinError && <p className="text-red-400 text-xs">{pinError}</p>}
                 <div className="flex gap-2">

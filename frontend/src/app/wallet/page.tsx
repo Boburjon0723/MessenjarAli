@@ -50,6 +50,8 @@ export default function WalletPage() {
 
     // PIN
     const [showPinSetup, setShowPinSetup] = useState(false);
+    const [showPinChange, setShowPinChange] = useState(false);
+    const [oldPin, setOldPin] = useState('');
     const [newPin, setNewPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
     const [pinError, setPinError] = useState('');
@@ -162,8 +164,34 @@ export default function WalletPage() {
         if (newPin !== confirmPin) { setPinError(t('pin_error_match')); return; }
         try {
             const res = await apiFetch('/api/token/setup', { method: 'POST', body: JSON.stringify({ pin: newPin }) });
-            if (res.ok) { showSuccess(t('success_update')); setShowPinSetup(false); fetchBalance(); }
-            else setPinError(t('server_error'));
+            if (res.ok) {
+                showSuccess(t('success_update'));
+                setShowPinSetup(false);
+                setNewPin('');
+                setConfirmPin('');
+                setPinError('');
+                fetchBalance();
+            } else setPinError(t('server_error'));
+        } catch { setPinError(t('server_error')); }
+    };
+
+    const handleChangePin = async () => {
+        if (oldPin.length !== 4) { setPinError(t('pin_error_digits')); return; }
+        if (newPin.length !== 4 || isNaN(Number(newPin))) { setPinError(t('pin_error_digits')); return; }
+        if (newPin !== confirmPin) { setPinError(t('pin_error_match')); return; }
+        try {
+            const res = await apiFetch('/api/token/change-pin', { method: 'POST', body: JSON.stringify({ oldPin, newPin }) });
+            if (res.ok) {
+                showSuccess(t('success_update'));
+                setShowPinChange(false);
+                setOldPin('');
+                setNewPin('');
+                setConfirmPin('');
+                setPinError('');
+            } else {
+                const e = await res.json().catch(() => ({}));
+                setPinError(e.message || t('server_error'));
+            }
         } catch { setPinError(t('server_error')); }
     };
 
@@ -250,9 +278,15 @@ export default function WalletPage() {
                     </div>
                     <div className="flex items-center gap-2">
                         {!balance.hasPin && (
-                            <button onClick={() => setShowPinSetup(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors">
+                            <button onClick={() => { setShowPinSetup(true); setPinError(''); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-medium hover:bg-amber-500/20 transition-colors">
                                 <Lock className="h-3.5 w-3.5" />
                                 {t('pin_not_set')}
+                            </button>
+                        )}
+                        {balance.hasPin && !showPinChange && (
+                            <button onClick={() => { setShowPinChange(true); setPinError(''); setOldPin(''); setNewPin(''); setConfirmPin(''); }} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.06] border border-white/[0.08] text-white/70 text-xs font-medium hover:bg-white/[0.1] transition-colors">
+                                <Settings className="h-3.5 w-3.5" />
+                                {t('change_pin')}
                             </button>
                         )}
                     </div>
@@ -262,7 +296,10 @@ export default function WalletPage() {
             <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 space-y-6 pb-24 lg:pb-6">
                 {/* PIN setup */}
                 {showPinSetup && (
-                    <WalletPinSetupCard newPin={newPin} confirmPin={confirmPin} pinError={pinError} onNewPinChange={setNewPin} onConfirmPinChange={setConfirmPin} onSave={handleSetPin} onCancel={() => setShowPinSetup(false)} />
+                    <WalletPinSetupCard newPin={newPin} confirmPin={confirmPin} pinError={pinError} onNewPinChange={setNewPin} onConfirmPinChange={setConfirmPin} onSave={handleSetPin} onCancel={() => { setShowPinSetup(false); setPinError(''); setNewPin(''); setConfirmPin(''); }} />
+                )}
+                {showPinChange && (
+                    <WalletPinSetupCard mode="change" oldPin={oldPin} onOldPinChange={setOldPin} newPin={newPin} confirmPin={confirmPin} pinError={pinError} onNewPinChange={setNewPin} onConfirmPinChange={setConfirmPin} onSave={handleChangePin} onCancel={() => { setShowPinChange(false); setPinError(''); setOldPin(''); setNewPin(''); setConfirmPin(''); }} />
                 )}
 
                 {/* Top row: Value + Balance + Shortcuts */}

@@ -26,14 +26,19 @@ export const setupWallet = async (req: Request, res: Response) => {
         const salt = await bcrypt.genSalt(10);
         const pinHash = await bcrypt.hash(pin, salt);
 
-        await client.query(`
+        const updated = await client.query(`
             UPDATE token_balances 
             SET pin_hash = $1, updated_at = NOW() 
             WHERE user_id = $2
+            RETURNING user_id
         `, [pinHash, userId]);
 
-        // If wallet didn't exist (edge case), create it? init_wallet_db already creates rows for existing users.
-        // We assume row exists.
+        if (updated.rowCount === 0) {
+            await client.query(`
+                INSERT INTO token_balances (user_id, balance, locked_balance, pin_hash)
+                VALUES ($1, 0, 0, $2)
+            `, [userId, pinHash]);
+        }
 
         res.status(200).json({ message: 'Wallet PIN set successfully' });
     } catch (error) {
@@ -186,6 +191,51 @@ export const getWalletConfig = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Get Wallet Config Error:', error);
         res.status(500).json({ message: 'Failed to fetch wallet config' });
+    }
+};
+
+export const changeWalletPin = async (req: Request, res: Response) => {
+    const client = await pool.connect();
+    try {
+        const userId = (req as any).user.id;
+        const { oldPin, newPin } = req.body;
+
+        if (!oldPin || !newPin || newPin.length !== 4 || isNaN(Number(newPin))) {
+            return res.status(400).json({ message: 'New PIN must be a 4-digit number' });
+        }
+        if (oldPin === newPin) {
+            return res.status(400).json({ message: 'New PIN must differ from old PIN' });
+        }
+
+        const walletRes = await client.query(
+            'SELECT pin_hash FROM token_balances WHERE user_id = $1',
+            [userId],
+        );
+        const wallet = walletRes.rows[0];
+
+        if (!wallet?.pin_hash) {
+            return res.status(403).json({ message: 'Wallet PIN not set. Please set up your wallet first.' });
+        }
+
+        const isOldValid = await bcrypt.compare(oldPin, wallet.pin_hash);
+        if (!isOldValid) {
+            return res.status(401).json({ message: 'Invalid PIN' });
+        }
+
+        const salt = await bcrypt.genSalt(10);
+        const pinHash = await bcrypt.hash(newPin, salt);
+
+        await client.query(
+            'UPDATE token_balances SET pin_hash = $1, updated_at = NOW() WHERE user_id = $2',
+            [pinHash, userId],
+        );
+
+        res.status(200).json({ message: 'Wallet PIN changed successfully' });
+    } catch (error) {
+        console.error('Change Wallet PIN Error:', error);
+        res.status(500).json({ message: 'Failed to change PIN' });
+    } finally {
+        client.release();
     }
 };
 

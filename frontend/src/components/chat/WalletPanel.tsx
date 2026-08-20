@@ -21,6 +21,8 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
     const { confirm } = useConfirm();
     const [balance, setBalance] = useState({ available: 0, locked: 0, hasPin: false });
     const [showPinSetup, setShowPinSetup] = useState(false);
+    const [showPinChange, setShowPinChange] = useState(false);
+    const [oldPin, setOldPin] = useState('');
     const [newPin, setNewPin] = useState('');
     const [confirmPin, setConfirmPin] = useState('');
     const [pinError, setPinError] = useState('');
@@ -375,8 +377,34 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
             if (res.ok) {
                 showSuccess(t('success_update'));
                 setShowPinSetup(false);
+                setNewPin('');
+                setConfirmPin('');
+                setPinError('');
                 fetchBalance();
             } else { setPinError(t('server_error')); }
+        } catch (e) { setPinError(t('server_error')); }
+    };
+
+    const handleChangePin = async () => {
+        if (oldPin.length !== 4) { setPinError(t('pin_error_digits')); return; }
+        if (newPin.length !== 4 || isNaN(Number(newPin))) { setPinError(t('pin_error_digits')); return; }
+        if (newPin !== confirmPin) { setPinError(t('pin_error_match')); return; }
+        try {
+            const res = await apiFetch(`/api/token/change-pin`, {
+                method: 'POST',
+                body: JSON.stringify({ oldPin, newPin }),
+            });
+            if (res.ok) {
+                showSuccess(t('success_update'));
+                setShowPinChange(false);
+                setOldPin('');
+                setNewPin('');
+                setConfirmPin('');
+                setPinError('');
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setPinError(err.message || t('server_error'));
+            }
         } catch (e) { setPinError(t('server_error')); }
     };
 
@@ -604,7 +632,19 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                         <p className="text-amber-200/70 text-xs">{t('pin_required_desc')}</p>
                                     </div>
                                 </div>
-                                <GlassButton onClick={() => setShowPinSetup(true)} variant="premium" className="!py-2 !px-4 !rounded-lg !text-xs shadow-none">{t('add')}</GlassButton>
+                                <GlassButton onClick={() => { setShowPinSetup(true); setPinError(''); }} variant="premium" className="!py-2 !px-4 !rounded-lg !text-xs shadow-none">{t('add')}</GlassButton>
+                            </div>
+                        )}
+
+                        {balance.hasPin && !showPinChange && !showPinSetup && (
+                            <div className="flex justify-end">
+                                <button
+                                    type="button"
+                                    onClick={() => { setShowPinChange(true); setPinError(''); setOldPin(''); setNewPin(''); setConfirmPin(''); }}
+                                    className="text-xs text-white/45 hover:text-white/80 transition-colors"
+                                >
+                                    {t('change_pin')}
+                                </button>
                             </div>
                         )}
 
@@ -616,7 +656,22 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                 onNewPinChange={setNewPin}
                                 onConfirmPinChange={setConfirmPin}
                                 onSave={handleSetPin}
-                                onCancel={() => setShowPinSetup(false)}
+                                onCancel={() => { setShowPinSetup(false); setPinError(''); setNewPin(''); setConfirmPin(''); }}
+                            />
+                        )}
+
+                        {showPinChange && (
+                            <WalletPinSetupCard
+                                mode="change"
+                                oldPin={oldPin}
+                                onOldPinChange={setOldPin}
+                                newPin={newPin}
+                                confirmPin={confirmPin}
+                                pinError={pinError}
+                                onNewPinChange={setNewPin}
+                                onConfirmPinChange={setConfirmPin}
+                                onSave={handleChangePin}
+                                onCancel={() => { setShowPinChange(false); setPinError(''); setOldPin(''); setNewPin(''); setConfirmPin(''); }}
                             />
                         )}
 

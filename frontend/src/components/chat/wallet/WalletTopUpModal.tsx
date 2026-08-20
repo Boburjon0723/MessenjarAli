@@ -54,7 +54,7 @@ export function WalletTopUpModal({
                         </div>
                         <div className="space-y-1 text-center py-1">
                             <p className="text-xl sm:text-2xl font-mono text-white tracking-[0.12em] drop-shadow-md">
-                                {adminCard || t('pin_error_digits')}
+                                {adminCard || t('admin_card_not_set')}
                             </p>
                             <p className="text-white/55 text-[10px] sm:text-xs uppercase tracking-widest mt-1.5">MALI ADMIN</p>
                         </div>

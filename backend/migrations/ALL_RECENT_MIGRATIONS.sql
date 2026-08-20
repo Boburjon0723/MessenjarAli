@@ -44,3 +44,27 @@ CREATE TABLE IF NOT EXISTS student_mentor_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_subscriptions_student_mentor ON student_mentor_subscriptions(student_id, mentor_id);
 CREATE INDEX IF NOT EXISTS idx_subscriptions_expires ON student_mentor_subscriptions(expires_at);
 COMMENT ON TABLE student_mentor_subscriptions IS 'Talaba 30 kunlik obuna — har dars uchun alohida to''lov emas';
+
+
+-- -----------------------------------------------------------------------------
+-- 3. FIX SUBSCRIPTION UNIQUE: eski bazalarda ON CONFLICT xatosini oldini olish
+-- Asl fayl: backend/migrations/009_fix_student_mentor_subscriptions_unique.sql
+-- -----------------------------------------------------------------------------
+WITH ranked AS (
+    SELECT
+        ctid,
+        ROW_NUMBER() OVER (
+            PARTITION BY student_id, mentor_id
+            ORDER BY created_at DESC, started_at DESC, id DESC
+        ) AS rn
+    FROM student_mentor_subscriptions
+)
+DELETE FROM student_mentor_subscriptions s
+USING ranked r
+WHERE s.ctid = r.ctid
+  AND r.rn > 1;
+
+DROP INDEX IF EXISTS idx_subscriptions_student_mentor;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_subscriptions_student_mentor
+ON student_mentor_subscriptions(student_id, mentor_id);

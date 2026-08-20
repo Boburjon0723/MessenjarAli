@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getBalance, transferCoins, setupWallet, requestRecovery, createTopUpRequest, getTopUpRequests, getTransactions, getWalletConfig } from '../controllers/token.controller';
+import { getBalance, transferCoins, setupWallet, changeWalletPin, requestRecovery, createTopUpRequest, getTopUpRequests, getTransactions, getWalletConfig } from '../controllers/token.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 import { moneyLimiter } from '../../middleware/rateLimit.middleware';
 import { validateBody } from '../../middleware/validate.middleware';
@@ -11,6 +11,7 @@ router.get('/balance', authenticateToken, getBalance);
 router.get('/config', authenticateToken, getWalletConfig);
 router.post('/transfer', authenticateToken, moneyLimiter, validateBody(transferSchema), transferCoins);
 router.post('/setup', authenticateToken, setupWallet);
+router.post('/change-pin', authenticateToken, changeWalletPin);
 router.post('/recovery', authenticateToken, requestRecovery);
 router.post('/topup', authenticateToken, createTopUpRequest);
 router.get('/topup', authenticateToken, getTopUpRequests);
