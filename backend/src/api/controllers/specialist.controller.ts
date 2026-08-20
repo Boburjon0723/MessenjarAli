@@ -85,25 +85,17 @@ export const saveWhiteboardSnapshot = async (req: Request, res: Response) => {
 
         const snapshot = await WhiteboardSnapshotModel.create({ session_id, snapshot_data });
 
-        // Auto-post to chat: rasm URL content da, matn caption da (aks holda brauzer matnni URL deb so‘raydi)
+        // Chatga faqat qisqa matn — base64 rasmni messages ga yozmaslik (payload portlashini oldini olish)
         if (chat_id) {
-            const imageUrl =
-                typeof snapshot_data === 'string' &&
-                (snapshot_data.startsWith('data:') ||
-                    snapshot_data.startsWith('http') ||
-                    snapshot_data.startsWith('/'))
-                    ? snapshot_data
-                    : '';
             await MessageModel.create(
                 chat_id,
                 specialist_id,
-                imageUrl || '🎨 **Dars doskasi (Whiteboard) saqlandi.**',
-                imageUrl ? 'image' : 'text',
+                '🎨 Dars doskasi (Whiteboard) saqlandi.',
+                'text',
                 {
-                    url: imageUrl || undefined,
-                    caption: '🎨 Dars doskasi (Whiteboard) saqlandi.',
                     is_whiteboard: true,
                     snapshot_id: snapshot.id,
+                    caption: '🎨 Dars doskasi (Whiteboard) saqlandi.',
                 }
             );
         }
