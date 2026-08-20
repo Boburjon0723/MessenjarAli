@@ -17,6 +17,37 @@ function parseChatMetadata(raw: unknown): Record<string, any> {
     }
 }
 
+/** Foydalanuvchi mavjud va faol (o‘chirilmagan / bloklanmagan akkaunt). */
+export async function isActiveUserId(userId: string | null | undefined): Promise<boolean> {
+    if (!userId) return false;
+    const r = await pool.query(
+        `SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_active, true) = true LIMIT 1`,
+        [String(userId)]
+    );
+    return (r.rowCount ?? 0) > 0;
+}
+
+/** O‘chirilgan sherikli shaxsiy chatdan joriy userni chiqarish / bo‘sh chatni o‘chirish. */
+async function cleanupOrphanPrivateChat(chatId: string, userId: string): Promise<void> {
+    try {
+        await pool.query(`DELETE FROM chat_participants WHERE chat_id = $1 AND user_id = $2`, [
+            chatId,
+            userId,
+        ]);
+        const left = await pool.query(
+            `SELECT COUNT(*)::int AS n FROM chat_participants WHERE chat_id = $1`,
+            [chatId]
+        );
+        if ((left.rows[0]?.n ?? 0) === 0) {
+            await pool.query(`DELETE FROM messages WHERE chat_id = $1`, [chatId]).catch(() => {});
+            await pool.query(`DELETE FROM chats WHERE id = $1`, [chatId]).catch(() => {});
+        }
+        await safeDelCache(`user_chats:${userId}`);
+    } catch (e) {
+        console.warn('[cleanupOrphanPrivateChat]', chatId, e);
+    }
+}
+
 /** Tasdiqlangan ekspertning e'londa ko'rsatiladigan maydonlari (serverdan, clientaga ishonmaymiz) */
 export async function fetchExpertListingSnapshot(expertId: string): Promise<Record<string, unknown> | null> {
     const res = await pool.query(
@@ -109,7 +140,7 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
         const isExpertSide = String(meta.expert_id) === String(currentUserId);
         if (isExpertSide) {
             const user = await UserModel.findById(otherParticipantId);
-            if (user) {
+            if (user && user.is_active !== false) {
                 return {
                     ...chat,
                     otherUser: {
@@ -122,7 +153,7 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
                     },
                 };
             }
-        } else {
+        } else if (await isActiveUserId(String(meta.expert_id))) {
             const snap = meta.snapshot;
             return {
                 ...chat,
@@ -141,7 +172,7 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
         const isPosterSide = String(meta.poster_id) === String(currentUserId);
         if (isPosterSide) {
             const user = await UserModel.findById(otherParticipantId);
-            if (user) {
+            if (user && user.is_active !== false) {
                 return {
                     ...chat,
                     otherUser: {
@@ -154,7 +185,7 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
                     },
                 };
             }
-        } else {
+        } else if (await isActiveUserId(String(meta.poster_id))) {
             const posterName =
                 [snap.poster_name, snap.poster_surname].filter(Boolean).join(' ').trim() ||
                 snap.company_name ||
@@ -174,7 +205,7 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
 
     try {
         const user = await UserModel.findById(otherParticipantId);
-        if (user) {
+        if (user && user.is_active !== false) {
             return {
                 ...chat,
                 otherUser: {
@@ -189,7 +220,12 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
     } catch (e) {
         console.error(`Error fetching user ${otherParticipantId}:`, e);
     }
-    return { ...chat, otherUser: null };
+    return {
+        ...chat,
+        otherUser: null,
+        peerUnavailable: true,
+        peerUserId: otherParticipantId,
+    };
 }
 
 export const createChat = async (req: Request, res: Response) => {
@@ -203,7 +239,29 @@ export const createChat = async (req: Request, res: Response) => {
         if (type === 'group') {
             if (!name) return res.status(400).json({ message: 'Group name is required' });
             const avatar_url = req.body.avatar_url;
-            const newGroup = await ChatModel.createGroup(currentUserId, name, participants || [], avatar_url);
+            const trimmedName = String(name).trim();
+
+            // Bir xil nomdagi guruh allaqachon bo'lsa — yangisini yaratmasdan qaytaramiz (dublikat oldini olish)
+            const { pool } = await import('../../config/database');
+            const existing = await pool.query(
+                `SELECT * FROM chats
+                 WHERE type = 'group'
+                   AND creator_id = $1
+                   AND lower(trim(name)) = lower(trim($2))
+                 ORDER BY created_at ASC
+                 LIMIT 1`,
+                [currentUserId, trimmedName]
+            );
+            if (existing.rows[0]) {
+                const existingGroup = existing.rows[0];
+                return res.status(200).json({
+                    ...existingGroup,
+                    id: String(existingGroup.id),
+                    reused: true,
+                });
+            }
+
+            const newGroup = await ChatModel.createGroup(currentUserId, trimmedName, participants || [], avatar_url);
             const groupId = newGroup?.id ? String(newGroup.id) : null;
             await safeDelCache(`user_chats:${currentUserId}`);
             if (participants && Array.isArray(participants)) {
@@ -236,6 +294,12 @@ export const createChat = async (req: Request, res: Response) => {
         if (!uuidRegex.test(currentUserId)) {
             console.warn(`[createChat] Invalid currentUserId format: "${currentUserId}"`);
             return res.status(401).json({ message: 'Invalid session. Please logout and login again.' });
+        }
+
+        if (!(await isActiveUserId(String(participantId)))) {
+            return res.status(404).json({
+                message: "Foydalanuvchi topilmadi yoki akkaunt o'chirilgan",
+            });
         }
 
         const listingMeta =
@@ -286,6 +350,8 @@ export const createChat = async (req: Request, res: Response) => {
         if (!chat) {
             chat = await ChatModel.createPrivate(currentUserId, participantId, privateMeta);
         } else if (privateMeta) {
+            // E'londan ochilganda shu e'lon egasi — manba haqiqati.
+            // Eski chatda teskari expert_id qolgan bo‘lsa, yangilaymiz (Brain e'lon → expert_id=Brain).
             await pool.query(
                 `UPDATE chats SET metadata = $1::jsonb, updated_at = NOW() WHERE id = $2`,
                 [JSON.stringify(privateMeta), chat.id]
@@ -358,7 +424,22 @@ export const getUserChats = async (req: Request, res: Response) => {
         if (!skipCache) {
             const cachedChats = await safeGetCache(cacheKey);
             if (cachedChats) {
-                return res.status(200).json(JSON.parse(cachedChats));
+                try {
+                    const parsed = JSON.parse(cachedChats);
+                    if (Array.isArray(parsed)) {
+                        const ok = parsed.filter(
+                            (c: any) =>
+                                c?.type !== 'private' ||
+                                (c?.otherUser && !c?.peerUnavailable)
+                        );
+                        // Keshda o'chirilgan sheriklar bo'lsa — DB dan qayta yuklash
+                        if (ok.length === parsed.length) {
+                            return res.status(200).json(ok);
+                        }
+                    }
+                } catch {
+                    /* fall through */
+                }
             }
         }
 
@@ -366,10 +447,21 @@ export const getUserChats = async (req: Request, res: Response) => {
 
         const enriched = await Promise.all(chats.map((chat) => enrichPrivateChatRow(chat, currentUserId)));
 
-        // Set cache for 5 minutes
-        await safeSetCache(cacheKey, JSON.stringify(enriched), 300);
+        // O'chirilgan / mavjud bo'lmagan sherikli shaxsiy chatlarni yashirish va tozalash
+        const visible: any[] = [];
+        for (const chat of enriched) {
+            if (chat?.type === 'private' && (chat.peerUnavailable || !chat.otherUser)) {
+                const cid = chat.id != null ? String(chat.id) : '';
+                if (cid) void cleanupOrphanPrivateChat(cid, currentUserId);
+                continue;
+            }
+            visible.push(chat);
+        }
 
-        res.status(200).json(enriched);
+        // Set cache for 5 minutes
+        await safeSetCache(cacheKey, JSON.stringify(visible), 300);
+
+        res.status(200).json(visible);
     } catch (error) {
         console.error('Get Chats Error:', error);
         res.status(500).json({ message: 'Internal server error' });
@@ -480,10 +572,22 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [chatId]);
             const otherParticipant = participants.rows.find((p: { user_id: string }) => String(p.user_id) !== String(currentUserId));
             if (otherParticipant) {
+                if (!(await isActiveUserId(String(otherParticipant.user_id)))) {
+                    await cleanupOrphanPrivateChat(chatId, currentUserId);
+                    return res.status(410).json({
+                        message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
+                        peerUnavailable: true,
+                    });
+                }
                 const isBlocked = await UserModel.isBlocked(currentUserId, otherParticipant.user_id);
                 if (isBlocked) {
                     return res.status(403).json({ message: 'Xabar yuborish imkonsiz: bloklangan' });
                 }
+            } else {
+                return res.status(410).json({
+                    message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
+                    peerUnavailable: true,
+                });
             }
             const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [chatId]);
             const { parseChatMetadata, isListingMessagingUnlocked } = await import('../../services/chatConsent.service');
@@ -504,15 +608,6 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             null
         );
 
-        try {
-            const participantsRes = await pool.query('SELECT user_id FROM chat_participants WHERE chat_id = $1', [chatId]);
-            for (const row of participantsRes.rows) {
-                await safeDelCache(`user_chats:${row.user_id}`);
-            }
-        } catch (e) {
-            console.error('[sendChatMessage] cache:', e);
-        }
-
         let created_at = createdAtFromDbForJson(savedMessage.created_at);
         if (created_at == null && savedMessage.created_at instanceof Date) {
             const ms = savedMessage.created_at.getTime();
@@ -524,7 +619,20 @@ export const sendChatMessage = async (req: Request, res: Response) => {
 
         const io = req.app.get('io');
         if (io) {
-            io.to(chatId).emit('receive_message', {
+            let targetRooms: string[] = [String(chatId)];
+            try {
+                const participantsRes = await pool.query(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                    [chatId]
+                );
+                for (const row of participantsRes.rows) {
+                    await safeDelCache(`user_chats:${row.user_id}`);
+                    targetRooms.push(String(row.user_id));
+                }
+            } catch (e) {
+                console.error('[sendChatMessage] cache:', e);
+            }
+            const payload = {
                 id: savedMessage.id,
                 chat_id: savedMessage.chat_id,
                 roomId: chatId,
@@ -535,7 +643,20 @@ export const sendChatMessage = async (req: Request, res: Response) => {
                 parent_id: savedMessage.parent_id,
                 created_at,
                 is_read: savedMessage.is_read,
-            });
+            };
+            io.to(targetRooms).emit('receive_message', payload);
+        } else {
+            try {
+                const participantsRes = await pool.query(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                    [chatId]
+                );
+                for (const row of participantsRes.rows) {
+                    await safeDelCache(`user_chats:${row.user_id}`);
+                }
+            } catch (e) {
+                console.error('[sendChatMessage] cache:', e);
+            }
         }
 
         res.status(201).json({ ...savedMessage, created_at });

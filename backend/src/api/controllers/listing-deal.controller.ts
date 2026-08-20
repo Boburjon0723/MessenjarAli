@@ -19,44 +19,80 @@ async function getChatParticipants(chatId: string): Promise<string[]> {
     return r.rows.map((x: { user_id: string }) => String(x.user_id));
 }
 
+/** Tasdiqlangan mutaxassis e'loni bormi */
+async function hasApprovedExpertListing(userId: string): Promise<boolean> {
+    const r = await pool.query(
+        `
+        SELECT 1
+        FROM user_profiles p
+        WHERE p.user_id = $1 AND p.is_expert = true AND p.verified_status = 'approved'
+        LIMIT 1
+        `,
+        [userId]
+    );
+    return (r.rowCount ?? 0) > 0;
+}
+
 /** E'londan ochilgan shaxsiy chat va ikkala tomon tekshiruvi */
 async function assertListingPrivateChat(userId: string, chatId: string) {
     const c = await pool.query('SELECT id, type, metadata FROM chats WHERE id = $1', [chatId]);
     if (!c.rows[0]) return { error: 'Chat topilmadi' as const };
     if (c.rows[0].type !== 'private') return { error: 'Faqat shaxsiy chat' as const };
-    const meta = parseChatMeta(c.rows[0].metadata);
+    let meta = parseChatMeta(c.rows[0].metadata);
     const parts = await getChatParticipants(chatId);
     if (!parts.includes(String(userId))) return { error: 'Kirish rad etildi' as const };
 
     let expertId = '';
     let clientId = '';
 
-    // 1) Asosiy variant: e'londan ochilgan chat metadata'si bor
     if (meta.source === 'expert_listing' && meta.expert_id) {
         expertId = String(meta.expert_id);
         clientId = parts.find((p) => p !== expertId) || '';
     } else {
-        // 2) Fallback: eski private chatlar uchun profile dagi is_expert orqali topish
-        const pr = await pool.query(
-            `
-            SELECT cp.user_id, COALESCE(up.is_expert, FALSE) AS is_expert
-            FROM chat_participants cp
-            LEFT JOIN user_profiles up ON up.user_id = cp.user_id
-            WHERE cp.chat_id = $1
-        `,
-            [chatId]
-        );
-        const rows = pr.rows || [];
-        const experts = rows.filter((r: any) => r.is_expert === true).map((r: any) => String(r.user_id));
-
-        if (experts.length !== 1) {
-            return { error: "Bu chat uchun to'lov oqimi aniqlanmadi" as const };
-        }
-        expertId = experts[0];
-        clientId = parts.find((p) => p !== expertId) || '';
+        return { error: "Bu chat e'lon murojaati emas — to'lov oqimi yo'q" as const };
     }
 
     if (!expertId || !clientId) return { error: 'Ishtirokchilar noto‘g‘ri' as const };
+
+    // Noto‘g‘ri metadata: "expert_id" da e'lon yo‘q, juftlikdagi boshqa tomonda bor
+    // (masalan Brain e'lon bergan, lekin chatda Admin expert deb yozilgan).
+    const expertHasListing = await hasApprovedExpertListing(expertId);
+    if (!expertHasListing) {
+        const peerHasListing = await hasApprovedExpertListing(clientId);
+        if (peerHasListing) {
+            const fixedExpert = clientId;
+            const fixedClient = expertId;
+            const nextMeta = {
+                ...meta,
+                source: 'expert_listing',
+                expert_id: fixedExpert,
+            };
+            await pool.query(`UPDATE chats SET metadata = $1::jsonb, updated_at = NOW() WHERE id = $2`, [
+                JSON.stringify(nextMeta),
+                chatId,
+            ]);
+            // Faol pending deal rollarini ham tuzatamiz
+            await pool.query(
+                `
+                UPDATE listing_service_deals
+                SET expert_id = $1, client_id = $2, updated_at = NOW()
+                WHERE chat_id = $3 AND status = 'pending_payment'
+                `,
+                [fixedExpert, fixedClient, chatId]
+            );
+            expertId = fixedExpert;
+            clientId = fixedClient;
+            meta = nextMeta;
+            console.warn(
+                `[listing-deal] Repaired inverted expert_id on chat ${chatId}: expert=${fixedExpert}`
+            );
+        } else {
+            return {
+                error: "E'lon egasi aniqlanmadi — mutaxassis profili tasdiqlanmagan" as const,
+            };
+        }
+    }
+
     return { meta, expertId, clientId, participants: parts };
 }
 

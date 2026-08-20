@@ -333,6 +333,70 @@ export function countExpertGroups(expertGroups: unknown): number {
   }
 }
 
+export type ExpertGroupItem = {
+  id: string;
+  name: string;
+  time: string;
+  chatId?: string;
+};
+
+/** Guruh nomini solishtirish uchun normalizatsiya */
+export function normalizeExpertGroupName(name: unknown): string {
+  return String(name || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+}
+
+/**
+ * Bir xil chatId yoki bir xil nomdagi guruhlarni bitta qatorga yig'adi.
+ * chatId bor variant afzal; keyinroq kelgan nomi saqlanadi.
+ */
+export function dedupeExpertGroups(groups: ExpertGroupItem[]): ExpertGroupItem[] {
+  if (!Array.isArray(groups) || groups.length === 0) return [];
+  const byKey = new Map<string, ExpertGroupItem>();
+
+  for (const raw of groups) {
+    if (!raw) continue;
+    const name = String(raw.name || '').trim();
+    if (!name) continue;
+    const chatId = raw.chatId ? String(raw.chatId) : '';
+    const key = chatId ? `id:${chatId}` : `name:${normalizeExpertGroupName(name)}`;
+    const prev = byKey.get(key);
+    if (!prev) {
+      byKey.set(key, {
+        id: String(raw.id || chatId || Date.now().toString()),
+        name,
+        time: raw.time || '',
+        ...(chatId ? { chatId } : {}),
+      });
+      continue;
+    }
+    byKey.set(key, {
+      ...prev,
+      name: name || prev.name,
+      time: raw.time || prev.time,
+      chatId: chatId || prev.chatId,
+      id: chatId || prev.chatId || prev.id || raw.id,
+    });
+  }
+
+  // chatId bo'lmagan yozuvni, xuddi shu nomdagi chatId li yozuv bilan birlashtirish
+  const withChat: ExpertGroupItem[] = [];
+  const withoutChat: ExpertGroupItem[] = [];
+  for (const g of byKey.values()) {
+    if (g.chatId) withChat.push(g);
+    else withoutChat.push(g);
+  }
+  const namesWithChat = new Set(withChat.map((g) => normalizeExpertGroupName(g.name)));
+  for (const g of withoutChat) {
+    if (!namesWithChat.has(normalizeExpertGroupName(g.name))) {
+      withChat.push(g);
+    }
+  }
+  return withChat;
+}
+
 export function formatServiceFormatLabel(serviceFormat: string | undefined, t: any): string {
   const v = (serviceFormat || '').toLowerCase();
   if (v === 'online') return t('job_type_online');

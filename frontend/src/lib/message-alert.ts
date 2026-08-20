@@ -77,37 +77,45 @@ function getAlertAudioCtx(): AudioContext | null {
 }
 
 /**
- * Telegram Web uslubidagi yumshoq "pop" — qisqa, past, ikki tonli.
- * Eski 880 Hz uzoq bip o‘rniga.
+ * Yangi SMS / chat xabarnoma ovozi — yumshoq uch tonli "pling".
+ * Mixkit CDN va eski qattiq bip o‘rniga (Telegram/iMessage uslubi).
  */
-function playInlineBeep(): void {
+export function playMessageNotificationSound(): void {
   try {
     const ctx = getAlertAudioCtx();
     if (!ctx) return;
     const t0 = ctx.currentTime;
+
     const master = ctx.createGain();
     master.gain.setValueAtTime(0.0001, t0);
-    master.gain.exponentialRampToValueAtTime(0.07, t0 + 0.012);
-    master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    master.gain.exponentialRampToValueAtTime(0.11, t0 + 0.008);
+    master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
     master.connect(ctx.destination);
 
-    const tone = (freq: number, start: number, dur: number, peak: number) => {
+    const tone = (
+      freq: number,
+      start: number,
+      dur: number,
+      peak: number,
+      type: OscillatorType = 'sine'
+    ) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
-      osc.type = 'sine';
+      osc.type = type;
       osc.frequency.setValueAtTime(freq, t0 + start);
       g.gain.setValueAtTime(0.0001, t0 + start);
-      g.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.01);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.008);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
       osc.connect(g);
       g.connect(master);
       osc.start(t0 + start);
-      osc.stop(t0 + start + dur + 0.02);
+      osc.stop(t0 + start + dur + 0.03);
     };
 
-    // Yumshoq juft ovoz (Telegramga yaqin "du-dip")
-    tone(784, 0, 0.07, 0.55); // G5
-    tone(1046.5, 0.055, 0.09, 0.4); // C6
+    // Yumshoq "ti-du-ding" (SMS chime)
+    tone(880, 0, 0.06, 0.5); // A5
+    tone(1174.7, 0.05, 0.08, 0.42); // D6
+    tone(1568, 0.11, 0.12, 0.28, 'triangle'); // G6 soft
   } catch {
     /* ignore */
   }
@@ -144,11 +152,11 @@ export function alertIncomingChatMessage(opts: { title: string; body: string; ta
       }
       return;
     }
-    playInlineBeep();
+    playMessageNotificationSound();
     return;
   }
 
-  playInlineBeep();
+  playMessageNotificationSound();
 }
 
 

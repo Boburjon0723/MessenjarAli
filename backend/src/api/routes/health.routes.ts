@@ -55,10 +55,15 @@ router.get('/health', async (req: Request, res: Response) => {
         if (redisClient && redisClient.isOpen) {
             await redisClient.ping();
             healthcheck.redis = 'connected';
-            healthcheck.onlineUsers = await getOnlineUserCount();
         }
     } catch (error) {
         healthcheck.redis = 'error';
+    }
+
+    try {
+        healthcheck.onlineUsers = await getOnlineUserCount();
+    } catch {
+        healthcheck.onlineUsers = 0;
     }
 
     res.send(healthcheck);

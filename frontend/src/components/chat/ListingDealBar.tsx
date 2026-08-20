@@ -254,7 +254,7 @@ export default function ListingDealBar({
                   onClick={requestPay}
                   className="inline-flex shrink-0 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold disabled:opacity-50"
                 >
-                  {t('send_payment_sms')}
+                  {t('request_payment')}
                 </button>
               </div>
             </>

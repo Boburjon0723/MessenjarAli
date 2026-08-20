@@ -17,6 +17,7 @@ import {
     useConnectionState
 } from '@livekit/components-react';
 import { ConnectionState } from 'livekit-client';
+import { liveKitRoomOptions } from '@/lib/livekit-media';
 import '@livekit/components-styles';
 import {
     FileText,
@@ -483,6 +484,7 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
                 connect={true}
                 token={token}
                 serverUrl={wsUrl || process.env.NEXT_PUBLIC_LIVEKIT_URL || 'wss://mali-livekit-tl6r65ar.livekit.cloud'}
+                options={liveKitRoomOptions('panel')}
                 data-lk-theme="default"
                 className="flex flex-col flex-1 w-full h-full relative"
                 style={{ flex: 1, display: 'flex', flexDirection: 'column' }}

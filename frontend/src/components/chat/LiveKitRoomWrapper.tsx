@@ -9,6 +9,12 @@ import {
 } from '@livekit/components-react';
 import '@livekit/components-styles';
 import { apiFetch } from '@/lib/api';
+import {
+    LIVEKIT_AUDIO_CAPTURE,
+    LIVEKIT_AUDIO_PUBLISH,
+    LIVEKIT_AUDIO_PUBLISH_SPEECH,
+    liveKitRoomOptions,
+} from '@/lib/livekit-media';
 
 interface LiveKitRoomWrapperProps {
     sessionId: string;
@@ -19,12 +25,13 @@ interface LiveKitRoomWrapperProps {
     muted?: boolean;
 }
 
-function MicSync({ muted }: { muted?: boolean }) {
+function MicSync({ muted, speech }: { muted?: boolean; speech?: boolean }) {
     const { localParticipant } = useLocalParticipant();
     useEffect(() => {
         if (!localParticipant || muted == null) return;
-        void localParticipant.setMicrophoneEnabled(!muted);
-    }, [localParticipant, muted]);
+        const publish = speech ? LIVEKIT_AUDIO_PUBLISH_SPEECH : LIVEKIT_AUDIO_PUBLISH;
+        void localParticipant.setMicrophoneEnabled(!muted, LIVEKIT_AUDIO_CAPTURE, publish);
+    }, [localParticipant, muted, speech]);
     return null;
 }
 
@@ -57,9 +64,10 @@ export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnl
     return (
         <LiveKitRoom
             video={!audioOnly}
-            audio={true}
+            audio={LIVEKIT_AUDIO_CAPTURE}
             token={token}
             serverUrl={wsUrl}
+            options={liveKitRoomOptions(audioOnly ? 'speech' : 'call')}
             data-lk-theme="default"
             style={
                 audioOnly ?
@@ -68,7 +76,7 @@ export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnl
             }
             onDisconnected={onDisconnected}
         >
-            <MicSync muted={muted} />
+            <MicSync muted={muted} speech={audioOnly} />
             {audioOnly ?
                 <RoomAudioRenderer />
             :   <>
@@ -79,5 +87,3 @@ export default function LiveKitRoomWrapper({ sessionId, onDisconnected, audioOnl
         </LiveKitRoom>
     );
 }
-
-

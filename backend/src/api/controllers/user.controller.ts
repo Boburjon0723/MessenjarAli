@@ -488,9 +488,14 @@ export const addContact = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'O\'zingizni kontakt sifatida qo\'sha olmaysiz' });
         }
 
-        // Check if user exists
-        const userCheck = await pool.query('SELECT id FROM users WHERE id = $1', [contactUserId]);
-        if (userCheck.rows.length === 0) return res.status(404).json({ message: 'User not found' });
+        // Check if user exists and is active
+        const userCheck = await pool.query(
+            `SELECT id FROM users WHERE id = $1 AND COALESCE(is_active, true) = true`,
+            [contactUserId]
+        );
+        if (userCheck.rows.length === 0) {
+            return res.status(404).json({ message: "Foydalanuvchi topilmadi yoki akkaunt o'chirilgan" });
+        }
 
         /**
          * Ba’zi ishlab chiqarish bazalarida (user_id, contact_user_id) uchun UNIQUE/ON CONFLICT
@@ -533,8 +538,22 @@ export const getContacts = async (req: Request, res: Response) => {
             FROM user_contacts uc
             JOIN users u ON uc.contact_user_id = u.id
             WHERE uc.user_id = $1
+              AND COALESCE(u.is_active, true) = true
             ORDER BY uc.created_at DESC
         `, [userId]);
+
+        // O'chirilgan userga bog'langan eskirgan kontaktlarni tozalash
+        void pool
+            .query(
+                `DELETE FROM user_contacts uc
+                 WHERE uc.user_id = $1
+                   AND NOT EXISTS (
+                     SELECT 1 FROM users u
+                     WHERE u.id = uc.contact_user_id AND COALESCE(u.is_active, true) = true
+                   )`,
+                [userId]
+            )
+            .catch(() => {});
 
         // Map to standard user object but prioritize custom name if provided
         const { shouldMaskPhoneBetweenUsers } = await import('../../services/listingPrivacy.service');

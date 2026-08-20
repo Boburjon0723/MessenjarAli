@@ -11,9 +11,12 @@ import { TranslationKeys } from '@/lib/translations';
 import { getUser } from '@/lib/auth-storage';
 import { getExpertPanelMode, isMentorPanelMode } from '@/lib/expert-roles';
 import { getExpertComplianceNotice } from '@/lib/expert-compliance-copy';
-import { isExpertListingChat } from '@/lib/listing-chat';
+import {
+    isExpertListingChat,
+    isApplicationRejected,
+    isListingExpertSide,
+} from '@/lib/listing-chat';
 import { isListingChat, isMessagingUnlocked } from '@/lib/chat-consent';
-import { isApplicationRejected } from '@/lib/listing-chat';
 import ListingDealBar from './ListingDealBar';
 import { MentorGroupInviteBar } from './MentorGroupInviteBar';
 import ChatForwardModal from './ChatForwardModal';
@@ -39,7 +42,7 @@ import {
     normalizeMessageType,
     getMessageCopyText,
 } from '@/lib/chat-message-cache';
-import { getPrivateChatPeerUserId } from '@/lib/private-chat-peer';
+import { getPrivateChatPeerUserId, isPrivatePeerUnavailable } from '@/lib/private-chat-peer';
 import { encryptTextForPeer } from '@/lib/e2e-crypto';
 import { decryptChatMessage, decryptChatMessages } from '@/lib/e2e-chat';
 import { isE2eEnvelope } from '@/lib/e2e-envelope';
@@ -47,6 +50,7 @@ import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage } from '@/types/chat-message';
 import { logChatEmitSend, inferMessageTypeFromFile, parseMessageDate } from './chatWindowHelpers';
 import { mimeFromFilename } from '@/lib/telegram-message-kind';
+import { playMessageNotificationSound } from '@/lib/message-alert';
 import type {
     ChatRoom,
     ContactListItem,
@@ -161,7 +165,6 @@ export default function ChatWindow({
     const localVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
     const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
     const callRingRef = useRef<HTMLAudioElement | null>(null);
     const callRingIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const outgoingRingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -502,6 +505,10 @@ export default function ChatWindow({
 
     const handleAddContact = async () => {
         if (!chat) return;
+        if (isPrivatePeerUnavailable(chat)) {
+            showError(t('peer_account_deleted'));
+            return;
+        }
         setIsAddingContact(true);
         const targetId = getPrivateChatPeerUserId(chat);
         if (!targetId) {
@@ -940,10 +947,6 @@ export default function ChatWindow({
         }
     }, [localStream, isCalling, isIncomingCall, callType]);
 
-    useEffect(() => {
-        audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
-    }, []);
-
     const messagesScrollRef = useRef<HTMLDivElement>(null);
     /** State — UI; ref — messages effect dependency boвЂlmasin (aks holda tepaga scroll qilinsa effect qayta ishlab !hasAppended bilan pastga tortadi) */
     const [isNearBottom, setIsNearBottom] = useState(true);
@@ -1130,7 +1133,7 @@ export default function ChatWindow({
                     mergeIncomingSocketMessage(prev, incoming, user.id != null ? String(user.id) : undefined)
                 );
                 if (String(senderId) !== String(user.id)) {
-                    if (audioRef.current) audioRef.current.play().catch(() => {});
+                    playMessageNotificationSound();
                     markAsRead();
                 }
             })();
@@ -1697,9 +1700,11 @@ export default function ChatWindow({
         chat?.type === 'private' && isExpertListingChat(chat) && chat?.otherUser
             ? getExpertComplianceNotice(
                   getExpertPanelMode(
-                      chat.otherUser as Parameters<typeof getExpertPanelMode>[0]
+                      (isListingExpertSide(chat, currentUser?.id)
+                          ? currentUser
+                          : chat.otherUser) as Parameters<typeof getExpertPanelMode>[0]
                   ),
-                  'client',
+                  isListingExpertSide(chat, currentUser?.id) ? 'expert' : 'client',
                   t,
                   tLines
               )
@@ -1712,8 +1717,13 @@ export default function ChatWindow({
     const displayName = isTrade ? roleLabel : chat.name;
 
     const isOnlineHeader = chat.online || isOnline || chat.otherUser?.online;
-    const composerLocked = Boolean(chat && isListingChat(chat) && !isMessagingUnlocked(chat));
-    const composerLockedHint = chat && isApplicationRejected(chat)
+    const composerLocked = Boolean(
+        (chat && isListingChat(chat) && !isMessagingUnlocked(chat)) ||
+            (chat && isPrivatePeerUnavailable(chat))
+    );
+    const composerLockedHint = chat && isPrivatePeerUnavailable(chat)
+        ? (t('peer_account_deleted') as string)
+        : chat && isApplicationRejected(chat)
         ? (t('application_rejected_banner') as string)
         : (t('consent_waiting_message') as string);
     const groupCreatorId = chat?.creator_id ?? chat?.creatorId ?? null;
@@ -1725,7 +1735,9 @@ export default function ChatWindow({
         [currentUser?.name, currentUser?.surname].filter(Boolean).join(' ').trim() ||
         String(currentUser?.name || 'Ustoz');
     const showListingDealBar =
-        chat?.type === 'private' && !!currentUser?.is_expert;
+        chat?.type === 'private' &&
+        isExpertListingChat(chat) &&
+        isListingExpertSide(chat, currentUser?.id);
 
     return (
         <div

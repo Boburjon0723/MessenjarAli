@@ -11,6 +11,7 @@ import {
     useConnectionState,
 } from "@livekit/components-react";
 import { Track, ConnectionState } from "livekit-client";
+import { LIVEKIT_AUDIO_CAPTURE, LIVEKIT_AUDIO_PUBLISH } from "@/lib/livekit-media";
 import { LiveVideoFrame } from "../shared/LiveVideoFrame";
 import RecordingPlaybackModal from "../shared/RecordingPlaybackModal";
 import {
@@ -574,15 +575,17 @@ export function DashboardContent({
     // Sync hardware state with UI state - Only when connected to avoid timeout/engine-not-ready
     React.useEffect(() => {
         if (localParticipant && connectionState === ConnectionState.Connected) {
-            localParticipant.setMicrophoneEnabled(isMicOn).catch(err => {
-                console.warn("Manual microphone sync failed:", err);
-            });
+            localParticipant
+                .setMicrophoneEnabled(isMicOn, LIVEKIT_AUDIO_CAPTURE, LIVEKIT_AUDIO_PUBLISH)
+                .catch((err) => {
+                    console.warn("Manual microphone sync failed:", err);
+                });
         }
     }, [isMicOn, localParticipant, connectionState]);
 
     React.useEffect(() => {
         if (localParticipant && connectionState === ConnectionState.Connected) {
-            localParticipant.setCameraEnabled(isCamOn).catch(err => {
+            localParticipant.setCameraEnabled(isCamOn).catch((err) => {
                 console.warn("Manual camera sync failed:", err);
             });
         }
@@ -593,7 +596,11 @@ export function DashboardContent({
         if (!localParticipant) return;
         const next = !isMicOn;
         try {
-            await localParticipant.setMicrophoneEnabled(next);
+            await localParticipant.setMicrophoneEnabled(
+                next,
+                LIVEKIT_AUDIO_CAPTURE,
+                LIVEKIT_AUDIO_PUBLISH
+            );
             setIsMicOn(next);
             if (socket && selectedGroupId && String(selectedGroupId) !== 'demo-session-id') {
                 socket.emit('media_state_change', { sessionId: selectedGroupId, type: 'audio', enabled: next });

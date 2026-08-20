@@ -5,10 +5,12 @@ import { useLanguage } from '@/context/LanguageContext';
 import { getUser, setUser, getToken } from '@/lib/auth-storage';
 import { apiFetch } from '@/lib/api';
 import {
+    dedupeExpertGroups,
     getExpertFormPlaceholders,
     getExpertPanelMode,
     isLegalProfession,
     isMentorProfession,
+    normalizeExpertGroupName,
 } from '@/lib/expert-roles';
 import {
     User,
@@ -151,6 +153,7 @@ export default function ProfileViewer({
     const fileInputRef = useRef<HTMLInputElement>(null);
     /** Prop va localStorage profilni yuklaganda eski `localUser`ni bekor qilmaslik */
     const viewedUserIdRef = useRef<string | null>(null);
+    const savingExpertRef = useRef(false);
     const diplomaRef = useRef<HTMLInputElement>(null);
     const certRef = useRef<HTMLInputElement>(null);
     const idRef = useRef<HTMLInputElement>(null);
@@ -226,13 +229,12 @@ export default function ProfileViewer({
         }
 
         try {
-            setExpertGroups(
-                userToProcess.expert_groups
-                    ? typeof userToProcess.expert_groups === 'string'
-                        ? JSON.parse(userToProcess.expert_groups)
-                        : userToProcess.expert_groups
-                    : []
-            );
+            const rawGroups = userToProcess.expert_groups
+                ? typeof userToProcess.expert_groups === 'string'
+                    ? JSON.parse(userToProcess.expert_groups)
+                    : userToProcess.expert_groups
+                : [];
+            setExpertGroups(dedupeExpertGroups(Array.isArray(rawGroups) ? rawGroups : []));
         } catch {
             setExpertGroups([]);
         }
@@ -517,6 +519,7 @@ export default function ProfileViewer({
     };
 
     const handleSaveExpertData = async () => {
+        if (savingExpertRef.current) return;
         setExpertErrors({});
         // Step-by-step required field checks with focus/scroll
         if (!profession) {
@@ -567,80 +570,95 @@ export default function ProfileViewer({
             return;
         }
 
-        if (isMentorProfession(profession) && expertGroups.length === 0) {
+        const uniqueGroups = dedupeExpertGroups(expertGroups);
+        if (isMentorProfession(profession) && uniqueGroups.length === 0) {
             setToast({ type: 'warning', message: "Mentorlar uchun kamida bitta guruh qo'shish majburiy." });
             setExpertErrors(prev => ({ ...prev, groups: "Mentor uchun kamida bitta guruh qo'shing." }));
             return;
         }
 
-        // Create actual chat groups for new expert groups
-        const updatedGroups = [...expertGroups];
-        let createdAny = false;
-        for (let i = 0; i < updatedGroups.length; i++) {
-            const grp = updatedGroups[i];
-            if (!grp.chatId) {
+        savingExpertRef.current = true;
+        try {
+            // Mavjud chatlarni qayta ishlatish + faqat yangilarini yaratish
+            const updatedGroups = uniqueGroups.map((grp) => {
+                if (grp.chatId) return { ...grp };
+                const existing = availableGroups.find(
+                    (ag) =>
+                        normalizeExpertGroupName(ag.name) === normalizeExpertGroupName(grp.name) ||
+                        String(ag.chatId || ag.id) === String(grp.id)
+                );
+                if (existing) {
+                    const chatId = String(existing.chatId || existing.id);
+                    return { ...grp, chatId, id: chatId };
+                }
+                return { ...grp };
+            });
+
+            for (let i = 0; i < updatedGroups.length; i++) {
+                const grp = updatedGroups[i];
+                if (grp.chatId) continue;
                 try {
                     const res = await apiFetch('/api/chats', {
                         method: 'POST',
-                        body: JSON.stringify({ type: 'group', name: grp.name, participants: [] })
+                        body: JSON.stringify({ type: 'group', name: grp.name, participants: [] }),
                     });
                     if (res.ok) {
                         const newChat = await res.json();
-                        updatedGroups[i].chatId = newChat.id || newChat._id;
-                        createdAny = true;
+                        const chatId = String(newChat.id || newChat._id || '');
+                        if (chatId) {
+                            updatedGroups[i] = { ...grp, chatId, id: chatId };
+                        }
                     } else {
-                        const errData = await res.json();
-                        console.error("[ProfileViewer] Failed to create chat group:", errData);
+                        const errData = await res.json().catch(() => ({}));
+                        console.error('[ProfileViewer] Failed to create chat group:', errData);
                     }
                 } catch (err) {
-                    console.error("[ProfileViewer] Error creating chat group:", err);
+                    console.error('[ProfileViewer] Error creating chat group:', err);
                 }
             }
-        }
 
-        if (createdAny) {
-            setExpertGroups(updatedGroups);
-        }
+            const finalGroups = dedupeExpertGroups(updatedGroups);
+            setExpertGroups(finalGroups);
 
-        const payload = {
-            is_expert: true,
-            profession,
-            specialization_details: specializationDetails,
-            specialization: specializationDetails || profession,
-            experience_years: experience,
-            has_diploma: hasDiploma,
-            institution,
-            current_workplace: currentWorkplace,
-            diploma_url: diplomaUrl,
-            certificate_url: certificateUrl,
-            id_url: idUrl,
-            selfie_url: selfieUrl,
-            hourly_rate: parseFloat(price as any) || 0,
-            currency,
-            service_languages: serviceLanguages,
-            service_format: serviceFormat,
-            specialty_desc: specialtyDesc,
-            /** DB ikkala ustunda bir xil — eвЂlon matni bitta maydondan */
-            expert_proposal: String(specialtyDesc || "").trim(),
-            bio_expert: bioExpert,
-            resume_url: resumeUrl,
-            anketa_url: anketaUrl,
-            pricing_model: pricingModel,
-            services_json: JSON.stringify(servicesJson),
-            expert_groups: JSON.stringify(updatedGroups),
-            expert_fee_total: expertFee
-            // verified_status ni yubormaymiz вЂ“ backend ma'lumot o'zgarmasa tasdiqni saqlaydi
-        };
-        const apiPayload = {
-            name: user.name,
-            surname: user.surname || '',
-            username: user.username || '',
-            ...payload
-        };
-        try {
+            const payload = {
+                is_expert: true,
+                profession,
+                specialization_details: specializationDetails,
+                specialization: specializationDetails || profession,
+                experience_years: experience,
+                has_diploma: hasDiploma,
+                institution,
+                current_workplace: currentWorkplace,
+                diploma_url: diplomaUrl,
+                certificate_url: certificateUrl,
+                id_url: idUrl,
+                selfie_url: selfieUrl,
+                hourly_rate: parseFloat(price as any) || 0,
+                currency,
+                service_languages: serviceLanguages,
+                service_format: serviceFormat,
+                specialty_desc: specialtyDesc,
+                /** DB ikkala ustunda bir xil — e'lon matni bitta maydondan */
+                expert_proposal: String(specialtyDesc || '').trim(),
+                bio_expert: bioExpert,
+                resume_url: resumeUrl,
+                anketa_url: anketaUrl,
+                pricing_model: pricingModel,
+                services_json: JSON.stringify(servicesJson),
+                expert_groups: JSON.stringify(finalGroups),
+                expert_fee_total: expertFee,
+                // verified_status ni yubormaymiz – backend ma'lumot o'zgarmasa tasdiqni saqlaydi
+            };
+            const apiPayload = {
+                name: user.name,
+                surname: user.surname || '',
+                username: user.username || '',
+                ...payload,
+            };
+
             const res = await apiFetch('/api/users/me', {
                 method: 'PUT',
-                body: JSON.stringify(apiPayload)
+                body: JSON.stringify(apiPayload),
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
@@ -674,19 +692,22 @@ export default function ProfileViewer({
             if (newStatus === 'approved') {
                 setToast({
                     type: 'success',
-                    message: "Profil yangilandi. Mutaxassis rejimi faollashtirildi.",
+                    message: 'Profil yangilandi. Mutaxassis rejimi faollashtirildi.',
                 });
             } else {
                 setToast({
                     type: 'success',
-                    message: "Ma'lumotlar yangilandi. O'zgartirishlar tasdiqlash uchun yuborildi. Admin tasdig'ini kuting.",
+                    message:
+                        "Ma'lumotlar yangilandi. O'zgartirishlar tasdiqlash uchun yuborildi. Admin tasdig'ini kuting.",
                 });
             }
         } catch (e: any) {
             setToast({
                 type: 'error',
-                message: e?.message || "Server bilan aloqa xatosi. Qayta urinib ko'ring."
+                message: e?.message || "Server bilan aloqa xatosi. Qayta urinib ko'ring.",
             });
+        } finally {
+            savingExpertRef.current = false;
         }
     };
 

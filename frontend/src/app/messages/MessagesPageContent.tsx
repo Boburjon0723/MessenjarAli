@@ -390,10 +390,25 @@ export function MessagesPageContent() {
                         archived: !!chat.archived,
                         unreadMarked: !!chat.unreadMarked,
                         pinnedAt: chat.pinnedAt ? new Date(chat.pinnedAt).getTime() : undefined,
+                        peerUnavailable: !!chat.peerUnavailable || (chat.type === 'private' && !chat.otherUser?.id),
                     };
                 }));
-                hydratePrefsFromChats(mappedChats);
-                setChats(mappedChats);
+                const visibleChats = mappedChats.filter((c: any) => {
+                    if (c.type === 'private' && (c.peerUnavailable || !c.otherUser?.id)) {
+                        try {
+                            localStorage.removeItem(`chat_cache_${c.id}`);
+                        } catch { /* ignore */ }
+                        return false;
+                    }
+                    return true;
+                });
+                hydratePrefsFromChats(visibleChats);
+                setChats(visibleChats);
+                setSelectedChat((prev: any) => {
+                    if (!prev) return prev;
+                    const still = visibleChats.some((c: any) => String(c.id) === String(prev.id));
+                    return still ? prev : null;
+                });
             }
         } catch (err) {
             console.error("Failed to load chats:", err);
@@ -1183,7 +1198,8 @@ export function MessagesPageContent() {
                 if (cancelled) return;
                 if (chatsRes.ok) {
                     const data = await chatsRes.json();
-                    const mappedChats = data.map((chat: any) => {
+                    const mappedChats = data
+                        .map((chat: any) => {
                         const chatId = chat.id || chat._id;
                         return {
                             ...chat,
@@ -1196,8 +1212,10 @@ export function MessagesPageContent() {
                             status: "offline",
                             type: chat.type || "private",
                             participantId: chat.otherUser?.id,
+                            peerUnavailable: !!chat.peerUnavailable || (chat.type === 'private' && !chat.otherUser?.id),
                         };
-                    });
+                    })
+                        .filter((c: any) => c.type !== 'private' || (c.otherUser?.id && !c.peerUnavailable));
                     setChats(mappedChats);
                     const roomChat = mappedChats.find((c: any) => String(c.id) === String(roomParam));
                     const isMentorOwner =

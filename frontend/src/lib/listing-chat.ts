@@ -11,13 +11,25 @@ export function getChatMetadata(chat: any): Record<string, any> {
   }
 }
 
-/** Mutaxassis e'loni orqali ochilgan chat */
+/** Mutaxassis e'loni orqali ochilgan chat — faqat metadata (listing_privacy yetarli emas) */
 export function isExpertListingChat(chat: any): boolean {
   if (chat?.type !== 'private') return false;
   const meta = getChatMetadata(chat);
-  if (meta.source === 'expert_listing' && !!meta.expert_id) return true;
-  if (chat?.otherUser?.listing_privacy === true) return true;
-  return false;
+  return meta.source === 'expert_listing' && !!meta.expert_id;
+}
+
+/** Shu chatda kim mutaxassis (to'lov oluvchi) */
+export function getListingExpertId(chat: any): string | null {
+  if (!isExpertListingChat(chat)) return null;
+  const id = getChatMetadata(chat).expert_id;
+  return id != null && id !== '' ? String(id) : null;
+}
+
+/** Joriy user shu listing chatda mutaxassis tomonmi */
+export function isListingExpertSide(chat: any, userId: string | null | undefined): boolean {
+  const eid = getListingExpertId(chat);
+  if (!eid || userId == null || userId === '') return false;
+  return eid === String(userId);
 }
 
 /** Ish e'loni orqali ochilgan chat */
@@ -104,13 +116,30 @@ export function getMurojaatSidebarChats(chats: any[], currentUserId: string | un
 export type MurojaatSidebarSections = {
   /** Mutaxassis: kelgan murojaatlar (pending ham) */
   expertInbox: any[];
-  /** Mijoz: qabul qilingan mutaxassis murojaatlari */
+  /** Mijoz: yuborgan murojaatlar (pending + accepted + rejected) */
   applicantMurojaat: any[];
   /** Ish beruvchi: ish arizalari (pending ham) */
   employerApplications: any[];
-  /** Ariza beruvchi: qabul qilingan ish arizalari */
+  /** Ariza beruvchi: yuborgan ish arizalari (pending ham) */
   applicantJobs: any[];
 };
+
+/** Mijoz tomoni: e'lon/murojaat chati (Userlar ro‘yxatida ko‘rinishi uchun) */
+export function isClientSideListingChat(
+  chat: any,
+  currentUserId: string | null | undefined
+): boolean {
+  if (!currentUserId || chat?.type !== 'private') return false;
+  const uid = String(currentUserId);
+  const meta = getChatMetadata(chat);
+  if (meta.source === 'expert_listing' && meta.expert_id) {
+    return String(meta.expert_id) !== uid;
+  }
+  if (meta.source === 'job_listing' && meta.intent === 'apply' && meta.poster_id) {
+    return String(meta.poster_id) !== uid;
+  }
+  return false;
+}
 
 /** Sidebar bo'limlari — reja §2.2 */
 export function getMurojaatSidebarSections(
@@ -129,12 +158,12 @@ export function getMurojaatSidebarSections(
   for (const chat of chats) {
     if (chat?.type !== 'private') continue;
     const meta = getChatMetadata(chat);
-    const status = getApplicationStatus(chat);
 
     if (meta.source === 'expert_listing' && meta.expert_id) {
       if (String(meta.expert_id) === uid) {
         empty.expertInbox.push(chat);
-      } else if (status === 'accepted') {
+      } else {
+        // Pending ham — aks holda mijoz Userlar’da ham Murojaatlarim’da ham yo‘qoladi
         empty.applicantMurojaat.push(chat);
       }
     }
@@ -142,7 +171,7 @@ export function getMurojaatSidebarSections(
     if (meta.source === 'job_listing' && meta.intent === 'apply' && meta.poster_id) {
       if (String(meta.poster_id) === uid) {
         empty.employerApplications.push(chat);
-      } else if (status === 'accepted') {
+      } else {
         empty.applicantJobs.push(chat);
       }
     }

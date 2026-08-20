@@ -3,7 +3,7 @@ import { getChatMetadata } from '@/lib/listing-chat';
 
 /**
  * Shaxsiy chatda sherikning user UUID si. chat.id (suhbat id si) qaytarilmaydi.
- * Avvalo `participants` ishonchli — ba'zi holatlarda `participantId` / `otherUser` noto'g'ri bo'lishi mumkin.
+ * O'chirilgan akkaunt uchun UUID qaytarmaydi (kontakt/xabar xavfsizligi).
  */
 export function getPrivateChatPeerUserId(chat: {
   id?: string | number;
@@ -13,8 +13,10 @@ export function getPrivateChatPeerUserId(chat: {
   participantId?: string;
   userId?: string;
   metadata?: unknown;
+  peerUnavailable?: boolean;
 } | null): string | null {
   if (!chat || chat.type !== 'private') return null;
+  if (chat.peerUnavailable) return null;
 
   const chatId = chat.id != null ? String(chat.id) : null;
   const me = getUser() as { id?: string } | null;
@@ -26,6 +28,21 @@ export function getPrivateChatPeerUserId(chat: {
     if (chatId && s === chatId) return null;
     return s;
   };
+
+  // Faqat mavjud otherUser — o'chirilgan akkaunt UUID sini qaytarmaymiz
+  if (chat.otherUser?.id != null) {
+    const cand = notConversationId(chat.otherUser.id);
+    if (cand) return cand;
+  }
+  if (chat.otherUser?.user_id != null) {
+    const cand = notConversationId(chat.otherUser.user_id);
+    if (cand) return cand;
+  }
+
+  // otherUser yo'q bo'lsa participants dan UUID olish — xavfsizlik uchun yo'q
+  if (!chat.otherUser?.id && !chat.otherUser?.user_id) {
+    return null;
+  }
 
   let participantList: string[] = [];
   if (Array.isArray(chat.participants)) {
@@ -54,14 +71,6 @@ export function getPrivateChatPeerUserId(chat: {
     }
   }
 
-  if (chat.otherUser?.id != null) {
-    const cand = notConversationId(chat.otherUser.id);
-    if (cand) return cand;
-  }
-  if (chat.otherUser?.user_id != null) {
-    const cand = notConversationId(chat.otherUser.user_id);
-    if (cand) return cand;
-  }
   if (chat.participantId != null) {
     const cand = notConversationId(chat.participantId);
     if (cand) return cand;
@@ -74,4 +83,19 @@ export function getPrivateChatPeerUserId(chat: {
   return null;
 }
 
-
+/** Shaxsiy chat sherigi o'chirilgan / Unknown User holati */
+export function isPrivatePeerUnavailable(chat: {
+  type?: string;
+  peerUnavailable?: boolean;
+  otherUser?: { id?: string; name?: string } | null;
+  name?: string;
+} | null): boolean {
+  if (!chat || chat.type !== 'private') return false;
+  if (chat.peerUnavailable) return true;
+  if (!chat.otherUser?.id) return true;
+  const n = String(chat.name || chat.otherUser?.name || '')
+    .trim()
+    .toLowerCase();
+  if (n === 'unknown user' || n === 'unknown') return true;
+  return false;
+}

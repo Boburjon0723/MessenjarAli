@@ -24,29 +24,30 @@ async function ensureAdminUser() {
 
             await client.query(`
                 UPDATE users 
-                SET password_hash = $1, role = 'admin', email = $2, phone = $3, name = 'Admin', surname = 'Super' 
+                SET password_hash = $1, role = 'admin', email = $2, phone = $3, name = 'Admin', surname = 'Super',
+                    is_active = true, phone_verified = true
                 WHERE id = $4
             `, [hashedPassword, email, phone, user.id]);
 
-            // Ensure wallet exists
-            const walletRes = await client.query('SELECT * FROM wallets WHERE user_id = $1', [user.id]);
-            if (walletRes.rows.length === 0) {
-                await client.query('INSERT INTO wallets (user_id, balance) VALUES ($1, 100000000)', [user.id]); // Give initial reserve
-            } else {
-                // Ensure it has funds to distribute if it's the reserve
-                // optional: await client.query('UPDATE wallets SET balance = 100000000 WHERE user_id = $1', [user.id]);
-            }
+            // Ensure wallet exists (token_balances — asosiy wallet jadvali)
+            await client.query(
+                'INSERT INTO token_balances (user_id, balance, locked_balance) VALUES ($1, 0, 0) ON CONFLICT DO NOTHING',
+                [user.id]
+            ).catch(() => {});
 
         } else {
             console.log('Creating new Admin User...');
             const newUser = await client.query(`
-                INSERT INTO users (name, surname, email, phone, password_hash, role, is_active)
-                VALUES ('Admin', 'Super', $1, $2, $3, 'admin', true)
+                INSERT INTO users (name, surname, email, phone, password_hash, role, is_active, phone_verified)
+                VALUES ('Admin', 'Super', $1, $2, $3, 'admin', true, true)
                 RETURNING id
             `, [email, phone, hashedPassword]);
 
             const newUserId = newUser.rows[0].id;
-            await client.query('INSERT INTO wallets (user_id, balance) VALUES ($1, 100000000)', [newUserId]);
+            await client.query(
+                'INSERT INTO token_balances (user_id, balance, locked_balance) VALUES ($1, 0, 0) ON CONFLICT DO NOTHING',
+                [newUserId]
+            ).catch(() => {});
         }
 
         console.log('Admin User Secured.');

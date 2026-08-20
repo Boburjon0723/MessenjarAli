@@ -17,6 +17,7 @@ import {
 import { getChatConsent, isListingChat, isMessagingUnlocked } from '@/lib/chat-consent';
 import { postListingConsent } from '@/lib/listing-consent-api';
 import { useNotification } from '@/context/NotificationContext';
+import { isPrivatePeerUnavailable } from '@/lib/private-chat-peer';
 import ChatPaymentStatusCard from './ChatPaymentStatusCard';
 
 export type ChatWindowBannersProps = {
@@ -269,8 +270,16 @@ export function ChatWindowBanners({
                         </button>
                     </div>
                 )}
+                {/* Deleted / missing peer */}
+                {isPrivatePeerUnavailable(chat) && !isTrade && (
+                    <div className="mt-1 flex h-12 items-center justify-between rounded-[24px] bg-[#3d1f1f] px-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
+                        <p className="min-w-0 truncate text-[14px] text-[#ff8a80]">
+                            {t('peer_account_deleted')}
+                        </p>
+                    </div>
+                )}
                 {/* Unknown Contact Bar */}
-                {!isContact && !isTrade && (
+                {!isContact && !isTrade && !isPrivatePeerUnavailable(chat) && (
                     <div className="mt-1 flex h-12 items-center justify-between rounded-[24px] bg-[#212121] px-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
                         <p className="min-w-0 truncate text-[14px] text-white">
                             {(isExpertListing || isJobListing) ? t('listing_save_contact_hint') : t('not_in_contacts')}

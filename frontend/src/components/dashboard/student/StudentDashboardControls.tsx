@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocalParticipant, useConnectionState } from '@livekit/components-react';
 import { ConnectionState } from 'livekit-client';
+import { LIVEKIT_AUDIO_CAPTURE, LIVEKIT_AUDIO_PUBLISH } from '@/lib/livekit-media';
 import { Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 import { useSocket } from '@/context/SocketContext';
@@ -17,7 +18,11 @@ export function StudentMentorMediaSync({ sessionId }: { sessionId: string }) {
         const onCmd = (p: { sessionId?: string; kind?: string; enabled?: boolean }) => {
             if (p == null || String(p.sessionId) !== String(sessionId)) return;
             if (p.kind === 'mic') {
-                void localParticipant.setMicrophoneEnabled(!!p.enabled);
+                void localParticipant.setMicrophoneEnabled(
+                    !!p.enabled,
+                    LIVEKIT_AUDIO_CAPTURE,
+                    LIVEKIT_AUDIO_PUBLISH
+                );
             }
         };
         socket.on('mentor_media_command', onCmd);
@@ -39,7 +44,10 @@ export function StudentMediaControls() {
     useEffect(() => {
         if (connectionState !== ConnectionState.Connected || !localParticipant) return;
         const t = setTimeout(() => {
-            localParticipant.setMicrophoneEnabled(true).then(() => setIsMicEnabled(true)).catch((e) => {
+            localParticipant
+                .setMicrophoneEnabled(true, LIVEKIT_AUDIO_CAPTURE, LIVEKIT_AUDIO_PUBLISH)
+                .then(() => setIsMicEnabled(true))
+                .catch((e) => {
                 console.warn('Student mic:', e);
                 setIsMicEnabled(false);
             });
@@ -53,7 +61,11 @@ export function StudentMediaControls() {
 
     const toggleMic = async () => {
         const nextState = !isMicEnabled;
-        await localParticipant.setMicrophoneEnabled(nextState);
+        await localParticipant.setMicrophoneEnabled(
+            nextState,
+            LIVEKIT_AUDIO_CAPTURE,
+            LIVEKIT_AUDIO_PUBLISH
+        );
         setIsMicEnabled(nextState);
     };
 

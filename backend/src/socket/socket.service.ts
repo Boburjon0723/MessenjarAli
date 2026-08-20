@@ -141,8 +141,31 @@ export class SocketService {
                 });
             }
 
-            // Join personal room for private messages
+            // Join personal room for private messages (calls, receive_message fallback)
             authSocket.join(String(authSocket.user.id));
+
+            // Chat yopiq / boshqa sahifada ham realtime uchun — barcha a’zo chatlarga qo‘shilish
+            if (userId) {
+                void (async () => {
+                    try {
+                        const roomsRes = await pool.query(
+                            `SELECT chat_id FROM chat_participants WHERE user_id = $1`,
+                            [userId]
+                        );
+                        for (const row of roomsRes.rows) {
+                            const cid = String(row.chat_id);
+                            if (cid) authSocket.join(cid);
+                        }
+                        if (roomsRes.rows.length > 0) {
+                            console.log(
+                                `[Socket] User ${userId} auto-joined ${roomsRes.rows.length} chat room(s)`
+                            );
+                        }
+                    } catch (e) {
+                        console.warn('[Socket] auto-join chat rooms failed:', e);
+                    }
+                })();
+            }
 
             authSocket.on('join_room', async (roomId: string) => {
                 try {
@@ -245,19 +268,35 @@ export class SocketService {
                     }
 
                     if (chatRow.type === 'channel') {
-                        if (chatRow.creator_id !== authSocket.user.id) {
+                        if (String(chatRow.creator_id) !== String(authSocket.user.id)) {
                             return authSocket.emit('error', { message: 'Faqat kanal yaratuvchisi xabar, fayl va materiallar qo\'yishi mumkin' });
                         }
                     }
 
                     if (chatRow.type === 'private') {
                         const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [roomId]);
-                        const otherParticipant = participants.rows.find((p: any) => p.user_id !== authSocket.user.id);
-                        if (otherParticipant) {
-                            const isBlocked = await UserModel.isBlocked(authSocket.user.id, otherParticipant.user_id);
-                            if (isBlocked) {
-                                return authSocket.emit('error', { message: 'Xabar yuborish imkonsiz: Foydalanuvchi bloklangan' });
-                            }
+                        const otherParticipant = participants.rows.find(
+                            (p: any) => String(p.user_id) !== String(authSocket.user.id)
+                        );
+                        if (!otherParticipant) {
+                            return authSocket.emit('error', {
+                                message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
+                                peerUnavailable: true,
+                            });
+                        }
+                        const peerOk = await pool.query(
+                            `SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_active, true) = true LIMIT 1`,
+                            [otherParticipant.user_id]
+                        );
+                        if ((peerOk.rowCount ?? 0) === 0) {
+                            return authSocket.emit('error', {
+                                message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
+                                peerUnavailable: true,
+                            });
+                        }
+                        const isBlocked = await UserModel.isBlocked(authSocket.user.id, otherParticipant.user_id);
+                        if (isBlocked) {
+                            return authSocket.emit('error', { message: 'Xabar yuborish imkonsiz: Foydalanuvchi bloklangan' });
                         }
                         const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [roomId]);
                         const { parseChatMetadata, isListingMessagingUnlocked } = await import('../services/chatConsent.service');
@@ -319,11 +358,19 @@ export class SocketService {
                         sender_avatar: broadcastSenderAvatar,
                         is_read: savedMessage.is_read,
                     };
-                    this.io.to(roomId).emit('receive_message', receivePayload);
-
-                    // 2.5 Cache Invalidation + Push for offline users
+                    // Chat room + har bir ishtirokchining personal roomi.
+                    // Socket.IO bir socketni bir necha roomda bo‘lsa ham eventni bir marta yetkazadi.
                     try {
-                        const participantsRes = await pool.query('SELECT user_id FROM chat_participants WHERE chat_id = $1', [roomId]);
+                        const participantsRes = await pool.query(
+                            'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                            [roomId]
+                        );
+                        const targetRooms = [
+                            String(roomId),
+                            ...participantsRes.rows.map((r: { user_id: string }) => String(r.user_id)),
+                        ];
+                        this.io.to(targetRooms).emit('receive_message', receivePayload);
+
                         for (const row of participantsRes.rows) {
                             await safeDelCache(`user_chats:${row.user_id}`);
                         }
@@ -349,7 +396,8 @@ export class SocketService {
                             }
                         }
                     } catch (cacheErr) {
-                        console.error('[Socket Cache Inval] Error:', cacheErr);
+                        console.error('[Socket broadcast/cache] Error:', cacheErr);
+                        this.io.to(String(roomId)).emit('receive_message', receivePayload);
                     }
 
                     // 3. Bot Logic check — E2E ciphertext is not a command
@@ -694,18 +742,41 @@ export class SocketService {
                             { sessionId }
                         );
 
-                        this.io.to(chatId).emit('receive_message', {
-                            id: newMessage.id,
-                            chat_id: chatId,
-                            roomId: chatId,
-                            sender_id: userId,
-                            sender_name: mentorName,
-                            sender_avatar: mentorAvatar,
-                            content,
-                            type: 'lesson_end',
-                            metadata: { sessionId },
-                            created_at: new Date().toISOString()
-                        });
+                        try {
+                            const parts = await pool.query(
+                                'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                                [chatId]
+                            );
+                            const rooms = [
+                                String(chatId),
+                                ...parts.rows.map((r: { user_id: string }) => String(r.user_id)),
+                            ];
+                            this.io.to(rooms).emit('receive_message', {
+                                id: newMessage.id,
+                                chat_id: chatId,
+                                roomId: chatId,
+                                sender_id: userId,
+                                sender_name: mentorName,
+                                sender_avatar: mentorAvatar,
+                                content,
+                                type: 'lesson_end',
+                                metadata: { sessionId },
+                                created_at: new Date().toISOString()
+                            });
+                        } catch {
+                            this.io.to(String(chatId)).emit('receive_message', {
+                                id: newMessage.id,
+                                chat_id: chatId,
+                                roomId: chatId,
+                                sender_id: userId,
+                                sender_name: mentorName,
+                                sender_avatar: mentorAvatar,
+                                content,
+                                type: 'lesson_end',
+                                metadata: { sessionId },
+                                created_at: new Date().toISOString()
+                            });
+                        }
                     }
 
                     this.io.to(sessionId).emit('lesson_ended', {

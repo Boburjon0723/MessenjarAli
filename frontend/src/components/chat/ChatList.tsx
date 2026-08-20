@@ -1,6 +1,6 @@
 
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { isExpertListingChat, getMurojaatSidebarSections, isListingMarketplacePrivateChat } from '@/lib/listing-chat';
+import { isExpertListingChat, getMurojaatSidebarSections, isListingMarketplacePrivateChat, isClientSideListingChat } from '@/lib/listing-chat';
 import { useLanguage } from '@/context/LanguageContext';
 import { useHorizontalNavWheel } from '@/hooks/useHorizontalNavWheel';
 import { Search, Menu, X } from 'lucide-react';
@@ -252,7 +252,10 @@ export default function ChatList({
         if (catId === 'all') return true;
         if (catId === 'listings') return isExpertListingChat(chat);
         if (catId === 'user') {
-            return (chat.type === 'private' || !chat.type) && !isListingMarketplacePrivateChat(chat);
+            // Oddiy private + mijozning o‘z murojaatlari (e'lon chatlari Userlar’da ham ko‘rinsin)
+            if (!(chat.type === 'private' || !chat.type)) return false;
+            if (!isListingMarketplacePrivateChat(chat)) return true;
+            return isClientSideListingChat(chat, currentUser?.id);
         }
         return chat.type === catId;
     };
@@ -261,7 +264,8 @@ export default function ChatList({
         if (searchQuery) return searchResults;
         if (catId === 'contacts') return contacts;
         let list = (chats || []).filter((chat: any) => matchesFolder(chat, catId));
-        if (!searchQuery && (catId === 'all' || catId === 'user')) {
+        if (!searchQuery && catId === 'all') {
+            // Barchasi: e'lon chatlari faqat yuqoridagi Murojaat bo‘limlarida
             list = list.filter((chat: any) => !isListingMarketplacePrivateChat(chat));
         }
         const visible = list.filter((chat: any) => {

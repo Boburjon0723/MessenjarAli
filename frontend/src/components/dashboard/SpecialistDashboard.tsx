@@ -8,6 +8,7 @@ import {
     LiveKitRoom,
     RoomAudioRenderer,
 } from '@livekit/components-react';
+import { liveKitRoomOptions, MEDIA_RECORDER_AUDIO_CONSTRAINTS } from '@/lib/livekit-media';
 import '@livekit/components-styles';
 
 import {
@@ -856,13 +857,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                 let stream: MediaStream;
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({
-                        audio: {
-                            sampleRate: 48000,
-                            channelCount: 1,
-                            echoCancellation: true,
-                            noiseSuppression: true,
-                            autoGainControl: true,
-                        },
+                        audio: MEDIA_RECORDER_AUDIO_CONSTRAINTS,
                         video: {
                             width: { ideal: 1280 },
                             height: { ideal: 720 },
@@ -1169,6 +1164,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             video={false}
             audio={false}
             connect={true}
+            options={liveKitRoomOptions('panel')}
             data-lk-theme="default"
             style={{ height: '100%' }}
         >
