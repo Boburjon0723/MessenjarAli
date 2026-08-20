@@ -79,9 +79,15 @@ export default function MediaContextMenu({
     const isText = kind === 'text';
     const canSave = kind === 'image' || kind === 'video' || kind === 'voice' || kind === 'file' || kind === 'song';
     const copyText = getMessageCopyText(message);
-    const mediaUrl = (message.text || "").startsWith('http')
-        ? message.text
-        : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${(message.text || "").startsWith('/') ? '' : '/'}${message.text}`;
+    const rawMedia = String(message.text || '').trim();
+    const mediaUrl =
+        !rawMedia
+            ? ''
+            : /^https?:\/\//i.test(rawMedia) || rawMedia.startsWith('data:') || rawMedia.startsWith('blob:')
+              ? rawMedia
+              : rawMedia.startsWith('/') || /^uploads?\//i.test(rawMedia)
+                ? `${(process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '')}${rawMedia.startsWith('/') ? '' : '/'}${rawMedia}`
+                : '';
 
     const handleCopyText = async () => {
         try {
