@@ -376,7 +376,7 @@ export async function sendGroupJoinInvite(params: {
                 [expertId]
             );
             const rate = parseFloat(String(pr.rows[0]?.rate ?? 0));
-            if (Number.isFinite(rate) && rate > 0) return rate;
+            if (Number.isFinite(rate) && rate > 0) return Math.round(rate * 10000) / 10000;
         } catch {
             /* ignore */
         }
@@ -390,8 +390,8 @@ export async function sendGroupJoinInvite(params: {
         groupName: group.name || 'Guruh',
         mentorId: expertId,
         sessionStyle: 'mentor',
-        invite_status: 'active',
-        monthlyAmount,
+        invite_status: 'pending',
+        monthlyAmount: Number(monthlyAmount),
     };
 
     const mentor = await UserModel.findById(expertId);

@@ -792,6 +792,13 @@ export const joinGroupWithSubscription = async (req: Request, res: Response) => 
         const io = req.app.get('io');
         if (io) io.to(chatId).emit('participant_joined', { chatId, userId: currentUserId });
 
+        try {
+            const { markGroupJoinInvitesPaid } = await import('../../services/panelInvite.service');
+            await markGroupJoinInvitesPaid(String(chatId), String(currentUserId), io);
+        } catch (e) {
+            console.error('markGroupJoinInvitesPaid:', e);
+        }
+
         res.status(200).json({ message: 'Guruhga qo\'shildingiz', chat });
     } catch (error: any) {
         console.error('joinGroupWithSubscription:', error);

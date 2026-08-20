@@ -15,6 +15,18 @@ import { useConfirm } from '@/context/ConfirmContext';
 
 const DEFAULT_MONTHLY_MALI = 100;
 
+function resolveInviteMonthlyAmount(meta: ChatMessageMetadata, text: string): number {
+    const raw = meta.monthlyAmount ?? meta.monthly_amount;
+    const fromMeta = typeof raw === 'number' ? raw : parseFloat(String(raw ?? ''));
+    if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+    const m = String(text || '').match(/(\d+(?:[.,]\d+)?)\s*MALI/i);
+    if (m) {
+        const n = parseFloat(m[1].replace(',', '.'));
+        if (Number.isFinite(n) && n > 0) return n;
+    }
+    return DEFAULT_MONTHLY_MALI;
+}
+
 interface MessageBubbleProps {
     message: ChatMessage;
     /** lesson_start uchun: guruh chat ID (metadata yo'q bo'lsa shu ishlatiladi) */
@@ -133,17 +145,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             const hasActiveSub = statusRes.ok && !!statusData.active;
 
             if (!hasActiveSub) {
-                const monthlyFromInvite = Number(fileMeta.monthlyAmount);
-                const monthlyFromStatus = Number(statusData?.monthlyAmount);
-                const monthlyAmount =
-                    Number.isFinite(monthlyFromInvite) && monthlyFromInvite > 0
-                        ? monthlyFromInvite
-                        : Number.isFinite(monthlyFromStatus) && monthlyFromStatus > 0
-                          ? monthlyFromStatus
-                          : DEFAULT_MONTHLY_MALI;
+                let amount = resolveInviteMonthlyAmount(fileMeta, String(message.text || ''));
+                const fromStatus = Number(statusData?.monthlyAmount);
+                if (
+                    amount === DEFAULT_MONTHLY_MALI &&
+                    Number.isFinite(fromStatus) &&
+                    fromStatus > 0
+                ) {
+                    amount = fromStatus;
+                }
                 const ok = await confirm({
                     title: t('top_up') as any,
-                    description: `${monthlyAmount} MALI — 1 oylik obuna`,
+                    description: `${amount} MALI — 1 oylik obuna`,
                     confirmLabel: t('group_join_pay_btn') as any,
                 });
                 if (!ok) return;
@@ -192,11 +205,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         return false;
     }, [messageType, fileMeta.kind, fileMeta.groupId, fileMeta.mentorId, message.text]);
 
-    const inviteMonthlyAmount = useMemo(() => {
-        const fromMeta = Number(fileMeta.monthlyAmount);
-        if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
-        return DEFAULT_MONTHLY_MALI;
-    }, [fileMeta.monthlyAmount]);
+    const inviteMonthlyAmount = useMemo(
+        () => resolveInviteMonthlyAmount(fileMeta, String(message.text || '')),
+        [fileMeta, message.text]
+    );
+
+    const inviteStatus = String(fileMeta.invite_status ?? fileMeta.status ?? 'pending');
+    const inviteIsPaid = inviteStatus === 'paid';
+    const inviteIsExpired = inviteStatus === 'expired' || inviteJoinExpired;
 
     const viewerId = currentUserId != null ? String(currentUserId) : '';
     const inviteMentorId =
@@ -208,9 +224,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const isInviteFromMe =
         isOwn ||
         (viewerId !== '' && inviteMentorId !== '' && viewerId === inviteMentorId);
+    /** Talaba: to‘lov tugmasi — faqat pending/active va hali to‘lanmagan */
     const showGroupJoinPay =
         isGroupJoinInvite &&
         !isInviteFromMe &&
+        !inviteIsPaid &&
+        !inviteIsExpired &&
         fileMeta.groupId != null &&
         String(fileMeta.groupId) !== '' &&
         inviteMentorId !== '';
@@ -504,13 +523,24 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 {isGroupJoinInvite ? (
                     <div className="w-full max-w-[320px] rounded-2xl border border-[#8774e1]/35 bg-[#1a1625]/95 px-3.5 py-3 shadow-lg text-center">
                         <p className="text-[13px] leading-[18px] text-white/90 mb-3">{renderText()}</p>
-                        {showGroupJoinPay ? (
-                            <>
-                                <p className="text-[12px] font-semibold text-[#c4b5fd] mb-0.5">
-                                    {String(fileMeta.groupName || t('group_label'))}
+                        <p className="text-[12px] font-semibold text-[#c4b5fd] mb-0.5">
+                            {String(fileMeta.groupName || t('group_label'))}
+                        </p>
+                        <p className="text-[15px] font-bold text-white tabular-nums mb-2">
+                            {inviteMonthlyAmount} MALI / oy
+                        </p>
+                        {inviteIsPaid ? (
+                            <div className="rounded-xl bg-emerald-500/15 border border-emerald-400/30 px-3 py-2.5">
+                                <p className="text-[13px] font-semibold text-emerald-300">
+                                    ✓ {t('group_invite_confirmed')}
                                 </p>
-                                <p className="text-[15px] font-bold text-white tabular-nums mb-3">
-                                    {inviteMonthlyAmount} MALI / oy
+                            </div>
+                        ) : inviteIsExpired ? (
+                            <p className="text-[12px] text-white/45">{t('subscription_expired_lesson')}</p>
+                        ) : showGroupJoinPay ? (
+                            <>
+                                <p className="text-[11px] text-amber-300/90 mb-2">
+                                    {t('group_invite_pending')}
                                 </p>
                                 <button
                                     type="button"
@@ -522,9 +552,11 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                 </button>
                             </>
                         ) : (
-                            <p className="text-[11px] text-white/45">
-                                {t('invite_sent_success')}
-                            </p>
+                            <div className="rounded-xl bg-amber-500/10 border border-amber-400/25 px-3 py-2.5">
+                                <p className="text-[13px] font-semibold text-amber-300">
+                                    {t('group_invite_pending')}
+                                </p>
+                            </div>
                         )}
                     </div>
                 ) : (
