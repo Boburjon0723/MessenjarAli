@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import * as SpecialistController from '../controllers/specialist.controller';
-import { startOngoingConsult, getConsultChatFinancialPrep, postConsultPanelInvite, postLessonStartNotify } from '../controllers/service.controller';
+import { startOngoingConsult, getConsultChatFinancialPrep, postConsultPanelInvite, postGroupJoinInvite, postLessonStartNotify } from '../controllers/service.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
 const router = Router();
@@ -28,6 +28,9 @@ router.post('/consult/panel-invite', authenticateToken, postConsultPanelInvite);
 
 /** Mentor dars boshlash xabari — HTTP */
 router.post('/lesson-start', authenticateToken, postLessonStartNotify);
+
+/** Mentor shaxsiy chatda guruhga qo'shilish taklifi — HTTP */
+router.post('/mentor/group-join-invite', authenticateToken, postGroupJoinInvite);
 
 export default router;
 

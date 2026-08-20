@@ -112,7 +112,7 @@ export function MessagesPageContent() {
     /** E'lon / havola: mutaxassis kartasini ochish — /messages?expert=<userId> */
     const expertParam = searchParams.get('expert');
     const router = useRouter();
-    const [roomGateState, setRoomGateState] = useState<'checking' | 'payment' | 'joined' | 'closed' | null>(roomParam ? 'checking' : null);
+    const [roomGateState, setRoomGateState] = useState<'checking' | 'payment' | 'expired' | 'needs_invite' | 'joined' | 'closed' | null>(roomParam ? 'checking' : null);
 
     // Search State
     const [searchQuery, setSearchQuery] = useState("");
@@ -1162,7 +1162,8 @@ export function MessagesPageContent() {
                         if (cancelled) return;
                         const subData = await subRes.json();
                         if (!subData?.active) {
-                            setRoomGateState('payment');
+                            setRoomGateState(subData?.expired ? 'expired' : 'needs_invite');
+                            setLoading(false);
                             return;
                         }
                     }
@@ -1172,7 +1173,8 @@ export function MessagesPageContent() {
                     );
                     if (cancelled) return;
                     if (!joinRes.ok) {
-                        setRoomGateState('payment');
+                        setRoomGateState('needs_invite');
+                        setLoading(false);
                         return;
                     }
                 }
@@ -1223,7 +1225,10 @@ export function MessagesPageContent() {
                 setLoading(false);
                 router.replace('/messages');
             } catch {
-                if (!cancelled) setRoomGateState('payment');
+                if (!cancelled) {
+                    setRoomGateState('needs_invite');
+                    setLoading(false);
+                }
             }
         })();
         return () => { cancelled = true; };
@@ -1332,7 +1337,38 @@ export function MessagesPageContent() {
         !!selectedChat &&
         !hideRightPanelForSpecialistDashboard;
 
-    // roomParam + to'lov talab qilinadi – RoomAccessGate (obuna oynasi)
+    // roomParam + obuna muddati tugagan
+    if (roomParam && roomGateState === 'expired') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/90 text-center font-semibold">{t('subscription_expired_lesson')}</p>
+                <p className="text-sm text-white/50 text-center max-w-sm">{t('subscription_expired_hint')}</p>
+                <button
+                    type="button"
+                    onClick={() => { window.location.href = '/messages'; }}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t('back')}
+                </button>
+            </div>
+        );
+    }
+    // roomParam + guruhga taklif kerak (to'lov faqat taklif tugmasida)
+    if (roomParam && roomGateState === 'needs_invite') {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/90 text-center font-semibold max-w-md">{t('subscription_pay_via_invite')}</p>
+                <button
+                    type="button"
+                    onClick={() => { window.location.href = '/messages'; }}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t('back')}
+                </button>
+            </div>
+        );
+    }
+    // roomParam + faol obuna yo'q (fallback — RoomAccessGate)
     if (roomParam && roomGateState === 'payment') {
         return (
             <RoomAccessGate

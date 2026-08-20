@@ -1,13 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useNotification } from "@/context/NotificationContext";
 import { useLanguage } from "@/context/LanguageContext";
 import { apiFetch } from "@/lib/api";
 import StudentDashboard from "./StudentDashboard";
 import type { ExpertPanelMode } from "@/lib/expert-roles";
-
-const DEFAULT_MONTHLY_MALI = 100;
 
 export default function RoomAccessGate({
     roomId,
@@ -20,17 +17,14 @@ export default function RoomAccessGate({
     sessionStyle?: ExpertPanelMode;
     onLeave: () => void;
 }) {
-    const { showError } = useNotification();
     const { t } = useLanguage();
     const [loading, setLoading] = useState(true);
     const [hasAccess, setHasAccess] = useState(false);
     const [isPrivateRoom, setIsPrivateRoom] = useState(false);
     const [roomClosed, setRoomClosed] = useState(false);
-    const [mentorId, setMentorId] = useState<string | null>(null);
-    const [mentorName, setMentorName] = useState<string>("");
-    const [roomName, setRoomName] = useState<string>("");
+    const [subscriptionExpired, setSubscriptionExpired] = useState(false);
+    const [needsInvite, setNeedsInvite] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const [subscribing, setSubscribing] = useState(false);
 
     useEffect(() => {
         let cancelled = false;
@@ -46,9 +40,6 @@ export default function RoomAccessGate({
                 const creatorId = room.creator_id;
                 const privateRoom = room.type === "private";
                 setIsPrivateRoom(privateRoom);
-                setMentorId(creatorId || null);
-                setMentorName(room.creator_name || "Ustoz");
-                setRoomName(room.name || "Dars");
 
                 if (privateRoom) {
                     const accessRes = await apiFetch(
@@ -82,7 +73,15 @@ export default function RoomAccessGate({
                 if (cancelled) return;
                 if (subRes.ok) {
                     const data = await subRes.json();
-                    if (data.active) setHasAccess(true);
+                    if (data.active) {
+                        setHasAccess(true);
+                    } else if (data.expired) {
+                        setSubscriptionExpired(true);
+                    } else {
+                        setNeedsInvite(true);
+                    }
+                } else {
+                    setNeedsInvite(true);
                 }
             } catch {
                 if (!cancelled) setError("Ma'lumotni yuklashda xatolik");
@@ -94,27 +93,6 @@ export default function RoomAccessGate({
             cancelled = true;
         };
     }, [roomId]);
-
-    const handleSubscribe = async () => {
-        if (!mentorId) return;
-        setSubscribing(true);
-        try {
-            const res = await apiFetch("/api/wallet/subscribe-to-mentor", {
-                method: "POST",
-                body: JSON.stringify({ mentorId }),
-            });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                setHasAccess(true);
-            } else {
-                showError(data.message || "Obunada xatolik");
-            }
-        } catch (e: any) {
-            showError(e?.message || "Obunada xatolik");
-        } finally {
-            setSubscribing(false);
-        }
-    };
 
     if (loading) {
         return (
@@ -151,6 +129,35 @@ export default function RoomAccessGate({
         );
     }
 
+    if (subscriptionExpired) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/90 text-center font-semibold">{t("subscription_expired_lesson")}</p>
+                <p className="text-sm text-white/50 text-center max-w-sm">{t("subscription_expired_hint")}</p>
+                <button
+                    onClick={onLeave}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t("back")}
+                </button>
+            </div>
+        );
+    }
+
+    if (needsInvite) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
+                <p className="text-white/90 text-center font-semibold max-w-md">{t("subscription_pay_via_invite")}</p>
+                <button
+                    onClick={onLeave}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-sm font-bold"
+                >
+                    {t("back")}
+                </button>
+            </div>
+        );
+    }
+
     if (error) {
         return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white gap-4 p-6">
@@ -165,34 +172,5 @@ export default function RoomAccessGate({
         );
     }
 
-    return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-[#0f1116] text-white p-6">
-            <div className="w-full max-w-md rounded-3xl bg-white/5 border border-white/10 p-8 shadow-2xl space-y-6">
-                <div className="text-center">
-                    <h1 className="text-xl font-bold text-white mb-1">1 oylik obuna</h1>
-                    <p className="text-sm text-white/60">
-                        30 kalendar kun davomida{" "}
-                        <span className="text-white/90">{mentorName}</span> ustozning barcha
-                        darslariga kirish huquqi. Har dars uchun alohida to&apos;lov yo&apos;q.
-                    </p>
-                </div>
-                <div className="w-full bg-black/30 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-lg text-center">
-                    {DEFAULT_MONTHLY_MALI} MALI / oy
-                </div>
-                <button
-                    onClick={handleSubscribe}
-                    disabled={subscribing}
-                    className="w-full py-4 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold text-lg shadow-lg shadow-blue-600/20 transition-all"
-                >
-                    {subscribing ? "To'lanmoqda..." : `${DEFAULT_MONTHLY_MALI} MALI — Obuna bo'lish`}
-                </button>
-                <button
-                    onClick={onLeave}
-                    className="w-full py-2 text-white/50 hover:text-white text-sm font-medium"
-                >
-                    Orqaga
-                </button>
-            </div>
-        </div>
-    );
+    return null;
 }

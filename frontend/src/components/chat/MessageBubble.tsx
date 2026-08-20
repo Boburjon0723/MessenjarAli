@@ -13,10 +13,16 @@ import { songPlayer } from '@/lib/song-player-store';
 import { apiFetch } from '@/lib/api';
 import { useConfirm } from '@/context/ConfirmContext';
 
+const DEFAULT_MONTHLY_MALI = 100;
+
 interface MessageBubbleProps {
     message: ChatMessage;
     /** lesson_start uchun: guruh chat ID (metadata yo'q bo'lsa shu ishlatiladi) */
     chatId?: string;
+    chatType?: string;
+    groupCreatorId?: string | null;
+    currentUserId?: string | null;
+    mentorSubStatus?: { active: boolean; expired: boolean } | null;
     onReply?: (message: ChatMessage) => void;
     isSelecting?: boolean;
     isSelected?: boolean;
@@ -40,7 +46,8 @@ interface MessageBubbleProps {
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
-    message, chatId, onReply, isSelecting, isSelected, onSelect,
+    message, chatId, chatType, groupCreatorId, currentUserId, mentorSubStatus,
+    onReply, isSelecting, isSelected, onSelect,
     uploadProgress, onMediaClick, onForward, onDelete, onEdit, onPin,
     isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad, showPeerAvatar = false, songPlaylist,
     inviteJoinExpired = false,
@@ -49,6 +56,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const { showError, showSuccess } = useNotification();
     const { confirm } = useConfirm();
     const [payLoading, setPayLoading] = useState(false);
+    const [groupJoinLoading, setGroupJoinLoading] = useState(false);
     const [paidPanelOpen, setPaidPanelOpen] = useState(false);
     const isOwn = message.sender === 'me';
     const fileMeta: ChatMessageMetadata = useMemo(() => {
@@ -75,6 +83,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             showError(t('invite_expired') as string);
             return;
         }
+        if (messageType === 'lesson_start' && mentorSubStatus && !mentorSubStatus.active) {
+            showError(
+                mentorSubStatus.expired
+                    ? (t('subscription_expired_lesson') as string)
+                    : (t('subscription_pay_via_invite') as string)
+            );
+            return;
+        }
         const sessionId =
             (fileMeta.sessionId != null && String(fileMeta.sessionId) !== ''
                 ? String(fileMeta.sessionId)
@@ -94,6 +110,54 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 ? `&style=${encodeURIComponent(styleStr.trim())}`
                 : '';
         window.location.href = `/messages?room=${encodeURIComponent(sessionId)}${styleQs}`;
+    };
+
+    const handleGroupJoinInvite = async () => {
+        const groupId = fileMeta.groupId != null ? String(fileMeta.groupId) : '';
+        const mentorId = fileMeta.mentorId != null ? String(fileMeta.mentorId) : '';
+        if (!groupId || !mentorId) {
+            showError(t('server_error') as string);
+            return;
+        }
+        setGroupJoinLoading(true);
+        try {
+            const statusRes = await apiFetch(
+                `/api/wallet/subscription-status?mentorId=${encodeURIComponent(mentorId)}`
+            );
+            const statusData = await statusRes.json().catch(() => ({}));
+            const hasActiveSub = statusRes.ok && !!statusData.active;
+
+            if (!hasActiveSub) {
+                const ok = await confirm({
+                    title: t('top_up') as any,
+                    description: `${DEFAULT_MONTHLY_MALI} MALI — 1 oylik obuna`,
+                    confirmLabel: t('group_join_pay_btn') as any,
+                });
+                if (!ok) return;
+                const subRes = await apiFetch('/api/wallet/subscribe-to-mentor', {
+                    method: 'POST',
+                    body: JSON.stringify({ mentorId }),
+                });
+                const subData = await subRes.json().catch(() => ({}));
+                if (!subRes.ok) {
+                    throw new Error(typeof subData?.message === 'string' ? subData.message : t('server_error'));
+                }
+            }
+
+            const joinRes = await apiFetch(`/api/chats/${encodeURIComponent(groupId)}/join-with-subscription`, {
+                method: 'POST',
+            });
+            const joinData = await joinRes.json().catch(() => ({}));
+            if (!joinRes.ok) {
+                throw new Error(typeof joinData?.message === 'string' ? joinData.message : t('server_error'));
+            }
+            showSuccess(t('group_join_success') as string);
+            window.location.href = `/messages?openChat=${encodeURIComponent(groupId)}`;
+        } catch (e) {
+            showError(e instanceof Error ? e.message : (t('server_error') as string));
+        } finally {
+            setGroupJoinLoading(false);
+        }
     };
 
     /** Faqat UI tarmoq tanlash: `img` → `image` (cache/legacy); shartlar message.text ga bog‘lanmaydi */
@@ -320,7 +384,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         messageType === 'lesson_end' ||
         messageType === 'lesson_start' ||
         messageType === 'consult_panel_invite' ||
+        messageType === 'group_join_invite' ||
         messageType === 'phone_call';
+
+    const isMentorStyle =
+        String(fileMeta.sessionStyle ?? '') === 'mentor' ||
+        messageType === 'group_join_invite';
 
     if (isService) {
         const isConsult =
@@ -364,7 +433,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     {renderText()}
                 </div>
                 {messageType === 'consult_panel_invite' &&
-                    inviteKind === 'panel_open' && (
+                    inviteKind === 'panel_open' &&
+                    !isMentorStyle && (
                         <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-emerald-500/30 bg-emerald-950/40 p-3 shadow-lg">
                             <div className="flex items-center justify-center gap-2 mb-3">
                                 <svg className="h-4 w-4 text-emerald-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden>
@@ -389,7 +459,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 {messageType === 'consult_panel_invite' &&
                     (inviteKind === 'payment_request' || !!fileMeta.serviceAmountMali) &&
                     inviteKind !== 'panel_open' &&
-                    !isOwn ? (
+                    !isOwn &&
+                    !isMentorStyle ? (
                         <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-blue-500/30 bg-blue-950/40 p-3 shadow-lg">
                             <p className="text-[13px] font-semibold text-blue-200 mb-2">
                                 {t('consult_payment_title')}
@@ -449,7 +520,26 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             </button>
                         </div>
                     ) : null}
+                {messageType === 'group_join_invite' && !isOwn && (
+                    <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-[#8774e1]/30 bg-[#8774e1]/10 p-3 shadow-lg">
+                        <p className="text-[13px] font-semibold text-[#c4b5fd] mb-1">
+                            {String(fileMeta.groupName || t('group_label'))}
+                        </p>
+                        <p className="text-[15px] font-bold text-white tabular-nums mb-3">
+                            {DEFAULT_MONTHLY_MALI} MALI / oy
+                        </p>
+                        <button
+                            type="button"
+                            disabled={groupJoinLoading}
+                            onClick={() => void handleGroupJoinInvite()}
+                            className="w-full py-2 rounded-xl bg-[#8774e1] hover:bg-[#7b68d9] text-white text-[13px] font-semibold disabled:opacity-50"
+                        >
+                            {groupJoinLoading ? '...' : t('group_join_pay_btn')}
+                        </button>
+                    </div>
+                )}
                 {(messageType === 'lesson_start' || messageType === 'consult_panel_invite') && (() => {
+                    if (isMentorStyle && messageType === 'consult_panel_invite') return null;
                     const inviteExpired =
                         inviteJoinExpired ||
                         fileMeta.invite_status === 'expired' ||
@@ -460,7 +550,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             inviteKind === 'payment_request' ||
                             (Boolean(fileMeta.serviceAmountMali) && inviteKind !== 'panel_open' && !isOwn));
                     if (hideJoinForPayment && !inviteExpired) return null;
-                    if (inviteExpired) {
+                    const lessonSubBlocked =
+                        messageType === 'lesson_start' &&
+                        !isOwn &&
+                        chatType === 'group' &&
+                        !!groupCreatorId &&
+                        String(groupCreatorId) !== String(currentUserId ?? '') &&
+                        (!mentorSubStatus || !mentorSubStatus.active);
+                    if (inviteExpired || lessonSubBlocked) {
                         return (
                             <div className="mt-1.5 flex flex-col items-center gap-0.5">
                                 <button
@@ -468,10 +565,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     disabled
                                     className="rounded-full bg-[#212121]/60 px-4 py-1.5 text-[14px] font-medium text-white/35 cursor-not-allowed"
                                 >
-                                    {t('invite_expired')}
+                                    {lessonSubBlocked && mentorSubStatus?.expired
+                                        ? t('subscription_expired_lesson')
+                                        : t('invite_expired')}
                                 </button>
                                 <span className="text-[11px] text-white/40 max-w-[240px] text-center leading-snug">
-                                    {t('invite_expired_hint')}
+                                    {lessonSubBlocked && mentorSubStatus?.expired
+                                        ? t('subscription_expired_hint')
+                                        : t('invite_expired_hint')}
                                 </span>
                             </div>
                         );

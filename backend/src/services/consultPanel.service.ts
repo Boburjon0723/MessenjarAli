@@ -13,7 +13,7 @@ function consultPanelInviteChatContent(
     sessionStyle: ConsultInviteStyle
 ): string {
     if (sessionStyle === 'mentor') {
-        return `👋 **${expertName}** ustoz panelida. Agar darsni boshlagan bo'lsa, quyidagi tugma orqali qo'shilishingiz mumkin.`;
+        return `👋 **${expertName}** ustoz bilan suhbat davom etmoqda. Kelishuvdan so'ng guruhga taklif yuboriladi — obuna to'lovi shu taklif orqali amalga oshiriladi.`;
     }
     if (sessionStyle === 'legal') {
         return `⚖️ **${expertName}** huquqiy maslahat uchun tayyor. Maslahat xonasiga kirish uchun quyidagi tugmani bosing.`;
@@ -116,7 +116,7 @@ export async function sendConsultPanelInvite(params: {
 
     let content = consultPanelInviteChatContent(expertName, style);
     let kind: string = 'panel_open';
-    if (params.isPaymentRequest) {
+    if (params.isPaymentRequest && style !== 'mentor') {
         content = `💳 **${expertName}** bilan sessiyani boshlash uchun xizmat haqqini to'lashingiz lozim. To'lovdan so'ng sessiyaga ulanish tugmasi faollashadi.`;
         kind = 'payment_request';
     }
@@ -279,4 +279,178 @@ export async function sendLessonStartNotify(params: {
         others
     );
     return { messageId: String(newMessage.id), chatId };
+}
+
+export async function sendGroupJoinInvite(params: {
+    expertId: string;
+    chatId: string;
+    groupId: string;
+    expertName: string;
+    io?: Server;
+}): Promise<{ messageId: string; chatId: string; groupId: string }> {
+    const chatId = String(params.chatId || '').trim();
+    const groupId = String(params.groupId || '').trim();
+    const expertId = String(params.expertId || '').trim();
+    const expertName = String(params.expertName || '').trim() || 'Ustoz';
+
+    if (!chatId || !groupId || !expertId) {
+        const err: any = new Error('chatId, groupId kerak');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!UUID_RE.test(chatId) || !UUID_RE.test(groupId)) {
+        const err: any = new Error('chatId va groupId UUID bo‘lishi kerak');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!(await assertChatParticipant(chatId, expertId))) {
+        const err: any = new Error('Bu chat ishtirokchisi emassiz');
+        err.statusCode = 403;
+        throw err;
+    }
+
+    const chatRes = await pool.query('SELECT id, type FROM chats WHERE id = $1 LIMIT 1', [chatId]);
+    if (!chatRes.rows[0] || chatRes.rows[0].type !== 'private') {
+        const err: any = new Error('Guruh taklifi faqat shaxsiy chatda yuboriladi');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    const groupRes = await pool.query(
+        'SELECT id, name, type, creator_id FROM chats WHERE id = $1 LIMIT 1',
+        [groupId],
+    );
+    const group = groupRes.rows[0];
+    if (!group || group.type !== 'group') {
+        const err: any = new Error('Guruh topilmadi');
+        err.statusCode = 404;
+        throw err;
+    }
+    if (String(group.creator_id) !== expertId) {
+        const err: any = new Error('Faqat o‘z guruhingizga taklif yuborishingiz mumkin');
+        err.statusCode = 403;
+        throw err;
+    }
+
+    const content = `📚 **${expertName}** sizni **${group.name || 'guruh'}** ga taklif qildi. Guruhga qo'shilish uchun 1 oylik obuna to'lovi talab etiladi.`;
+    const meta = {
+        kind: 'group_join',
+        groupId,
+        groupName: group.name || 'Guruh',
+        mentorId: expertId,
+        sessionStyle: 'mentor',
+        invite_status: 'active',
+    };
+
+    const mentor = await UserModel.findById(expertId);
+    const mentorAvatar = mentor?.avatar_url || null;
+
+    const newMessage = await MessageModel.create(chatId, expertId, content, 'group_join_invite', meta);
+    const others = await otherParticipantIds(chatId, expertId);
+    broadcastChatMessage(
+        params.io,
+        chatId,
+        {
+            id: newMessage.id,
+            chat_id: chatId,
+            roomId: chatId,
+            sender_id: expertId,
+            sender_name: expertName,
+            sender_avatar: mentorAvatar,
+            content,
+            type: 'group_join_invite',
+            metadata: meta,
+            created_at: new Date().toISOString(),
+        },
+        others,
+    );
+
+    return { messageId: String(newMessage.id), chatId, groupId };
+}
+
+export async function sendGroupJoinInvite(params: {
+    expertId: string;
+    chatId: string;
+    groupId: string;
+    expertName: string;
+    io?: Server;
+}): Promise<{ messageId: string; chatId: string; groupId: string }> {
+    const chatId = String(params.chatId || '').trim();
+    const groupId = String(params.groupId || '').trim();
+    const expertId = String(params.expertId || '').trim();
+    const expertName = String(params.expertName || '').trim() || 'Ustoz';
+
+    if (!chatId || !groupId || !expertId) {
+        const err: any = new Error('chatId, groupId kerak');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!UUID_RE.test(chatId) || !UUID_RE.test(groupId)) {
+        const err: any = new Error('chatId va groupId UUID bo‘lishi kerak');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (!(await assertChatParticipant(chatId, expertId))) {
+        const err: any = new Error('Bu chat ishtirokchisi emassiz');
+        err.statusCode = 403;
+        throw err;
+    }
+
+    const chatRes = await pool.query('SELECT id, type FROM chats WHERE id = $1 LIMIT 1', [chatId]);
+    if (!chatRes.rows[0] || chatRes.rows[0].type !== 'private') {
+        const err: any = new Error('Guruh taklifi faqat shaxsiy chatda yuboriladi');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    const groupRes = await pool.query(
+        'SELECT id, name, type, creator_id FROM chats WHERE id = $1 LIMIT 1',
+        [groupId],
+    );
+    const group = groupRes.rows[0];
+    if (!group || group.type !== 'group') {
+        const err: any = new Error('Guruh topilmadi');
+        err.statusCode = 404;
+        throw err;
+    }
+    if (String(group.creator_id) !== expertId) {
+        const err: any = new Error('Faqat o‘z guruhingizga taklif yuborishingiz mumkin');
+        err.statusCode = 403;
+        throw err;
+    }
+
+    const content = `📚 **${expertName}** sizni **${group.name || 'guruh'}** ga taklif qildi. Guruhga qo'shilish uchun 1 oylik obuna to'lovi talab etiladi.`;
+    const meta = {
+        kind: 'group_join',
+        groupId,
+        groupName: group.name || 'Guruh',
+        mentorId: expertId,
+        sessionStyle: 'mentor',
+        invite_status: 'active',
+    };
+
+    const mentor = await UserModel.findById(expertId);
+    const mentorAvatar = mentor?.avatar_url || null;
+
+    const newMessage = await MessageModel.create(chatId, expertId, content, 'group_join_invite', meta);
+    const others = await otherParticipantIds(chatId, expertId);
+    broadcastChatMessage(
+        params.io,
+        chatId,
+        {
+            id: newMessage.id,
+            chat_id: chatId,
+            roomId: chatId,
+            sender_id: expertId,
+            sender_name: expertName,
+            sender_avatar: mentorAvatar,
+            content,
+            type: 'group_join_invite',
+            metadata: meta,
+            created_at: new Date().toISOString(),
+        },
+        others,
+    );
+
+    return { messageId: String(newMessage.id), chatId, groupId };
 }

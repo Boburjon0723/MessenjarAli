@@ -189,10 +189,14 @@ export class WalletController {
                 return res.status(400).json({ success: false, message: 'mentorId kerak' });
             }
             const sub = await TokenService.getActiveSubscription(studentId, mentorId);
+            const record = await TokenService.getSubscriptionRecord(studentId, mentorId);
+            const expired = !sub && !!record;
             res.json({
                 success: true,
                 active: !!sub,
-                expiresAt: sub?.expires_at || null
+                expired,
+                hadSubscription: !!record,
+                expiresAt: sub?.expires_at || record?.expires_at || null,
             });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });

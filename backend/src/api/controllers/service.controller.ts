@@ -10,6 +10,7 @@ import {
 import {
     sendConsultPanelInvite,
     sendLessonStartNotify,
+    sendGroupJoinInvite,
 } from '../../services/consultPanel.service';
 
 export const initiateSession = async (req: Request, res: Response) => {
@@ -195,6 +196,29 @@ export const postConsultPanelInvite = async (req: Request, res: Response) => {
             expertName: name,
             sessionStyle,
             isPaymentRequest: !!isPaymentRequest,
+            io: req.app.get('io'),
+        });
+        res.status(201).json({ ok: true, ...result });
+    } catch (error: any) {
+        const code = error?.statusCode || 400;
+        res.status(code).json({ message: error?.message || 'Xatolik' });
+    }
+};
+
+/** Mentor shaxsiy chatda talabani guruhga taklif qiladi (obuna to'lovi talab qilinadi). */
+export const postGroupJoinInvite = async (req: Request, res: Response) => {
+    try {
+        const expertId = (req as any).user.id;
+        const { chatId, groupId, expertName } = req.body || {};
+        const name =
+            String(expertName || '').trim() ||
+            [(req as any).user?.name, (req as any).user?.surname].filter(Boolean).join(' ').trim() ||
+            'Ustoz';
+        const result = await sendGroupJoinInvite({
+            expertId,
+            chatId: String(chatId || ''),
+            groupId: String(groupId || ''),
+            expertName: name,
             io: req.app.get('io'),
         });
         res.status(201).json({ ok: true, ...result });

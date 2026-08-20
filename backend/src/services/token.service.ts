@@ -499,5 +499,13 @@ export class TokenService {
         );
         return res.rows[0] || null;
     }
+
+    static async getSubscriptionRecord(studentId: string, mentorId: string) {
+        const res = await pool.query(
+            `SELECT * FROM student_mentor_subscriptions WHERE student_id = $1 AND mentor_id = $2 ORDER BY expires_at DESC LIMIT 1`,
+            [studentId, mentorId]
+        );
+        return res.rows[0] || null;
+    }
 }
 

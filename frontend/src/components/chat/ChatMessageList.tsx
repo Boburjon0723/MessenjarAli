@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useCallback, useEffect, useMemo } from 'react';
+import React, { useRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { computeMessageContinuation } from '@/lib/chat-continuation';
 import { parseMessageDate } from './chatWindowHelpers';
@@ -8,6 +8,7 @@ import type { ChatMessage } from '@/types/chat-message';
 import { computeExpiredPanelInviteIds } from '@/lib/panel-invite-ui';
 import { classifyTelegramMessage, resolveChatMediaUrl } from '@/lib/telegram-message-kind';
 import type { SongTrack } from '@/lib/song-player-store';
+import { apiFetch } from '@/lib/api';
 
 export type ChatMessageListProps = {
     t: (...args: any[]) => string;
@@ -46,6 +47,9 @@ export type ChatMessageListProps = {
     newMessagesWhileUp: number;
     jumpToLatestMessage: () => void;
     showPeerAvatar?: boolean;
+    chatType?: string;
+    groupCreatorId?: string | null;
+    currentUserId?: string | null;
 };
 
 export function ChatMessageList({
@@ -85,7 +89,39 @@ export function ChatMessageList({
     newMessagesWhileUp,
     jumpToLatestMessage,
     showPeerAvatar = false,
+    chatType,
+    groupCreatorId,
+    currentUserId,
 }: ChatMessageListProps) {
+    const [mentorSubStatus, setMentorSubStatus] = useState<{ active: boolean; expired: boolean } | null>(null);
+
+    useEffect(() => {
+        if (chatType !== 'group' || !groupCreatorId || !currentUserId) {
+            setMentorSubStatus(null);
+            return;
+        }
+        if (String(groupCreatorId) === String(currentUserId)) {
+            setMentorSubStatus({ active: true, expired: false });
+            return;
+        }
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await apiFetch(
+                    `/api/wallet/subscription-status?mentorId=${encodeURIComponent(String(groupCreatorId))}`
+                );
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                setMentorSubStatus({ active: !!data.active, expired: !!data.expired });
+            } catch {
+                if (!cancelled) setMentorSubStatus(null);
+            }
+        })();
+        return () => {
+            cancelled = true;
+        };
+    }, [chatType, groupCreatorId, currentUserId]);
+
     const songPlaylist = useMemo<SongTrack[]>(() => {
         return filteredMessages.flatMap((m) => {
             const meta = m.metadata && typeof m.metadata === 'object' ? m.metadata : {};
@@ -265,6 +301,10 @@ export function ChatMessageList({
                                     songPlaylist={songPlaylist}
                                     showPeerAvatar={showPeerAvatar}
                                     inviteJoinExpired={expiredPanelInviteIds.has(String(msg.id))}
+                                    chatType={chatType}
+                                    groupCreatorId={groupCreatorId}
+                                    currentUserId={currentUserId}
+                                    mentorSubStatus={mentorSubStatus}
                                 />
                             </div>
                         </React.Fragment>
