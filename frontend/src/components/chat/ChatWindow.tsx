@@ -1692,27 +1692,29 @@ export default function ChatWindow({
     if (!chat) return <div className="flex-1 flex items-center justify-center text-white/40">{t('select_chat')}</div>;
 
     const currentUser = getUser() || {};
+    const myUserId = currentUser?.id != null ? String(currentUser.id) : null;
     const continuationOpts = {
         peerUserId: getPrivateChatPeerUserId(chat),
-        myUserId: currentUser?.id != null ? String(currentUser.id) : null,
+        myUserId,
     };
+    const onListingExpertSide = isListingExpertSide(chat, myUserId);
     const chatCompliance =
         chat?.type === 'private' && isExpertListingChat(chat) && chat?.otherUser
             ? getExpertComplianceNotice(
                   getExpertPanelMode(
-                      (isListingExpertSide(chat, currentUser?.id)
+                      (onListingExpertSide
                           ? currentUser
                           : chat.otherUser) as Parameters<typeof getExpertPanelMode>[0]
                   ),
-                  isListingExpertSide(chat, currentUser?.id) ? 'expert' : 'client',
+                  onListingExpertSide ? 'expert' : 'client',
                   t,
                   tLines
               )
             : null;
-    const isChannelCreator = chat?.type === 'channel' && (chat?.creator_id ?? chat?.creatorId) === currentUser?.id;
+    const isChannelCreator = chat?.type === 'channel' && String(chat?.creator_id ?? chat?.creatorId ?? '') === String(myUserId ?? '');
     const isTrade = chat?.isTrade;
-    const isBuyer = tradeData?.buyer_id === currentUser.id;
-    const isSeller = tradeData?.seller_id === currentUser.id;
+    const isBuyer = tradeData?.buyer_id != null && myUserId != null && String(tradeData.buyer_id) === myUserId;
+    const isSeller = tradeData?.seller_id != null && myUserId != null && String(tradeData.seller_id) === myUserId;
     const roleLabel = isTrade ? (isBuyer ? t('buyer') : isSeller ? t('seller') : t('trade_participant')) : null;
     const displayName = isTrade ? roleLabel : chat.name;
 
@@ -1730,14 +1732,14 @@ export default function ChatWindow({
     const showMentorGroupInvite =
         chat?.type === 'private' &&
         !!currentUser?.is_expert &&
-        isMentorPanelMode(getExpertPanelMode(currentUser));
+        isMentorPanelMode(getExpertPanelMode(currentUser as Parameters<typeof getExpertPanelMode>[0]));
     const mentorDisplayName =
         [currentUser?.name, currentUser?.surname].filter(Boolean).join(' ').trim() ||
         String(currentUser?.name || 'Ustoz');
     const showListingDealBar =
         chat?.type === 'private' &&
         isExpertListingChat(chat) &&
-        isListingExpertSide(chat, currentUser?.id);
+        isListingExpertSide(chat, myUserId);
 
     return (
         <div
