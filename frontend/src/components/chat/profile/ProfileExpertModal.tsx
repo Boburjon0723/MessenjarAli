@@ -11,6 +11,7 @@ export type ProfileExpertModalProps = {
     isLegalMode: boolean;
     verifiedStatus: 'none' | 'pending' | 'approved' | 'rejected';
     onClose: () => void;
+    bgSettings?: { rgb?: { r: number; g: number; b: number } };
     profession: string;
     setProfession: (v: string) => void;
     professionRef: React.RefObject<HTMLSelectElement | null>;
@@ -40,8 +41,8 @@ export type ProfileExpertModalProps = {
     price: number;
     setPrice: (v: number) => void;
     priceRef: React.RefObject<HTMLInputElement | null>;
-    pricingModel: 'hourly' | 'session';
-    setPricingModel: (v: 'hourly' | 'session') => void;
+    pricingModel: 'hourly' | 'session' | 'monthly';
+    setPricingModel: (v: 'hourly' | 'session' | 'monthly') => void;
     currency: string;
     setCurrency: (v: string) => void;
     serviceLanguages: string;
@@ -103,6 +104,7 @@ export function ProfileExpertModal({
     isLegalMode,
     verifiedStatus,
     onClose,
+    bgSettings,
     profession,
     setProfession,
     professionRef,
@@ -149,20 +151,33 @@ export function ProfileExpertModal({
         language === 'uz' ? 'Valyuta' : language === 'ru' ? 'Валюта' : 'Currency';
     const formatLabel =
         language === 'uz' ? 'Xizmat turi' : language === 'ru' ? 'Формат' : 'Format';
+    const isMentorMode = isMentorProfession(profession);
     const priceFieldLabel =
-        pricingModel === 'session'
-            ? isLegalMode
-                ? language === 'uz'
-                    ? 'Maslahat narxi'
-                    : language === 'ru'
-                      ? 'Цена услуги'
-                      : 'Service price'
-                : `${t('session')} ${t('price').toLowerCase()}`
-            : `1 ${t('hourly').toLowerCase()} ${t('price').toLowerCase()}`;
+        pricingModel === 'monthly'
+            ? language === 'uz'
+                ? '1 oylik narx'
+                : language === 'ru'
+                  ? 'Цена за месяц'
+                  : 'Monthly price'
+            : pricingModel === 'session'
+              ? isLegalMode
+                  ? language === 'uz'
+                      ? 'Maslahat narxi'
+                      : language === 'ru'
+                        ? 'Цена услуги'
+                        : 'Service price'
+                  : `${t('session')} ${t('price').toLowerCase()}`
+              : `1 ${t('hourly').toLowerCase()} ${t('price').toLowerCase()}`;
+
+    const panelRgb = {
+        r: bgSettings?.rgb?.r ?? 18,
+        g: bgSettings?.rgb?.g ?? 27,
+        b: bgSettings?.rgb?.b ?? 34,
+    };
 
     return (
         <div
-            className="absolute inset-0 z-[110] flex items-center justify-center bg-[#0f1419]/88 backdrop-blur-lg px-0 sm:px-4 py-0 sm:py-4 animate-fade-in"
+            className="absolute inset-0 z-[110] flex items-center justify-center bg-black/75 backdrop-blur-md px-0 sm:px-4 py-0 sm:py-4 animate-fade-in"
             onClick={(e) => {
                 e.stopPropagation();
                 onClose();
@@ -172,12 +187,12 @@ export function ProfileExpertModal({
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="expert-profile-title"
-                className="w-full h-[100dvh] sm:h-auto sm:max-h-[88vh] max-w-xl rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-white/25 flex flex-col overflow-hidden text-white"
+                className="w-full h-[100dvh] sm:h-auto sm:max-h-[88vh] max-w-xl rounded-none sm:rounded-2xl shadow-2xl border-0 sm:border border-white/12 flex flex-col overflow-hidden text-white"
                 style={{
-                    backgroundColor: 'rgba(255, 255, 255, 0.16)',
-                    backdropFilter: 'blur(24px)',
-                    WebkitBackdropFilter: 'blur(24px)',
-                    boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
+                    backgroundColor: `rgba(${panelRgb.r}, ${panelRgb.g}, ${panelRgb.b}, 0.96)`,
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    boxShadow: '0 16px 48px rgba(0,0,0,0.45)',
                 }}
                 onClick={(e) => e.stopPropagation()}
             >
@@ -410,21 +425,29 @@ export function ProfileExpertModal({
                                 <Segmented
                                     value={pricingModel}
                                     onChange={setPricingModel}
-                                    options={[
-                                        ...(isLegalMode
-                                            ? []
-                                            : [{ key: 'hourly' as const, label: t('hourly') }]),
-                                        {
-                                            key: 'session' as const,
-                                            label: isLegalMode
-                                                ? language === 'uz'
-                                                    ? 'Bir martalik'
-                                                    : language === 'ru'
-                                                      ? 'Единоразова'
-                                                      : 'One-time'
-                                                : t('session'),
-                                        },
-                                    ]}
+                                    options={
+                                        isLegalMode
+                                            ? [
+                                                  {
+                                                      key: 'session' as const,
+                                                      label:
+                                                          language === 'uz'
+                                                              ? 'Bir martalik'
+                                                              : language === 'ru'
+                                                                ? 'Единоразова'
+                                                                : 'One-time',
+                                                  },
+                                              ]
+                                            : isMentorMode
+                                              ? [
+                                                    { key: 'hourly' as const, label: t('hourly') },
+                                                    { key: 'monthly' as const, label: t('monthly') },
+                                                ]
+                                              : [
+                                                    { key: 'hourly' as const, label: t('hourly') },
+                                                    { key: 'session' as const, label: t('session') },
+                                                ]
+                                    }
                                 />
                             </div>
                             <div className="space-y-1">

@@ -3,7 +3,6 @@
 import React from 'react';
 import {
     X,
-    UserCircle,
     Wallet,
     HelpCircle,
     Users,
@@ -104,9 +103,6 @@ export function MessagesMenuDrawer({
                 </div>
 
                 <div className="flex-1 overflow-y-auto py-2 custom-scrollbar">
-                    <button type="button" onClick={onOpenProfile} className={itemCls}>
-                        <UserCircle className={iconCls} /> {t('profile')}
-                    </button>
                     <button type="button" onClick={onOpenWallet} className={itemCls}>
                         <Wallet className={iconCls} /> {t('wallet')}
                     </button>

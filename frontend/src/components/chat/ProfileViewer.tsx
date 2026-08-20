@@ -13,37 +13,19 @@ import {
     normalizeExpertGroupName,
 } from '@/lib/expert-roles';
 import {
-    User,
-    Bell,
-    Lock,
-    MessageSquare,
-    Folder,
-    Sliders,
-    Volume2,
-    Zap,
-    Languages,
-    Monitor,
-    Search,
-    MoreVertical,
     X,
-    Grid,
     Camera,
-    AtSign,
-    Phone,
-    Calendar,
     Award,
-    Briefcase,
     Clock,
-    DollarSign,
-    Heart,
-    Moon,
-    CheckCircle,
+    Pencil,
+    Wallet,
+    MessageSquare,
+    User,
     Shield,
-    UserCheck,
+    Languages,
 } from 'lucide-react';
 import { ProfileChatSettingsView } from './profile/ProfileChatSettingsView';
 import { ProfileWalletView } from './profile/ProfileWalletView';
-import { ProfileSettingsView } from './profile/ProfileSettingsView';
 import { ProfileExpertModal } from './profile/ProfileExpertModal';
 import { ProfileEditModals } from './profile/ProfileEditModals';
 
@@ -90,11 +72,13 @@ export default function ProfileViewer({
     const [birthday, setBirthday] = useState("");
     const [showNameModal, setShowNameModal] = useState(false);
     const [showUsernameModal, setShowUsernameModal] = useState(false);
+    const [showBioModal, setShowBioModal] = useState(false);
     const [showExpertModal, setShowExpertModal] = useState(false);
     const [showDatePicker, setShowDatePicker] = useState(false);
     const [editFirstName, setEditFirstName] = useState("");
     const [editLastName, setEditLastName] = useState("");
     const [editUsername, setEditUsername] = useState("");
+    const [editBio, setEditBio] = useState("");
     /** Guruh profilidagi kabi: fayl tanlanishi bilan yuklash + serverga yozish */
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     /** Telegram uslubi: rasmni kattalashtirib koвЂrish */
@@ -117,8 +101,8 @@ export default function ProfileViewer({
     const [currency, setCurrency] = useState("MALI");
     const [serviceLanguages, setServiceLanguages] = useState("");
     const [serviceFormat, setServiceFormat] = useState("");
-    /** soatlik | bir seans (konsultatsiya) — backend `pricing_model` */
-    const [pricingModel, setPricingModel] = useState<'hourly' | 'session'>('hourly');
+    /** soatlik | seans | oylik (mentor) — backend `pricing_model` */
+    const [pricingModel, setPricingModel] = useState<'hourly' | 'session' | 'monthly'>('hourly');
     const [bioExpert, setBioExpert] = useState("");
     const [specialtyDesc, setSpecialtyDesc] = useState("");
     const [resumeUrl, setResumeUrl] = useState("");
@@ -207,7 +191,13 @@ export default function ProfileViewer({
         setCurrency(userToProcess.currency || "MALI");
         setServiceLanguages(userToProcess.service_languages || "");
         setServiceFormat(userToProcess.service_format || "");
-        setPricingModel(userToProcess.pricing_model === 'session' ? 'session' : 'hourly');
+        setPricingModel(
+            userToProcess.pricing_model === 'monthly'
+                ? 'monthly'
+                : userToProcess.pricing_model === 'session'
+                  ? 'session'
+                  : 'hourly'
+        );
         setBioExpert(userToProcess.bio_expert || "");
         {
             const spec = String(userToProcess.specialty_desc || "").trim();
@@ -351,19 +341,19 @@ export default function ProfileViewer({
         const blocks: Record<string, { title: string; body: string }> = {
             mentor: {
                 title: 'Mentor / ustoz',
-                body: 'Odatda soatlik narx (masalan, 45вЂ“60 daqiqalik dars) qulay — mijoz vaqtni aniq biladi.'
+                body: 'Guruh obunasi uchun «Oylik» narxni qo‘ying — talaba guruhga kirganda shu summa yechiladi. Soatlik dars bo‘lsa «Soatlik» tanlang.'
             },
             legal: {
                 title: 'Huquqshunos',
-                body: 'KoвЂpincha bir murojaat, qisqa maslahat yoki ish paketi (seans) narxi beriladi.'
+                body: 'Ko‘pincha bir murojaat, qisqa maslahat yoki ish paketi (seans) narxi beriladi.'
             },
             psychology: {
                 title: 'Psixolog',
-                body: '50вЂ“60 daqiqalik seans narxi odatiy. Soatlik ham mumkin — mijozga seans vaqtini oldindan yozing.'
+                body: '50–60 daqiqalik seans narxi odatiy. Soatlik ham mumkin — mijozga seans vaqtini oldindan yozing.'
             },
             consult: {
                 title: 'Konsultant',
-                body: 'Xizmat soat bilan boвЂlsa В«SoatlikВ», tayyor uchrashuv/paket boвЂlsa В«SeansВ» tanlang.'
+                body: 'Xizmat soat bilan bo‘lsa «Soatlik», tayyor uchrashuv/paket bo‘lsa «Seans» tanlang.'
             }
         };
         return blocks[mode] || blocks.consult;
@@ -387,8 +377,13 @@ export default function ProfileViewer({
         // Huquqshunos uchun narx turi doim bir martalik seans/maslahat bo'ladi.
         if (isLegalMode && pricingModel !== 'session') {
             setPricingModel('session');
+            return;
         }
-    }, [isLegalMode, pricingModel]);
+        // Mentor: eski «seans» → «oylik» (guruh obunasi)
+        if (!isLegalMode && isMentorProfession(profession) && pricingModel === 'session') {
+            setPricingModel('monthly');
+        }
+    }, [isLegalMode, pricingModel, profession]);
 
     // Load existing group chats for this expert to allow re-using them
     useEffect(() => {
@@ -441,13 +436,16 @@ export default function ProfileViewer({
         setShowLanguageModal(false);
     };
 
-    const handleSaveBio = (newBio: string) => {
-        if (newBio !== user.bio) {
+    const handleSaveBio = () => {
+        const newBio = editBio.trim();
+        if (newBio !== (user.bio || '')) {
+            setBio(newBio);
             if (socket) socket.emit('update_profile', { bio: newBio });
             const newUser = { ...user, bio: newBio };
             setLocalUser(newUser);
             setUser(newUser as Record<string, unknown>);
         }
+        setShowBioModal(false);
     };
 
     const handleSaveBirthday = (val: string) => {
@@ -553,9 +551,11 @@ export default function ProfileViewer({
             setToast({
                 type: 'warning',
                 message:
-                    pricingModel === 'session'
-                        ? "Seans narxi maydonini to'g'ri kiriting."
-                        : "Soatlik narx maydonini to'g'ri kiriting."
+                    pricingModel === 'monthly'
+                        ? "Oylik narx maydonini to'g'ri kiriting."
+                        : pricingModel === 'session'
+                          ? "Seans narxi maydonini to'g'ri kiriting."
+                          : "Soatlik narx maydonini to'g'ri kiriting."
             });
             setExpertErrors(prev => ({ ...prev, price: "Narx 0 dan katta bo'lishi kerak." }));
             priceRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -978,243 +978,325 @@ export default function ProfileViewer({
 
     // --- RENDERERS ---
 
-    const renderProfile = () => (
-        <div
-            className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#212121] text-white shadow-[0_2px_16px_rgba(0,0,0,0.4)]"
-            onClick={(e) => e.stopPropagation()}
-        >
-            {/* Header with Big Image — bosish: katta koвЂrinish (Telegram); kamera: yangi rasm */}
-            <div className="relative h-24 sm:h-28 w-full overflow-hidden flex-shrink-0">
-                <img
-                    src={profilePhotoDisplaySrc}
-                    alt=""
-                    className={`absolute inset-0 w-full h-full object-cover brightness-75 scale-105 transition-opacity pointer-events-none ${uploadingAvatar ? 'opacity-50' : ''}`}
-                    key={String(user.avatar_url || user.avatar || 'av')}
-                />
-                {getAvatarUrl(user.avatar || user.avatar_url) && !uploadingAvatar && (
+    const renderProfile = () => {
+        const fullName = `${user.name || ''} ${user.surname || ''}`.trim() || 'User';
+        const birthdayLabel = birthday
+            ? `${new Date(birthday).toLocaleDateString(
+                  language === 'ru' ? 'ru-RU' : language === 'en' ? 'en-US' : 'uz-UZ',
+                  { day: 'numeric', month: 'short', year: 'numeric' }
+              )}${displayAge() ? ` (${displayAge()!.current} ${t('years_old')})` : ''}`
+            : t('select');
+        const priceLabel =
+            pricingModel === 'monthly'
+                ? t('monthly')
+                : pricingModel === 'session'
+                  ? t('session')
+                  : t('hourly');
+        const expertStatusRight =
+            verifiedStatus === 'pending'
+                ? '…'
+                : isExpert && verifiedStatus === 'approved'
+                  ? '✓'
+                  : verifiedStatus === 'approved'
+                    ? '—'
+                    : '';
+
+        return (
+            <div
+                className="w-full h-full lg:h-auto lg:max-w-[420px] flex flex-col lg:max-h-[85vh] overflow-hidden rounded-none lg:rounded-2xl bg-[#17212b] text-white shadow-[0_2px_16px_rgba(0,0,0,0.45)]"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Telegram: til + Edit + Close */}
+                <div className="flex items-center justify-end gap-0.5 px-2 pt-[max(0.5rem,env(safe-area-inset-top))] pb-1 shrink-0">
                     <button
                         type="button"
-                        className="absolute inset-0 z-[5] w-full h-full cursor-zoom-in border-0 bg-transparent p-0"
-                        onClick={(e) => {
-                            e.stopPropagation();
-                            openAvatarLightbox();
-                        }}
-                        aria-label={
-                            language === 'ru'
-                                ? 'РћС‚РєСЂС‹С‚СЊ С„РѕС‚Рѕ'
-                                : language === 'en'
-                                  ? 'View photo'
-                                  : 'Rasmni kattalashtirish'
-                        }
-                    />
-                )}
-                {uploadingAvatar && (
-                    <div className="absolute inset-0 z-[15] flex items-center justify-center bg-black/40">
-                        <div className="h-10 w-10 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    </div>
-                )}
-                <div className="absolute inset-0 bg-gradient-to-t from-[#212121] via-transparent to-black/40 pointer-events-none" />
-
-                <div
-                    className="absolute top-0 inset-x-0 z-10 flex items-center justify-between gap-2 pb-2 pt-[max(1rem,env(safe-area-inset-top))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))]"
-                >
-                    <button onClick={onClose} className="text-white/80 hover:text-white bg-white/10 p-2.5 min-h-[44px] min-w-[44px] rounded-full backdrop-blur-md transition-all border border-white/10 flex items-center justify-center gap-1 group shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 lg:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
-                        </svg>
-                        <X className="h-5 w-5 hidden lg:block" />
+                        onClick={() => setShowLanguageModal(true)}
+                        className="flex items-center gap-1 px-2.5 min-h-[44px] rounded-full text-[#6ab3f3] hover:bg-white/5 transition-colors"
+                        aria-label={language === 'uz' ? 'Til' : language === 'ru' ? 'Язык' : 'Language'}
+                    >
+                        <Languages className="h-[18px] w-[18px]" strokeWidth={2} />
+                        <span className="text-[12px] font-semibold uppercase">{language}</span>
                     </button>
-                    <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
-                        <button
-                            type="button"
-                            onClick={() => setShowLanguageModal(true)}
-                            className="flex min-h-[44px] items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-2.5 py-2 text-white/80 backdrop-blur-md transition-all hover:text-white sm:px-3"
-                        >
-                            <Languages className="h-4 w-4 shrink-0" />
-                            <span className="max-w-[2.75rem] truncate text-[11px] font-bold uppercase sm:max-w-none">{language}</span>
-                        </button>
-                        <button
-                            type="button"
-                            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-white/10 bg-white/10 p-2 text-white/80 backdrop-blur-md transition-all hover:text-white"
-                        >
-                            <MoreVertical className="h-5 w-5" />
-                        </button>
-                    </div>
-                </div>
-
-                <div className="absolute bottom-4 left-6 right-6 z-10 pointer-events-none">
-                    <h2 className="text-white text-2xl font-bold leading-none">{user.name} {user.surname || ''}</h2>
-                    <p className="text-[#8774e1] text-[13px] font-medium mt-1">{t('online')}</p>
-                </div>
-
-                {!uploadingAvatar && (
                     <button
                         type="button"
                         onClick={(e) => {
                             e.stopPropagation();
-                            handleAvatarClick();
+                            onEdit();
                         }}
-                        className="absolute bottom-4 right-6 w-11 h-11 bg-[#8774e1] rounded-full flex items-center justify-center text-white shadow-xl hover:bg-[#7b68d4] transition-all transform active:scale-95 z-20 touch-manipulation"
+                        className="p-2.5 min-h-[44px] min-w-[44px] rounded-full text-[#6ab3f3] hover:bg-white/5 transition-colors flex items-center justify-center"
+                        aria-label={t('edit_profile')}
                     >
-                        <Camera className="h-5 w-5" />
+                        <Pencil className="h-[18px] w-[18px]" strokeWidth={2} />
                     </button>
-                )}
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    className="hidden"
-                    accept="image/*"
-                    onChange={handleProfileAvatarChange}
-                />
-            </div>
-
-            {/* Guruh bilan bir xil: yuklashda havola yoвЂq, `GroupInfoPanel` dagi klasslar */}
-            {/* Camera icon on cover replaces this link */}
-
-            {verifiedStatus === 'pending' && (
-                <div className="mx-4 mt-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-xl flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-yellow-500 shrink-0" />
-                    <span className="text-yellow-500 font-bold text-[11px]">{t('expert_status_pending')}</span>
-                    <span className="text-white/40 text-[10px]">{t('expert_mode_desc')}</span>
-                </div>
-            )}
-
-            <div className="overflow-y-auto custom-scrollbar flex-1 pb-8">
-                {/* Info Items */}
-                <div className="p-3 space-y-0.5">
-                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] cursor-default transition-colors group">
-                        <Phone className="h-5 w-5 text-[#8774e1]" />
-                        <div className="flex flex-col">
-                            <span className="text-white text-[15px]">{user.phone || '+998 -- --- -- --'}</span>
-                            <span className="text-white/30 text-[12px]">{t('phone_label')}</span>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] cursor-pointer group transition-colors"
-                        onClick={() => { setEditUsername(user.username || ""); setShowUsernameModal(true); }}>
-                        <AtSign className="h-5 w-5 text-[#8774e1]" />
-                        <div className="flex flex-col">
-                            <span className="text-white text-[15px]">@{user.username || 'username'}</span>
-                            <span className="text-white/30 text-[12px]">{t('username')}</span>
-                        </div>
-                    </div>
-
-                    <div className="flex items-center gap-5 px-3 py-2.5 hover:bg-white/5 rounded-[15px] transition-colors relative group cursor-pointer"
-                        onClick={() => setShowDatePicker(true)}
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="p-2.5 min-h-[44px] min-w-[44px] rounded-full text-[#6ab3f3] hover:bg-white/5 transition-colors flex items-center justify-center"
+                        aria-label={t('cancel')}
                     >
-                        <Calendar className="h-5 w-5 text-[#8774e1] group-hover:scale-110 transition-transform" />
-                        <div className="flex flex-col flex-1">
-                            <span className="text-white text-[15px]">
-                                {birthday ? new Date(birthday).toLocaleDateString(language === 'ru' ? 'ru-RU' : (language === 'en' ? 'en-US' : 'uz-UZ'), { day: 'numeric', month: 'long', year: 'numeric' }) : t('select')}
-                                {displayAge() && (
-                                    <>
-                                        {' '}({displayAge()!.current} {t('years_old')})
-                                    </>
-                                )}
-                            </span>
-                            <span className="text-white/30 text-[12px]">{t('birthday')}</span>
-                        </div>
-                    </div>
-                    {displayAge() && !birthday && (
-                        <div className="flex items-center gap-6 px-4 py-3 hover:bg-white/5 rounded-[15px] cursor-default transition-colors">
-                            <span className="text-[#8774e1] text-[15px] font-medium">{displayAge()!.current}</span>
-                            <div className="flex flex-col flex-1">
-                                <span className="text-white text-[15px]">
-                                    {displayAge()!.current} {t('years_old')} вЂў {t('next_year')} {displayAge()!.nextYear} {t('years_old')}
-                                </span>
-                                <span className="text-white/30 text-[12px]">{t('age_label')}</span>
+                        <X className="h-5 w-5" strokeWidth={2} />
+                    </button>
+                </div>
+
+                {/* Centered avatar + name + online */}
+                <div className="flex flex-col items-center px-6 pb-5 shrink-0">
+                    <div className="relative">
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                if (getAvatarUrl(user.avatar || user.avatar_url)) openAvatarLightbox();
+                            }}
+                            className="block rounded-full overflow-hidden w-[120px] h-[120px] ring-0 focus:outline-none"
+                        >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                                src={profilePhotoDisplaySrc}
+                                alt=""
+                                className={`w-full h-full object-cover ${uploadingAvatar ? 'opacity-50' : ''}`}
+                                key={String(user.avatar_url || user.avatar || 'av')}
+                            />
+                        </button>
+                        {uploadingAvatar && (
+                            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40">
+                                <div className="h-8 w-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                             </div>
+                        )}
+                        {!uploadingAvatar && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleAvatarClick();
+                                }}
+                                className="absolute bottom-0.5 right-0.5 w-9 h-9 bg-[#6ab3f3] rounded-full flex items-center justify-center text-white shadow-lg hover:bg-[#5aa3e3] transition-all active:scale-95"
+                                aria-label="Camera"
+                            >
+                                <Camera className="h-4 w-4" />
+                            </button>
+                        )}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            className="hidden"
+                            accept="image/*"
+                            onChange={handleProfileAvatarChange}
+                        />
+                    </div>
+                    <h2 className="mt-3.5 text-[20px] font-medium leading-tight text-center text-white tracking-tight">
+                        {fullName}
+                    </h2>
+                    <p className="text-[#6ab3f3] text-[14px] mt-0.5 font-normal">{t('online')}</p>
+                </div>
+
+                {verifiedStatus === 'pending' && (
+                    <div className="mx-4 mb-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-amber-400 shrink-0" />
+                        <span className="text-amber-400 font-semibold text-[11px]">{t('expert_status_pending')}</span>
+                    </div>
+                )}
+
+                <div className="overflow-y-auto custom-scrollbar flex-1 min-h-0 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                    {/* Info rows — Telegram: value on top, muted label under */}
+                    <div className="px-5 py-1 space-y-4">
+                        <div className="cursor-default">
+                            <p className="text-[16px] text-white leading-snug">
+                                {user.phone || '+998 ········'}
+                            </p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('phone_label')}</p>
+                        </div>
+
+                        <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => {
+                                setEditBio(bio || user.bio || '');
+                                setShowBioModal(true);
+                            }}
+                        >
+                            <p
+                                className={`text-[16px] leading-snug ${
+                                    bio || user.bio ? 'text-white' : 'text-[#6ab3f3]'
+                                }`}
+                            >
+                                {bio || user.bio || (language === 'uz' ? 'Bio qo‘shish' : language === 'ru' ? 'Добавить био' : 'Add bio')}
+                            </p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('bio')}</p>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => {
+                                setEditUsername(user.username || '');
+                                setShowUsernameModal(true);
+                            }}
+                        >
+                            <p className="text-[16px] text-[#6ab3f3] leading-snug">
+                                @{user.username || 'username'}
+                            </p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('username')}</p>
+                        </button>
+
+                        <button
+                            type="button"
+                            className="w-full text-left"
+                            onClick={() => setShowDatePicker(true)}
+                        >
+                            <p className="text-[16px] text-white leading-snug">{birthdayLabel}</p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('birthday')}</p>
+                        </button>
+                    </div>
+
+                    {/* Section gap like Telegram */}
+                    <div className="h-3 bg-[#0e1621] my-3" />
+
+                    {/* Specialist — Story Archive analog */}
+                    <button
+                        type="button"
+                        className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-white/[0.04] transition-colors text-left"
+                        onClick={() => setShowExpertModal(true)}
+                    >
+                        <span className="flex h-7 w-7 items-center justify-center shrink-0">
+                            <Award className="h-5 w-5 text-[#6ab3f3]" />
+                        </span>
+                        <span className="flex-1 text-[16px] text-white">{t('specialist_mode')}</span>
+                        <span className="text-[15px] text-[#6d7f8f] tabular-nums mr-1">{expertStatusRight}</span>
+                        <div
+                            className={`w-[46px] h-[26px] rounded-full relative transition-all shrink-0 ${
+                                isExpert ? 'bg-[#6ab3f3]' : 'bg-white/20'
+                            }`}
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                const nextState = !isExpert;
+                                if (nextState) {
+                                    if (verifiedStatus === 'approved' && hasExpertProfileData) {
+                                        void handleTurnOnExpert();
+                                    } else {
+                                        setIsExpert(true);
+                                        setShowExpertModal(true);
+                                    }
+                                } else {
+                                    void handleTurnOffExpert();
+                                }
+                            }}
+                            role="switch"
+                            aria-checked={isExpert}
+                        >
+                            <div
+                                className={`absolute top-[3px] w-[20px] h-[20px] bg-white rounded-full shadow transition-all ${
+                                    isExpert ? 'left-[23px]' : 'left-[3px]'
+                                }`}
+                            />
+                        </div>
+                    </button>
+
+                    {showExpertSummary && (
+                        <div className="px-5 pb-2 pt-1 space-y-3.5 border-t border-white/[0.06]">
+                            <div>
+                                <p className="text-[16px] text-white tabular-nums">
+                                    {price} {currency}
+                                </p>
+                                <p className="text-[13px] text-[#6d7f8f] mt-0.5">
+                                    {priceLabel} · {t('price')}
+                                </p>
+                            </div>
+                            <div>
+                                <p className="text-[16px] text-white">
+                                    {experience} {t('year')}
+                                </p>
+                                <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('experience')}</p>
+                            </div>
+                            <div>
+                                <p className="text-[16px] text-white leading-snug">
+                                    {profession || t('select')}
+                                    {specializationDetails ? ` — ${specializationDetails}` : ''}
+                                </p>
+                                <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('specialization')}</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowExpertModal(true);
+                                }}
+                                className="w-full py-2.5 text-[#6ab3f3] text-[15px] font-medium hover:bg-white/[0.04] rounded-lg transition-colors"
+                            >
+                                {t('edit_profile')}
+                            </button>
                         </div>
                     )}
 
-                </div>
+                    <div className="h-3 bg-[#0e1621] my-1" />
 
-                <div className="h-[1px] bg-white/5 mx-6"></div>
-
-                {/* Expert Status */}
-                <div className="p-3">
-                    <div className={`p-3 rounded-xl border transition-all cursor-pointer ${showExpertSummary ? 'bg-accent-primary/10 border-accent-primary/30 shadow-lg shadow-accent-primary/5' : 'bg-white/5 border-white/10 hover:border-white/20'}`} onClick={() => setShowExpertModal(true)}>
-                        <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                                <Award className={`h-6 w-6 ${showExpertSummary ? 'text-[#8774e1]' : 'text-white/20'}`} />
-                                <div className="flex flex-col">
-                                    <h4 className="text-white font-bold text-[16px]">{t('specialist_mode')}</h4>
-                                    {isExpert && verifiedStatus === 'approved' && (
-                                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-emerald-300 text-[10px] font-bold uppercase tracking-wider shadow-sm">
-                                            <CheckCircle className="h-3.5 w-3.5 text-emerald-300" />
-                                            {t('activated')}
-                                        </span>
-                                    )}
-                                    {!isExpert && verifiedStatus === 'approved' && (
-                                        <span className="text-white/45 text-[10px] font-bold uppercase tracking-wider">
-                                            {t('expert_mode_paused')}
-                                        </span>
-                                    )}
-                                    {verifiedStatus === 'pending' && (
-                                        <div className="flex flex-col gap-0.5">
-                                            <span className="text-yellow-500 text-[10px] font-bold uppercase tracking-wider">{t('checking_status')}</span>
-                                            <span className="text-white/40 text-[9px] font-bold uppercase tracking-tighter">{t('wait_admin_approval')}</span>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                            <div
-                                className={`w-[52px] h-[30px] rounded-full relative transition-all duration-300 cursor-pointer shrink-0 border-2 ${
-                                    isExpert
-                                        ? 'bg-[#8774e1] border-[#8774e1] shadow-[0_0_0_4px_rgba(135,116,225,0.28)]'
-                                        : 'bg-white/15 border-white/30'
-                                }`}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    const nextState = !isExpert;
-                                    if (nextState) {
-                                        // Bir marta tasdiqlangan profil — forma qayta ochilmasin
-                                        if (verifiedStatus === 'approved' && hasExpertProfileData) {
-                                            void handleTurnOnExpert();
-                                        } else {
-                                            setIsExpert(true);
-                                            setShowExpertModal(true);
-                                        }
-                                    } else {
-                                        void handleTurnOffExpert();
-                                    }
-                                }}
-                                role="switch"
-                                aria-checked={isExpert}
-                            >
-                                <div
-                                    className={`absolute top-[3px] w-[22px] h-[22px] bg-white rounded-full shadow-md transition-all duration-300 ${
-                                        isExpert ? 'left-[24px]' : 'left-[3px]'
-                                    }`}
-                                />
-                            </div>
+                    {/* Sozlamalar qatorlari — bitta yagona profil */}
+                    <button
+                        type="button"
+                        className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
+                        onClick={() => {
+                            setEditFirstName(user.name || '');
+                            setEditLastName(user.surname || '');
+                            setShowNameModal(true);
+                        }}
+                    >
+                        <User className="h-5 w-5 text-[#6ab3f3] shrink-0 ml-1" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[16px] text-white">{t('profile')}</p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('edit_account_sub')}</p>
                         </div>
-                        {showExpertSummary && (
-                            <div className="mt-2 pt-2 border-t border-white/5 space-y-2 animate-fade-in">
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div className="p-2 bg-white/5 rounded-lg border border-white/5">
-                                        <span className="text-white/30 text-[10px] uppercase font-bold block mb-1">{t('experience')}</span>
-                                        <span className="text-white font-bold text-[14px]">{experience} {t('year')}</span>
-                                    </div>
-                                    <div className="p-2 bg-white/5 rounded-lg border border-white/5">
-                                        <span className="text-white/30 text-[10px] uppercase font-bold block mb-0.5">
-                                            {pricingModel === 'session' ? `${t('price')} (${t('session')})` : `${t('price')} (${t('hourly')})`}
-                                        </span>
-                                        <span className="text-white font-bold text-[14px]">{price} {currency}</span>
-                                    </div>
-                                </div>
-                                <div className="flex flex-col gap-1 px-1">
-                                    <span className="text-white/30 text-[10px] uppercase font-bold">{t('specialization')}</span>
-                                    <span className="text-white text-[13px] font-medium leading-tight">{profession || t('select')} - {specializationDetails || '...'}</span>
-                                </div>
-                                <button onClick={(e) => { e.stopPropagation(); setShowExpertModal(true); }} className="w-full py-2.5 bg-[#8774e1]/15 text-[#8774e1] text-[13px] font-medium rounded-xl hover:bg-[#8774e1]/25 transition-all">{t('edit_profile')}</button>
+                    </button>
+                    <button
+                        type="button"
+                        className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
+                        onClick={() => {
+                            setCurrentView('wallet');
+                            fetchWallet();
+                        }}
+                    >
+                        <Wallet className="h-5 w-5 text-[#6ab3f3] shrink-0 ml-1" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[16px] text-white">{t('wallet')}</p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('wallet_sub')}</p>
+                        </div>
+                    </button>
+                    <button
+                        type="button"
+                        className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
+                        onClick={() => setCurrentView('chat_settings')}
+                    >
+                        <MessageSquare className="h-5 w-5 text-[#6ab3f3] shrink-0 ml-1" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[16px] text-white">{t('chat_settings')}</p>
+                            <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('chat_settings_sub')}</p>
+                        </div>
+                    </button>
+                    {user.role === 'admin' && (
+                        <button
+                            type="button"
+                            className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
+                            onClick={() => window.open('/AdminZero0723s', '_blank')}
+                        >
+                            <Shield className="h-5 w-5 text-[#6ab3f3] shrink-0 ml-1" />
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[16px] text-white">Admin Panel</p>
+                                <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('admin_panel_sub')}</p>
                             </div>
-                        )}
+                        </button>
+                    )}
+
+                    <div className="px-5 mt-5 mb-2">
+                        <button
+                            type="button"
+                            onClick={onLogout}
+                            className="w-full py-3 text-[#e53935] text-[16px] hover:bg-[#e53935]/10 rounded-xl transition-colors"
+                        >
+                            {t('logout')}
+                        </button>
                     </div>
                 </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderChatSettings = () => (
         <ProfileChatSettingsView
@@ -1238,29 +1320,14 @@ export default function ProfileViewer({
         />
     );
 
-    const renderSettings = () => (
-        <ProfileSettingsView
-            bgSettings={bgSettings}
-            user={user}
-            profilePhotoDisplaySrc={profilePhotoDisplaySrc}
-            getAvatarUrl={(url) => getAvatarUrl(String(url || ''))}
-            displayAge={displayAge}
-            onClose={onClose}
-            onLogout={onLogout}
-            onOpenLanguage={() => setShowLanguageModal(true)}
-            onOpenNameEdit={() => { setEditFirstName(user.name || ""); setEditLastName(user.surname || ""); setShowNameModal(true); }}
-            onOpenAvatar={openAvatarLightbox}
-            onOpenWallet={() => { setCurrentView('wallet'); fetchWallet(); }}
-            onOpenChatSettings={() => setCurrentView('chat_settings')}
-        />
-    );
-
     return (
         <div className="fixed inset-0 z-[60] flex items-center justify-center lg:p-4 bg-black/55 animate-fade-in" onClick={onClose}>
             {!showExpertModal &&
-                (currentView === 'chat_settings' ? renderChatSettings() :
-                    currentView === 'wallet' ? renderWallet() :
-                        (mode === 'profile' ? renderProfile() : renderSettings()))}
+                (currentView === 'chat_settings'
+                    ? renderChatSettings()
+                    : currentView === 'wallet'
+                      ? renderWallet()
+                      : renderProfile())}
 
             <ProfileEditModals
                 t={t}
@@ -1281,6 +1348,11 @@ export default function ProfileViewer({
                 editUsername={editUsername}
                 setEditUsername={setEditUsername}
                 handleSaveUsername={handleSaveUsername}
+                showBioModal={showBioModal}
+                setShowBioModal={setShowBioModal}
+                editBio={editBio}
+                setEditBio={setEditBio}
+                handleSaveBio={handleSaveBio}
                 showDatePicker={showDatePicker}
                 setShowDatePicker={setShowDatePicker}
                 birthday={birthday}
@@ -1298,6 +1370,7 @@ export default function ProfileViewer({
                     isLegalMode={isLegalMode}
                     verifiedStatus={verifiedStatus}
                     onClose={() => setShowExpertModal(false)}
+                    bgSettings={bgSettings}
                     profession={profession}
                     setProfession={setProfession}
                     professionRef={professionRef}

@@ -133,9 +133,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             const hasActiveSub = statusRes.ok && !!statusData.active;
 
             if (!hasActiveSub) {
+                const monthlyFromInvite = Number(fileMeta.monthlyAmount);
+                const monthlyFromStatus = Number(statusData?.monthlyAmount);
+                const monthlyAmount =
+                    Number.isFinite(monthlyFromInvite) && monthlyFromInvite > 0
+                        ? monthlyFromInvite
+                        : Number.isFinite(monthlyFromStatus) && monthlyFromStatus > 0
+                          ? monthlyFromStatus
+                          : DEFAULT_MONTHLY_MALI;
                 const ok = await confirm({
                     title: t('top_up') as any,
-                    description: `${DEFAULT_MONTHLY_MALI} MALI — 1 oylik obuna`,
+                    description: `${monthlyAmount} MALI — 1 oylik obuna`,
                     confirmLabel: t('group_join_pay_btn') as any,
                 });
                 if (!ok) return;
@@ -183,6 +191,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         if (/taklif qildi/i.test(text) && /1 oylik|obuna/i.test(text)) return true;
         return false;
     }, [messageType, fileMeta.kind, fileMeta.groupId, fileMeta.mentorId, message.text]);
+
+    const inviteMonthlyAmount = useMemo(() => {
+        const fromMeta = Number(fileMeta.monthlyAmount);
+        if (Number.isFinite(fromMeta) && fromMeta > 0) return fromMeta;
+        return DEFAULT_MONTHLY_MALI;
+    }, [fileMeta.monthlyAmount]);
 
     const viewerId = currentUserId != null ? String(currentUserId) : '';
     const inviteMentorId =
@@ -496,7 +510,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     {String(fileMeta.groupName || t('group_label'))}
                                 </p>
                                 <p className="text-[15px] font-bold text-white tabular-nums mb-3">
-                                    {DEFAULT_MONTHLY_MALI} MALI / oy
+                                    {inviteMonthlyAmount} MALI / oy
                                 </p>
                                 <button
                                     type="button"

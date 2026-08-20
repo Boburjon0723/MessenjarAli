@@ -25,6 +25,11 @@ export type ProfileEditModalsProps = {
     editUsername: string;
     setEditUsername: (v: string) => void;
     handleSaveUsername: () => void;
+    showBioModal?: boolean;
+    setShowBioModal?: (v: boolean) => void;
+    editBio?: string;
+    setEditBio?: (v: string) => void;
+    handleSaveBio?: () => void;
     showDatePicker: boolean;
     setShowDatePicker: (v: boolean) => void;
     birthday: string;
@@ -40,6 +45,7 @@ export function ProfileEditModals({
     showLanguageModal, setShowLanguageModal, handleSaveLanguage,
     showNameModal, setShowNameModal, editFirstName, setEditFirstName, editLastName, setEditLastName, handleSaveName,
     showUsernameModal, setShowUsernameModal, editUsername, setEditUsername, handleSaveUsername,
+    showBioModal, setShowBioModal, editBio, setEditBio, handleSaveBio,
     showDatePicker, setShowDatePicker, birthday, handleSaveBirthday,
     avatarPreviewUrl, setAvatarPreviewUrl,
     toast, setToast,
@@ -110,6 +116,49 @@ export function ProfileEditModals({
                         <div className="flex flex-col gap-3 mt-10">
                             <GlassButton onClick={handleSaveUsername} className="w-full !bg-accent-primary !text-white !rounded-xl py-3.5 font-bold">{t('save')}</GlassButton>
                             <button onClick={() => setShowUsernameModal(false)} className="w-full py-3 text-white/30 hover:text-white transition-colors">{t('cancel')}</button>
+                        </div>
+                    </GlassCard>
+                </div>
+            )}
+
+            {showBioModal && setShowBioModal && setEditBio && handleSaveBio && (
+                <div
+                    className="absolute inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-md px-4"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setShowBioModal(false);
+                    }}
+                >
+                    <GlassCard
+                        className="w-full max-w-[340px] !bg-transparent p-7 shadow-2xl animate-scale-in rounded-[28px] border border-white/10"
+                        style={{
+                            backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)`,
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <h3 className="text-white font-bold text-xl mb-4">{t('bio')}</h3>
+                        <textarea
+                            value={editBio ?? ''}
+                            onChange={(e) => setEditBio(e.target.value)}
+                            rows={4}
+                            maxLength={200}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl py-3 px-4 text-white focus:border-accent-primary focus:outline-none transition-all resize-none text-[15px] leading-relaxed"
+                            placeholder={t('bio')}
+                        />
+                        <div className="flex flex-col gap-3 mt-8">
+                            <GlassButton
+                                onClick={handleSaveBio}
+                                className="w-full !bg-accent-primary !text-white !rounded-xl py-3.5 font-bold"
+                            >
+                                {t('save')}
+                            </GlassButton>
+                            <button
+                                type="button"
+                                onClick={() => setShowBioModal(false)}
+                                className="w-full py-3 text-white/30 hover:text-white transition-colors"
+                            >
+                                {t('cancel')}
+                            </button>
                         </div>
                     </GlassCard>
                 </div>

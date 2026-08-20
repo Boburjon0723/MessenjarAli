@@ -368,7 +368,22 @@ export async function sendGroupJoinInvite(params: {
         throw err;
     }
 
-    const content = `📚 **${expertName}** sizni **${group.name || 'guruh'}** ga taklif qildi. Guruhga qo'shilish uchun 1 oylik obuna to'lovi talab etiladi.`;
+    const monthlyAmount = await (async () => {
+        try {
+            const pr = await pool.query(
+                `SELECT COALESCE(hourly_rate, service_price, 0) AS rate
+                 FROM user_profiles WHERE user_id = $1 LIMIT 1`,
+                [expertId]
+            );
+            const rate = parseFloat(String(pr.rows[0]?.rate ?? 0));
+            if (Number.isFinite(rate) && rate > 0) return rate;
+        } catch {
+            /* ignore */
+        }
+        return Number(process.env.MENTOR_MONTHLY_MALI || 100);
+    })();
+
+    const content = `📚 **${expertName}** sizni **${group.name || 'guruh'}** ga taklif qildi. Guruhga qo'shilish uchun 1 oylik obuna (**${monthlyAmount} MALI**) talab etiladi.`;
     const meta = {
         kind: 'group_join',
         groupId,
@@ -376,6 +391,7 @@ export async function sendGroupJoinInvite(params: {
         mentorId: expertId,
         sessionStyle: 'mentor',
         invite_status: 'active',
+        monthlyAmount,
     };
 
     const mentor = await UserModel.findById(expertId);

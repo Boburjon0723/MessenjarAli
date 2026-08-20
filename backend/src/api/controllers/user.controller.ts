@@ -3,6 +3,11 @@ import { pool } from '../../config/database';
 import { categoryKeywordPatterns } from '../../utils/job-category-keywords';
 import { PushTokenModel } from '../../models/postgres/PushToken';
 
+const normalizePricingModel = (value: unknown): 'hourly' | 'session' | 'monthly' | null => {
+    if (value === 'hourly' || value === 'session' || value === 'monthly') return value;
+    return null;
+};
+
 export const getUsers = async (req: Request, res: Response) => {
     try {
         const currentUser = (req as any).user || {};
@@ -164,7 +169,7 @@ export const updateProfile = async (req: Request, res: Response) => {
                         wiloyat || '', tuman || '', is_expert ? 'pending' : 'none',
                         specialization_details || '', has_diploma || false, institution || '',
                         current_workplace || '', diploma_url || '', certificate_url || '',
-                        id_url || '', selfie_url || '', resume_url || '', anketa_url || '', (pricing_model === 'session' ? 'session' : 'hourly'),
+                        id_url || '', selfie_url || '', resume_url || '', anketa_url || '', normalizePricingModel(pricing_model),
                         hourly_rate || 0, currency || 'MALI',
                         service_languages || '', service_format || '', bio_expert || '',
                         specialty_desc || '', expert_proposal || '', services_json || '[]', expert_groups || '[]'
@@ -239,7 +244,7 @@ export const updateProfile = async (req: Request, res: Response) => {
                         expert_proposal,
                         services_json, expert_groups || null,
                         resume_url, anketa_url,
-                        pricing_model === 'session' ? 'session' : pricing_model === 'hourly' ? 'hourly' : pricing_model || null,
+                        normalizePricingModel(pricing_model),
                         userId
                     ]
                 );

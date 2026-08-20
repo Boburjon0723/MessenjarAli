@@ -1449,7 +1449,7 @@ export function MessagesPageContent() {
                         isExpertMode={isExpertMode}
                         isMobile={isMobile}
                         onClose={() => setShowMenu(false)}
-                        onOpenProfile={() => { setShowMenu(false); setActiveCategory('profile'); }}
+                        onOpenProfile={() => { setShowMenu(false); setActiveCategory('settings'); }}
                         onOpenWallet={() => { setShowMenu(false); router.push('/wallet'); }}
                         onOpenExperts={() => {
                             setShowMenu(false);
@@ -1597,7 +1597,7 @@ export function MessagesPageContent() {
                                     setJobsMarketTab('listings');
                                     setActiveCategory('jobs');
                                 }}
-                                onOpenProfile={() => setActiveCategory('profile')}
+                                onOpenProfile={() => setActiveCategory('settings')}
                             />
                         )
                         : activeCategory === 'services' ? (
@@ -1727,7 +1727,7 @@ export function MessagesPageContent() {
                                             : activeCategory === 'bots' ? (
                                                 <BotsPanel onClose={() => setActiveCategory('all')} />
                                             )
-                                            : activeCategory === 'profile_edit' ? <ProfileEditor onClose={() => setActiveCategory('profile')} onSave={() => setActiveCategory('profile')} />
+                                            : activeCategory === 'profile_edit' ? <ProfileEditor onClose={() => setActiveCategory('settings')} onSave={() => setActiveCategory('settings')} />
                                                 : showSpecialistDashboard ? (
                                                     <div className="w-full h-full animate-in fade-in zoom-in-95 duration-500">
                                                         <SpecialistDashboard

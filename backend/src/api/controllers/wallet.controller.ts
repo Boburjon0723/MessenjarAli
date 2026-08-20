@@ -4,7 +4,25 @@ import { TokenService } from '../../services/token.service';
 import { NotificationService } from '../../services/notification.service';
 
 export class WalletController {
-    private static readonly MENTOR_MONTHLY_MALI = Number(process.env.MENTOR_MONTHLY_MALI || 100);
+    private static readonly MENTOR_MONTHLY_FALLBACK = Number(process.env.MENTOR_MONTHLY_MALI || 100);
+
+    /** Mentor oylik obuna narxi: profil `hourly_rate` (oylik/soatlik maydon), yo‘q bo‘lsa env default */
+    static async resolveMentorMonthlyAmount(mentorId: string): Promise<number> {
+        try {
+            const priceRes = await pool.query(
+                `SELECT COALESCE(p.hourly_rate, p.service_price, 0) AS rate
+                 FROM user_profiles p
+                 WHERE p.user_id = $1`,
+                [mentorId]
+            );
+            const rate = parseFloat(String(priceRes.rows[0]?.rate ?? 0));
+            if (Number.isFinite(rate) && rate > 0) return rate;
+        } catch {
+            /* fallback */
+        }
+        return WalletController.MENTOR_MONTHLY_FALLBACK;
+    }
+
     static async getBalance(req: Request, res: Response) {
         try {
             const userId = (req as any).user!.id;
@@ -167,7 +185,7 @@ export class WalletController {
             if (!mentorId) {
                 return res.status(400).json({ success: false, message: 'mentorId kerak' });
             }
-            const amount = WalletController.MENTOR_MONTHLY_MALI;
+            const amount = await WalletController.resolveMentorMonthlyAmount(String(mentorId));
             const result = await TokenService.subscribeToMentor(studentId, mentorId, amount);
             const io = req.app.get('io');
             if (io) {
@@ -191,12 +209,14 @@ export class WalletController {
             const sub = await TokenService.getActiveSubscription(studentId, mentorId);
             const record = await TokenService.getSubscriptionRecord(studentId, mentorId);
             const expired = !sub && !!record;
+            const monthlyAmount = await WalletController.resolveMentorMonthlyAmount(String(mentorId));
             res.json({
                 success: true,
                 active: !!sub,
                 expired,
                 hadSubscription: !!record,
                 expiresAt: sub?.expires_at || record?.expires_at || null,
+                monthlyAmount,
             });
         } catch (error: any) {
             res.status(500).json({ success: false, message: error.message });
