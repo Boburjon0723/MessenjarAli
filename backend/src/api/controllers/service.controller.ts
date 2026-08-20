@@ -209,14 +209,15 @@ export const postConsultPanelInvite = async (req: Request, res: Response) => {
 export const postGroupJoinInvite = async (req: Request, res: Response) => {
     try {
         const expertId = (req as any).user.id;
-        const { chatId, groupId, expertName } = req.body || {};
+        const { chatId, groupId, expertName, studentUserId } = req.body || {};
         const name =
             String(expertName || '').trim() ||
             [(req as any).user?.name, (req as any).user?.surname].filter(Boolean).join(' ').trim() ||
             'Ustoz';
         const result = await sendGroupJoinInvite({
             expertId,
-            chatId: String(chatId || ''),
+            chatId: chatId ? String(chatId) : undefined,
+            studentUserId: studentUserId ? String(studentUserId) : undefined,
             groupId: String(groupId || ''),
             expertName: name,
             io: req.app.get('io'),

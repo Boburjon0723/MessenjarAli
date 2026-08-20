@@ -9,13 +9,12 @@ import { useLanguage } from '@/context/LanguageContext';
 import { apiFetch } from '@/lib/api';
 import { TranslationKeys } from '@/lib/translations';
 import { getUser } from '@/lib/auth-storage';
-import { getExpertPanelMode, isMentorPanelMode } from '@/lib/expert-roles';
+import { getExpertPanelMode } from '@/lib/expert-roles';
 import { getExpertComplianceNotice } from '@/lib/expert-compliance-copy';
 import { isExpertListingChat } from '@/lib/listing-chat';
 import { isListingChat, isMessagingUnlocked } from '@/lib/chat-consent';
 import { isApplicationRejected } from '@/lib/listing-chat';
 import ListingDealBar from './ListingDealBar';
-import { MentorGroupInviteBar } from './MentorGroupInviteBar';
 import ChatForwardModal from './ChatForwardModal';
 import ChatWindowHeader from './ChatWindowHeader';
 import PinnedMessageBar from './PinnedMessageBar';
@@ -1717,13 +1716,6 @@ export default function ChatWindow({
         ? (t('application_rejected_banner') as string)
         : (t('consent_waiting_message') as string);
     const groupCreatorId = chat?.creator_id ?? chat?.creatorId ?? null;
-    const showMentorGroupInvite =
-        chat?.type === 'private' &&
-        !!currentUser?.is_expert &&
-        isMentorPanelMode(getExpertPanelMode(currentUser));
-    const mentorDisplayName =
-        [currentUser?.name, currentUser?.surname].filter(Boolean).join(' ').trim() ||
-        String(currentUser?.name || 'Ustoz');
 
     return (
         <div
@@ -1883,9 +1875,6 @@ export default function ChatWindow({
             {/* Input Area — kanalda faqat yaratuvchi xabar/fayl qo'yadi; boshqalar faqat ko'radi */}
             <div className="relative z-30 shrink-0 w-full px-2 pt-1 pb-[max(0.5rem,env(safe-area-inset-bottom))] lg:px-4 lg:pb-4">
                 <div className="tg-chat-column">
-                {chat?.type === 'private' && showMentorGroupInvite && chat?.id && (
-                    <MentorGroupInviteBar chatId={String(chat.id)} expertName={mentorDisplayName} />
-                )}
                 {chat?.type === 'private' && (
                     <ListingDealBar
                         chat={chat}

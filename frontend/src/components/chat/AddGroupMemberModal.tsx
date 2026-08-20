@@ -159,7 +159,7 @@ export default function AddGroupMemberModal({
                                             ) : (
                                                 <>
                                                     <UserPlus className="h-4 w-4" />
-                                                    Qo'shish
+                                                    Taklif yuborish
                                                 </>
                                             )}
                                         </button>

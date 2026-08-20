@@ -74,42 +74,58 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
         void fetchGroupDetails();
     }, [chat?.id, chat?.type]);
 
-    const handleAddMember = async (user: any) => {
-        if (!chat) return;
-        const userId = user?.id != null ? String(user.id) : '';
-        if (!userId) {
-            showError('Foydalanuvchi ID topilmadi.');
-            return;
-        }
-        try {
-            const res = await apiFetch(`/api/chats/${chat.id || chat._id}/participants`, {
-                method: 'POST',
-                body: JSON.stringify({ userId }),
-            });
-            if (res.ok) {
-                await fetchGroupDetails();
-                setShowAddMemberModal(false);
-                onGroupUpdated?.();
-            } else {
-                let msg = 'A\'zoni qo\'shib bo\'lmadi.';
-                try {
-                    const err = await res.json();
-                    msg = err?.message || msg;
-                } catch { /* not json */ }
-                console.error('Failed to add member:', res.status, msg);
-                showError(msg);
-            }
-        } catch (err) {
-            console.error('Failed to add member:', err);
-            showError('Tarmoq xatosi. Qayta urinib ko\'ring.');
-        }
-    };
-
     const isCreator = Boolean(
         fullChatDetails?.creator_id &&
             currentUser?.id &&
             String(fullChatDetails.creator_id) === String(currentUser.id)
     );
+
+    const sendGroupJoinInvite = async (user: any) => {
+        if (!chat) return false;
+        const studentUserId = user?.id != null ? String(user.id) : '';
+        if (!studentUserId) {
+            showError('Foydalanuvchi ID topilmadi.');
+            return false;
+        }
+        const groupId = String(chat.id || chat._id);
+        const expertName =
+            [currentUser?.name, currentUser?.surname].filter(Boolean).join(' ').trim() || 'Ustoz';
+        try {
+            const res = await apiFetch('/api/specialists/mentor/group-join-invite', {
+                method: 'POST',
+                body: JSON.stringify({ groupId, studentUserId, expertName }),
+            });
+            if (res.ok) {
+                showSuccess(t('group_invite_sent') as string);
+                return true;
+            }
+            let msg = 'Taklif yuborib bo\'lmadi.';
+            try {
+                const err = await res.json();
+                msg = err?.message || msg;
+            } catch { /* not json */ }
+            showError(msg);
+            return false;
+        } catch (err) {
+            console.error('Failed to send group join invite:', err);
+            showError('Tarmoq xatosi. Qayta urinib ko\'ring.');
+            return false;
+        }
+    };
+
+    const handleAddMember = async (user: any) => {
+        const ok = await sendGroupJoinInvite(user);
+        if (ok) {
+            setShowAddMemberModal(false);
+        }
+    };
+
+    const handleSendMemberInvite = async (member: any) => {
+        const ok = await sendGroupJoinInvite(member);
+        if (ok) {
+            setSelectedMemberId(null);
+        }
+    };
 
     const handleDeleteGroup = async () => {
         if (!chat) return;
@@ -424,7 +440,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                         <div className="text-[#8774e1]">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
                         </div>
-                        <span className="text-[14px] text-[#8774e1]">A'zo qo'shish</span>
+                        <span className="text-[14px] text-[#8774e1]">{t('send_group_join_invite')}</span>
                     </button>
                 )}
                 <button
@@ -528,10 +544,16 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                                 </div>
 
                                 {isSelected && isCreator && !isCreatorMember && !isMe && (
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10">
+                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1.5">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); void handleSendMemberInvite(member); }}
+                                            className="px-3 py-1.5 bg-[#2c2c2c] border border-white/10 rounded-lg text-[#8774e1] text-[13px] hover:bg-[#383838] transition-colors shadow-lg whitespace-nowrap"
+                                        >
+                                            {t('send_subscription_invite')}
+                                        </button>
                                         <button
                                             onClick={(e) => { e.stopPropagation(); handleRemoveMember(member); }}
-                                            className="px-3 py-1.5 bg-[#2c2c2c] border border-white/10 rounded-lg text-[#e53935] text-[13px] hover:bg-[#383838] transition-colors shadow-lg"
+                                            className="px-3 py-1.5 bg-[#2c2c2c] border border-white/10 rounded-lg text-[#e53935] text-[13px] hover:bg-[#383838] transition-colors shadow-lg whitespace-nowrap"
                                         >
                                             Guruhdan chiqarish
                                         </button>

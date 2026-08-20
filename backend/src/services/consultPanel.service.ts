@@ -1,5 +1,6 @@
 import { Server } from 'socket.io';
 import { pool } from '../config/database';
+import { ChatModel } from '../models/postgres/Chat';
 import { MessageModel } from '../models/postgres/Message';
 import { UserModel } from '../models/postgres/User';
 
@@ -281,28 +282,63 @@ export async function sendLessonStartNotify(params: {
     return { messageId: String(newMessage.id), chatId };
 }
 
+async function resolvePrivateChatForInvite(
+    expertId: string,
+    chatId?: string,
+    studentUserId?: string
+): Promise<string> {
+    const directChatId = String(chatId || '').trim();
+    if (directChatId && UUID_RE.test(directChatId)) {
+        return directChatId;
+    }
+
+    const studentId = String(studentUserId || '').trim();
+    if (!studentId || !UUID_RE.test(studentId)) {
+        const err: any = new Error('chatId yoki studentUserId kerak');
+        err.statusCode = 400;
+        throw err;
+    }
+    if (studentId === expertId) {
+        const err: any = new Error('O‘zingizga taklif yuborib bo‘lmaydi');
+        err.statusCode = 400;
+        throw err;
+    }
+
+    let chat = await ChatModel.findPrivateChat(expertId, studentId);
+    if (!chat) {
+        chat = await ChatModel.createPrivate(expertId, studentId);
+    }
+    return String(chat.id);
+}
+
 export async function sendGroupJoinInvite(params: {
     expertId: string;
-    chatId: string;
+    chatId?: string;
+    studentUserId?: string;
     groupId: string;
     expertName: string;
     io?: Server;
 }): Promise<{ messageId: string; chatId: string; groupId: string }> {
-    const chatId = String(params.chatId || '').trim();
     const groupId = String(params.groupId || '').trim();
     const expertId = String(params.expertId || '').trim();
     const expertName = String(params.expertName || '').trim() || 'Ustoz';
 
-    if (!chatId || !groupId || !expertId) {
-        const err: any = new Error('chatId, groupId kerak');
+    if (!groupId || !expertId) {
+        const err: any = new Error('groupId kerak');
         err.statusCode = 400;
         throw err;
     }
-    if (!UUID_RE.test(chatId) || !UUID_RE.test(groupId)) {
-        const err: any = new Error('chatId va groupId UUID bo‘lishi kerak');
+    if (!UUID_RE.test(groupId)) {
+        const err: any = new Error('groupId UUID bo‘lishi kerak');
         err.statusCode = 400;
         throw err;
     }
+
+    const chatId = await resolvePrivateChatForInvite(
+        expertId,
+        params.chatId,
+        params.studentUserId
+    );
     if (!(await assertChatParticipant(chatId, expertId))) {
         const err: any = new Error('Bu chat ishtirokchisi emassiz');
         err.statusCode = 403;

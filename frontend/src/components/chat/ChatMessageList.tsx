@@ -93,7 +93,11 @@ export function ChatMessageList({
     groupCreatorId,
     currentUserId,
 }: ChatMessageListProps) {
-    const [mentorSubStatus, setMentorSubStatus] = useState<{ active: boolean; expired: boolean } | null>(null);
+    const [mentorSubStatus, setMentorSubStatus] = useState<{
+        active: boolean;
+        expired: boolean;
+        hadSubscription?: boolean;
+    } | null>(null);
 
     useEffect(() => {
         if (chatType !== 'group' || !groupCreatorId || !currentUserId) {
@@ -101,7 +105,7 @@ export function ChatMessageList({
             return;
         }
         if (String(groupCreatorId) === String(currentUserId)) {
-            setMentorSubStatus({ active: true, expired: false });
+            setMentorSubStatus({ active: true, expired: false, hadSubscription: true });
             return;
         }
         let cancelled = false;
@@ -112,7 +116,11 @@ export function ChatMessageList({
                 );
                 if (!res.ok || cancelled) return;
                 const data = await res.json();
-                setMentorSubStatus({ active: !!data.active, expired: !!data.expired });
+                setMentorSubStatus({
+                    active: !!data.active,
+                    expired: !!data.expired,
+                    hadSubscription: !!data.hadSubscription,
+                });
             } catch {
                 if (!cancelled) setMentorSubStatus(null);
             }

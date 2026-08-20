@@ -22,7 +22,7 @@ interface MessageBubbleProps {
     chatType?: string;
     groupCreatorId?: string | null;
     currentUserId?: string | null;
-    mentorSubStatus?: { active: boolean; expired: boolean } | null;
+    mentorSubStatus?: { active: boolean; expired: boolean; hadSubscription?: boolean } | null;
     onReply?: (message: ChatMessage) => void;
     isSelecting?: boolean;
     isSelected?: boolean;
@@ -565,13 +565,17 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     disabled
                                     className="rounded-full bg-[#212121]/60 px-4 py-1.5 text-[14px] font-medium text-white/35 cursor-not-allowed"
                                 >
-                                    {lessonSubBlocked && mentorSubStatus?.expired
-                                        ? t('subscription_expired_lesson')
+                                    {lessonSubBlocked
+                                        ? mentorSubStatus?.expired
+                                            ? t('subscription_expired_lesson')
+                                            : t('subscription_pay_via_invite')
                                         : t('invite_expired')}
                                 </button>
                                 <span className="text-[11px] text-white/40 max-w-[240px] text-center leading-snug">
-                                    {lessonSubBlocked && mentorSubStatus?.expired
-                                        ? t('subscription_expired_hint')
+                                    {lessonSubBlocked
+                                        ? mentorSubStatus?.expired
+                                            ? t('subscription_expired_hint')
+                                            : t('subscription_pay_via_invite')
                                         : t('invite_expired_hint')}
                                 </span>
                             </div>
