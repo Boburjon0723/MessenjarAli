@@ -163,14 +163,26 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     /** Faqat UI tarmoq tanlash: `img` → `image` (cache/legacy); shartlar message.text ga bog‘lanmaydi */
     const messageType = useMemo(() => normalizeMessageType(message.type), [message.type]);
 
-    /** Rasm/video/audio src: normalizeChatMessage allaqachon metadata dan to‘ldirgan message.text */
+    /** Rasm/video/audio src: faqat haqiqiy URL/path; oddiy matn (whiteboard caption) URL qilinmasin */
     const mediaSrc = useMemo(() => {
-        const raw = (message.text || '').trim();
+        const metaUrl =
+            typeof fileMeta.url === 'string'
+                ? fileMeta.url.trim()
+                : typeof (fileMeta as { src?: unknown }).src === 'string'
+                  ? String((fileMeta as { src?: string }).src).trim()
+                  : '';
+        const raw = (metaUrl || message.text || '').trim();
         if (!raw) return '';
-        if (/^https?:\/\//i.test(raw)) return raw;
+        if (/^https?:\/\//i.test(raw) || raw.startsWith('data:') || raw.startsWith('blob:')) return raw;
+        // Relative media path only — emoji/matn xabarlarni API URL ga ulashma
+        const looksLikePath =
+            raw.startsWith('/') ||
+            /^uploads?\//i.test(raw) ||
+            /\.(png|jpe?g|gif|webp|mp4|webm|mov|pdf|mp3|wav|ogg|m4a)(\?|#|$)/i.test(raw);
+        if (!looksLikePath) return '';
         const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
         return `${base}${raw.startsWith('/') ? '' : '/'}${raw}`;
-    }, [message.text]);
+    }, [message.text, fileMeta]);
 
     const kind = useMemo(
         () =>

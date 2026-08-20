@@ -85,17 +85,25 @@ export const saveWhiteboardSnapshot = async (req: Request, res: Response) => {
 
         const snapshot = await WhiteboardSnapshotModel.create({ session_id, snapshot_data });
 
-        // Auto-post to chat
+        // Auto-post to chat: rasm URL content da, matn caption da (aks holda brauzer matnni URL deb so‘raydi)
         if (chat_id) {
+            const imageUrl =
+                typeof snapshot_data === 'string' &&
+                (snapshot_data.startsWith('data:') ||
+                    snapshot_data.startsWith('http') ||
+                    snapshot_data.startsWith('/'))
+                    ? snapshot_data
+                    : '';
             await MessageModel.create(
                 chat_id,
                 specialist_id,
-                "🎨 **Dars doskasi (Whiteboard) saqlandi.**",
-                'image',
+                imageUrl || '🎨 **Dars doskasi (Whiteboard) saqlandi.**',
+                imageUrl ? 'image' : 'text',
                 {
-                    url: snapshot_data,
+                    url: imageUrl || undefined,
+                    caption: '🎨 Dars doskasi (Whiteboard) saqlandi.',
                     is_whiteboard: true,
-                    snapshot_id: snapshot.id
+                    snapshot_id: snapshot.id,
                 }
             );
         }

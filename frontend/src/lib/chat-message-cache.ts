@@ -140,14 +140,26 @@ export function normalizeMessageMetadata(raw: unknown): ChatMessageMetadata {
 /** Media uchun URL ba'zan faqat `metadata.url` da — `content` bo‘sh qolgan migratsiya qatorlari. */
 function deriveMediaUrlIfTextEmpty(text: string, type: string, meta: ChatMessageMetadata): string {
     const trimmed = text.trim();
-    if (trimmed) return trimmed;
     const media = new Set(['image', 'video', 'file', 'voice', 'sticker']);
     if (!media.has(type)) return trimmed;
     const o = meta as Record<string, unknown>;
+    let metaUrl = '';
     for (const k of ['url', 'fileUrl', 'src', 'path', 'file_url', 'href', 'link'] as const) {
         const v = o[k];
-        if (typeof v === 'string' && v.trim()) return v.trim();
+        if (typeof v === 'string' && v.trim()) {
+            metaUrl = v.trim();
+            break;
+        }
     }
+    const isMediaUrl = (s: string) =>
+        /^https?:\/\//i.test(s) ||
+        s.startsWith('data:') ||
+        s.startsWith('blob:') ||
+        s.startsWith('/') ||
+        /^uploads?\//i.test(s);
+    // Matn caption bo‘lsa ham, metadata dagi haqiqiy media URL ustun
+    if (metaUrl && isMediaUrl(metaUrl)) return metaUrl;
+    if (trimmed && isMediaUrl(trimmed)) return trimmed;
     return trimmed;
 }
 
