@@ -7,7 +7,7 @@ import { useLanguage } from '@/context/LanguageContext';
 import type { ChatMessage, ChatMessageMetadata } from '@/types/chat-message';
 import { getDisplayTimeForMessage, normalizeMessageType } from '@/lib/chat-message-cache';
 import { downloadChatFile } from '@/lib/download-file';
-import { classifyTelegramMessage } from '@/lib/telegram-message-kind';
+import { classifyTelegramMessage, describeDocumentKind } from '@/lib/telegram-message-kind';
 import { formatPhoneCallLabel, parsePhoneCallMeta } from '@/lib/phone-call-message';
 import { songPlayer } from '@/lib/song-player-store';
 import { apiFetch } from '@/lib/api';
@@ -35,12 +35,15 @@ interface MessageBubbleProps {
     onImageLoad?: (e?: React.SyntheticEvent<HTMLImageElement>) => void;
     /** Guruh/kanalda avatar; shaxsiy chatda Telegram kabi yo‘q */
     showPeerAvatar?: boolean;
+    /** Dars yakunlangan yoki yangi taklif chiqqan — qo‘shilish tugmasi o‘chiq */
+    inviteJoinExpired?: boolean;
 }
 
 export const MessageBubble: React.FC<MessageBubbleProps> = ({
     message, chatId, onReply, isSelecting, isSelected, onSelect,
     uploadProgress, onMediaClick, onForward, onDelete, onEdit, onPin,
-    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad, showPeerAvatar = false, songPlaylist
+    isContinuation, onReplyClick, activeAudioId, onAudioPlay, onImageLoad, showPeerAvatar = false, songPlaylist,
+    inviteJoinExpired = false,
 }) => {
     const { t, language } = useLanguage();
     const { showError, showSuccess } = useNotification();
@@ -68,6 +71,10 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     }, [message.id, fileMeta.kind]);
 
     const openConsultSession = () => {
+        if (inviteJoinExpired || fileMeta.invite_status === 'expired' || fileMeta.status === 'expired') {
+            showError(t('invite_expired') as string);
+            return;
+        }
         const sessionId =
             (fileMeta.sessionId != null && String(fileMeta.sessionId) !== ''
                 ? String(fileMeta.sessionId)
@@ -175,18 +182,14 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         );
     }, [fileMeta.name, fileMeta.file_name, mediaSrc, messageType, t]);
 
-    const fileKind = useMemo(() => {
-        const mime = String(fileMeta.mimetype || '').toLowerCase();
-        const ext = (fileName.split('.').pop() || '').toLowerCase();
-        if (mime.startsWith('audio/') || /^(mp3|wav|ogg|m4a|aac|flac|opus|weba)$/.test(ext)) return 'AUDIO';
-        if (mime.startsWith('video/') || /^(mp4|mov|webm|mkv|avi|m4v)$/.test(ext)) return 'VIDEO';
-        if (mime.startsWith('image/') || /^(png|jpe?g|gif|webp|bmp|svg|heic|heif)$/.test(ext)) return 'IMAGE';
-        if (mime.includes('pdf') || ext === 'pdf') return 'PDF';
-        if (/word|officedocument|msword/.test(mime) || /^(doc|docx|rtf)$/.test(ext)) return 'DOC';
-        if (/sheet|excel|spreadsheet/.test(mime) || /^(xls|xlsx|csv)$/.test(ext)) return 'SHEET';
-        if (/zip|rar|7z|tar|gzip/.test(mime) || /^(zip|rar|7z|tar|gz)$/.test(ext)) return 'ARCHIVE';
-        return ext ? ext.toUpperCase() : 'FILE';
-    }, [fileMeta.mimetype, fileName]);
+    const fileKind = useMemo(
+        () => describeDocumentKind(fileName, String(fileMeta.mimetype || '')).label,
+        [fileMeta.mimetype, fileName]
+    );
+    const fileTone = useMemo(
+        () => describeDocumentKind(fileName, String(fileMeta.mimetype || '')).tone,
+        [fileMeta.mimetype, fileName]
+    );
 
     const handleDownload = async () => {
         if (!mediaSrc) return;
@@ -448,7 +451,9 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     ) : null}
                 {(messageType === 'lesson_start' || messageType === 'consult_panel_invite') && (() => {
                     const inviteExpired =
-                        fileMeta.invite_status === 'expired' || fileMeta.status === 'expired';
+                        inviteJoinExpired ||
+                        fileMeta.invite_status === 'expired' ||
+                        fileMeta.status === 'expired';
                     const hideJoinForPayment =
                         messageType === 'consult_panel_invite' &&
                         (inviteKind === 'panel_open' ||
@@ -755,10 +760,18 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                                     void handleDownload();
                                 }
                             }}>
-                                <div className="w-12 h-12 rounded-2xl bg-white/10 group-hover/file:bg-blue-500/20 border border-white/5 transition-colors flex items-center justify-center text-blue-400 relative">
-                                    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
+                                <div className={`w-12 h-12 rounded-2xl border border-white/5 transition-colors flex items-center justify-center relative ${
+                                    fileTone === 'pdf'
+                                        ? 'bg-red-500/20 text-red-300 group-hover/file:bg-red-500/30'
+                                        : fileTone === 'doc'
+                                            ? 'bg-sky-500/20 text-sky-300 group-hover/file:bg-sky-500/30'
+                                            : fileTone === 'sheet'
+                                                ? 'bg-emerald-500/20 text-emerald-300 group-hover/file:bg-emerald-500/30'
+                                                : fileTone === 'archive'
+                                                    ? 'bg-amber-500/20 text-amber-300 group-hover/file:bg-amber-500/30'
+                                                    : 'bg-white/10 text-blue-400 group-hover/file:bg-blue-500/20'
+                                }`}>
+                                    <span className="text-[10px] font-black tracking-wide">{fileKind}</span>
                                     {!message.isUploading && (
                                         <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center border-2 border-[#0d0d0f]">
                                             <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>

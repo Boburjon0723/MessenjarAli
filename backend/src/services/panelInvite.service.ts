@@ -104,19 +104,28 @@ export async function getConsultPanelAccess(
         return { allowed: true, sessionStatus };
     }
 
-    const inviteRes = await pool.query(
+    const latestRes = await pool.query(
         `
-        SELECT 1 FROM messages
+        SELECT type, metadata
+        FROM messages
         WHERE chat_id = $1
           AND type = ANY($2::text[])
-          AND COALESCE(metadata->>'invite_status', 'active') = 'active'
+        ORDER BY created_at DESC, id DESC
         LIMIT 1
         `,
-        [chatId, INVITE_TYPES]
+        [chatId, [...INVITE_TYPES, 'lesson_end']]
     );
-    if ((inviteRes.rowCount ?? 0) > 0) {
-        return { allowed: true, sessionStatus };
+    const latest = latestRes.rows[0];
+    if (!latest) {
+        return { allowed: false, reason: 'expired', sessionStatus };
+    }
+    if (String(latest.type) === 'lesson_end') {
+        return { allowed: false, reason: 'closed', sessionStatus };
+    }
+    const meta = parseMeta(latest.metadata);
+    if (meta.invite_status === 'expired' || meta.status === 'expired') {
+        return { allowed: false, reason: 'expired', sessionStatus };
     }
 
-    return { allowed: false, reason: 'expired', sessionStatus };
+    return { allowed: true, sessionStatus };
 }

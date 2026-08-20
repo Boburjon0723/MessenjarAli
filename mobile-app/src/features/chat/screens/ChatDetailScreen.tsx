@@ -930,7 +930,7 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         )}
 
 
-        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && item.metadata?.kind !== 'payment_request' && item.metadata?.kind !== 'panel_open' && (
+        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && item.metadata?.kind !== 'payment_request' && item.metadata?.kind !== 'panel_open' && !isExpert && (
            <Pressable 
              style={styles.joinSessionBtn}
              onPress={() => {

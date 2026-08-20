@@ -68,7 +68,9 @@ describe('panelInvite.service', () => {
             .mockResolvedValueOnce({ rows: [{ id: 'chat-1', type: 'private' }] } as never)
             .mockResolvedValueOnce({ rowCount: 1, rows: [{}] } as never)
             .mockResolvedValueOnce({ rows: [] } as never)
-            .mockResolvedValueOnce({ rowCount: 1, rows: [{}] } as never);
+            .mockResolvedValueOnce({
+                rows: [{ type: 'lesson_start', metadata: { invite_status: 'active' } }],
+            } as never);
         const result = await getConsultPanelAccess('chat-1', 'user-1');
         expect(result).toEqual({
             allowed: true,
@@ -81,11 +83,27 @@ describe('panelInvite.service', () => {
             .mockResolvedValueOnce({ rows: [{ id: 'chat-1', type: 'private' }] } as never)
             .mockResolvedValueOnce({ rowCount: 1, rows: [{}] } as never)
             .mockResolvedValueOnce({ rows: [] } as never)
-            .mockResolvedValueOnce({ rowCount: 0, rows: [] } as never);
+            .mockResolvedValueOnce({ rows: [] } as never);
         const result = await getConsultPanelAccess('chat-1', 'user-1');
         expect(result).toEqual({
             allowed: false,
             reason: 'expired',
+            sessionStatus: null,
+        });
+    });
+
+    it('getConsultPanelAccess blocks after latest message is lesson_end', async () => {
+        vi.mocked(pool.query)
+            .mockResolvedValueOnce({ rows: [{ id: 'chat-1', type: 'group' }] } as never)
+            .mockResolvedValueOnce({ rowCount: 1, rows: [{}] } as never)
+            .mockResolvedValueOnce({ rows: [] } as never)
+            .mockResolvedValueOnce({
+                rows: [{ type: 'lesson_end', metadata: { sessionId: 'chat-1' } }],
+            } as never);
+        const result = await getConsultPanelAccess('chat-1', 'user-1');
+        expect(result).toEqual({
+            allowed: false,
+            reason: 'closed',
             sessionStatus: null,
         });
     });

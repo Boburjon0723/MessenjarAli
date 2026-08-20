@@ -23,6 +23,7 @@ export type MessagesMenuDrawerProps = {
     t: (...args: any[]) => string;
     currentUser: any;
     isExpertMode?: boolean;
+    isMobile?: boolean;
     onClose: () => void;
     onOpenProfile: () => void;
     onOpenWallet: () => void;
@@ -46,6 +47,7 @@ export function MessagesMenuDrawer({
     t,
     currentUser,
     isExpertMode,
+    isMobile = false,
     onClose,
     onOpenProfile,
     onOpenWallet,
@@ -120,7 +122,7 @@ export function MessagesMenuDrawer({
                     <button type="button" onClick={onOpenListings} className={itemCls}>
                         <Bookmark className={iconCls} /> {t('my_ads')}
                     </button>
-                    {currentUser?.is_expert && onToggleExpertPanel && (
+                    {currentUser?.is_expert && onToggleExpertPanel && !isMobile && (
                         <button type="button" onClick={onToggleExpertPanel} className={itemCls}>
                             <Layout className={iconCls} />
                             {isExpertMode

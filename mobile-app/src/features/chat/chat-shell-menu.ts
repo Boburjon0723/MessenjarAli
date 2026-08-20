@@ -79,7 +79,7 @@ export const HEADER_RIGHT_ACTIONS: {
     id: "expert_tools",
     icon: "Layout",
     accessibilityLabel: "Ekspert paneli",
-    visible: ({ isExpert }) => isExpert,
+    visible: () => false,
   },
   {
     id: "compose",

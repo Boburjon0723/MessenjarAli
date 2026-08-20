@@ -89,10 +89,19 @@ export default function StudentDashboard({ user, sessionId, sessionStyle = 'ment
     const loadSessionResources = React.useCallback(async () => {
         if (!sessionId || sessionId === 'demo-session-id') return;
         try {
-            const resMat = await apiFetch(`/api/sessions/${sessionId}/materials`);
+            const resMat = await apiFetch(`/api/sessions/${sessionId}/materials?currentLesson=1`);
             if (resMat.ok) {
                 const data = await resMat.json();
-                setMaterials(Array.isArray(data) ? data : []);
+                setMaterials(
+                    Array.isArray(data)
+                        ? data.map((m: any) => ({
+                            id: m.id,
+                            url: m.url || m.file_url,
+                            title: m.title,
+                            type: m.type || m.file_type,
+                        }))
+                        : []
+                );
             }
         } catch (e) {
             console.error('fetch materials', e);

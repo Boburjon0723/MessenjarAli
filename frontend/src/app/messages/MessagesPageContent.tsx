@@ -222,6 +222,11 @@ export function MessagesPageContent() {
         return () => window.removeEventListener('resize', update);
     }, []);
 
+    /** Mobil: mutaxassis paneli faqat desktop — ochiq bo‘lsa yopish */
+    useEffect(() => {
+        if (isMobile && isExpertMode) setIsExpertMode(false);
+    }, [isMobile, isExpertMode]);
+
     /** Mobil: boshqa chat tanlanganda avval suhbat oynasi — info yopiladi (desktopda yon panel ochiq qolishi mumkin) */
     useEffect(() => {
         if (!isMobile || !selectedChat) return;
@@ -263,6 +268,10 @@ export function MessagesPageContent() {
     );
 
     const handleToggleExpertPanel = useCallback(async () => {
+        if (isMobile) {
+            showError(t('expert_panel_mobile_unavailable') as string);
+            return;
+        }
         if (isExpertMode) {
             setIsExpertMode(false);
             return;
@@ -318,7 +327,7 @@ export function MessagesPageContent() {
             console.error(e);
             showError('Xatolik yuz berdi. Qayta urinib ko‘ring.');
         }
-    }, [isExpertMode, currentUser, selectedChat, openMentorPanelForGroup]);
+    }, [isExpertMode, isMobile, currentUser, selectedChat, openMentorPanelForGroup, showError, t]);
 
     const handleCategoryNavChange = useCallback((catId: string) => {
         if (catId === 'services') {
@@ -1127,6 +1136,25 @@ export function MessagesPageContent() {
                         return;
                     }
                 } else {
+                    const isRoomOwner =
+                        !!creatorId && String(creatorId) === String(currentUser.id);
+                    if (!isRoomOwner) {
+                        const accessRes = await apiFetch(
+                            `/api/chats/${encodeURIComponent(roomParam)}/panel-access`
+                        );
+                        if (cancelled) return;
+                        if (!accessRes.ok) {
+                            setRoomGateState('closed');
+                            setLoading(false);
+                            return;
+                        }
+                        const access = await accessRes.json();
+                        if (!access?.allowed) {
+                            setRoomGateState('closed');
+                            setLoading(false);
+                            return;
+                        }
+                    }
                     if (creatorId) {
                         const subRes = await apiFetch(
                             `/api/wallet/subscription-status?mentorId=${encodeURIComponent(creatorId)}`
@@ -1178,11 +1206,11 @@ export function MessagesPageContent() {
                         setSelectedChat(roomChat);
                         setShowRightPanel(false);
                         setIsExpertMode(false);
-                        if (!isMentorOwner && roomParam) {
+                        if (!isMentorOwner && !currentUser?.is_expert && roomParam) {
                             setStudentLiveRoomId(String(roomParam));
                             setStudentSessionStyle(parseStudentSessionStyle(searchParams.get('style')));
                         }
-                    } else if (isPrivateRoom) {
+                    } else if (isPrivateRoom && !currentUser?.is_expert) {
                         setStudentLiveRoomId(String(roomParam));
                         setStudentSessionStyle(parseStudentSessionStyle(searchParams.get('style')));
                     } else {
@@ -1271,7 +1299,7 @@ export function MessagesPageContent() {
     const showDetail =
         !!selectedChat ||
         isPanelCategory ||
-        (isExpertMode && !!currentUser?.is_expert);
+        (isExpertMode && !!currentUser?.is_expert && !isMobile);
 
     /** Shaxsiy chat yoki o‘z guruhim: ekspert xizmat paneli. Kanal/guruhda boshqa odam yaratuvchisi bo‘lsa — panel yo‘q. */
     const isGroupOrChannel = selectedChat?.type === 'group' || selectedChat?.type === 'channel';
@@ -1284,6 +1312,7 @@ export function MessagesPageContent() {
     const consultLobbySessionId = currentUser?.id ? `consult-lobby-${currentUser.id}` : 'demo-session-id';
     /** Mentor: panel rejimi yoqilganda asosiy oynada SpecialistDashboard (chat tanlanmagan yoki placeholder guruhda ham). Konsultant: avvalgi qoida. */
     const showSpecialistDashboard =
+        !isMobile &&
         isExpertMode &&
         !!currentUser?.is_expert &&
         (consultPanelNoChatRequired ||
@@ -1339,7 +1368,7 @@ export function MessagesPageContent() {
         );
     }
 
-    if (studentLiveRoomId && currentUser) {
+    if (studentLiveRoomId && currentUser && !currentUser.is_expert) {
         return (
             <StudentDashboard
                 user={currentUser}
@@ -1364,6 +1393,7 @@ export function MessagesPageContent() {
                         t={t}
                         currentUser={currentUser}
                         isExpertMode={isExpertMode}
+                        isMobile={isMobile}
                         onClose={() => setShowMenu(false)}
                         onOpenProfile={() => { setShowMenu(false); setActiveCategory('profile'); }}
                         onOpenWallet={() => { setShowMenu(false); router.push('/wallet'); }}
@@ -1653,7 +1683,9 @@ export function MessagesPageContent() {
                                                                     ? selectedChat?.type === 'private' && selectedChat?.id
                                                                         ? String(selectedChat.id)
                                                                         : consultLobbySessionId
-                                                                    : selectedChat?.id || 'demo-session-id'
+                                                                    : expertPanelKindUi === 'mentor'
+                                                                        ? 'demo-session-id'
+                                                                        : selectedChat?.id || 'demo-session-id'
                                                             }
                                                             socket={socket}
                                                             onBack={() => setIsExpertMode(false)}

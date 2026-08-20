@@ -5,6 +5,7 @@ import { MessageBubble } from './MessageBubble';
 import { computeMessageContinuation } from '@/lib/chat-continuation';
 import { parseMessageDate } from './chatWindowHelpers';
 import type { ChatMessage } from '@/types/chat-message';
+import { computeExpiredPanelInviteIds } from '@/lib/panel-invite-ui';
 import { classifyTelegramMessage, resolveChatMediaUrl } from '@/lib/telegram-message-kind';
 import type { SongTrack } from '@/lib/song-player-store';
 
@@ -101,6 +102,11 @@ export function ChatMessageList({
             return [{ id: m.id, url, title }];
         });
     }, [filteredMessages]);
+
+    const expiredPanelInviteIds = useMemo(
+        () => computeExpiredPanelInviteIds(filteredMessages),
+        [filteredMessages]
+    );
 
     const dragRef = useRef<{
         active: boolean;
@@ -258,6 +264,7 @@ export function ChatMessageList({
                                     onAudioPlay={setActiveAudioId}
                                     songPlaylist={songPlaylist}
                                     showPeerAvatar={showPeerAvatar}
+                                    inviteJoinExpired={expiredPanelInviteIds.has(String(msg.id))}
                                 />
                             </div>
                         </React.Fragment>

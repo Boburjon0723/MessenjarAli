@@ -30,9 +30,35 @@ export const SessionMaterialModel = {
         return result.rows[0];
     },
 
-    async findBySession(sessionId: string): Promise<SessionMaterial[]> {
-        const query = 'SELECT * FROM session_materials WHERE session_id = $1 ORDER BY created_at DESC';
-        const result = await pool.query(query, [sessionId]);
+    async findBySession(sessionId: string, opts?: { currentLessonOnly?: boolean }): Promise<SessionMaterial[]> {
+        if (!opts?.currentLessonOnly) {
+            const result = await pool.query(
+                'SELECT * FROM session_materials WHERE session_id = $1 ORDER BY created_at DESC',
+                [sessionId]
+            );
+            return result.rows;
+        }
+        const result = await pool.query(
+            `
+            WITH bounds AS (
+                SELECT
+                    (SELECT created_at FROM messages
+                     WHERE chat_id::text = $1 AND type = 'lesson_start'
+                     ORDER BY created_at DESC LIMIT 1) AS last_start,
+                    (SELECT created_at FROM messages
+                     WHERE chat_id::text = $1 AND type = 'lesson_end'
+                     ORDER BY created_at DESC LIMIT 1) AS last_end
+            )
+            SELECT m.*
+            FROM session_materials m, bounds b
+            WHERE m.session_id = $1
+              AND b.last_start IS NOT NULL
+              AND (b.last_end IS NULL OR b.last_end < b.last_start)
+              AND m.created_at >= b.last_start
+            ORDER BY m.created_at DESC
+            `,
+            [sessionId]
+        );
         return result.rows;
     },
 

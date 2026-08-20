@@ -42,8 +42,14 @@ export function DashboardTopBar({
                 {onBack && (
                     <button
                         type="button"
-                        onClick={onBack}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 transition-colors"
+                        onClick={isLessonStarted ? undefined : onBack}
+                        disabled={isLessonStarted}
+                        title={isLessonStarted ? (t('end_lesson_before_leave') as string) : undefined}
+                        className={`w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 transition-colors ${
+                            isLessonStarted
+                                ? 'bg-white/5 opacity-35 cursor-not-allowed'
+                                : 'bg-white/5 hover:bg-white/10'
+                        }`}
                     >
                         <ArrowLeft className="w-4 h-4" />
                     </button>

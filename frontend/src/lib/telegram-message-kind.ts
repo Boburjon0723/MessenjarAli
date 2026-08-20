@@ -135,3 +135,24 @@ export function resolveChatMediaUrl(raw: string): string {
     const base = (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000').replace(/\/$/, '');
     return `${base}${t.startsWith('/') ? '' : '/'}${t}`;
 }
+
+/** PDF / Word / Excel / arxiv — UI nishonchasi */
+export function describeDocumentKind(name?: string, mime?: string): {
+    label: string;
+    tone: 'pdf' | 'doc' | 'sheet' | 'archive' | 'video' | 'image' | 'audio' | 'file';
+} {
+    const m = String(mime || '').toLowerCase();
+    const n = String(name || '');
+    const ext = (n.split('.').pop() || '').toLowerCase();
+    if (m.startsWith('video/') || /^(mp4|mov|webm|mkv|avi|m4v)$/.test(ext)) return { label: 'VIDEO', tone: 'video' };
+    if (m.startsWith('image/') || /^(png|jpe?g|gif|webp|bmp|svg)$/.test(ext)) return { label: 'IMG', tone: 'image' };
+    if (m.startsWith('audio/') || /^(mp3|wav|ogg|m4a|aac|flac)$/.test(ext)) return { label: 'AUDIO', tone: 'audio' };
+    if (m.includes('pdf') || ext === 'pdf') return { label: 'PDF', tone: 'pdf' };
+    if (/word|msword|officedocument\.wordprocessing/.test(m) || /^(doc|docx|rtf)$/.test(ext)) {
+        return { label: 'WORD', tone: 'doc' };
+    }
+    if (/sheet|excel|spreadsheet/.test(m) || /^(xls|xlsx|csv)$/.test(ext)) return { label: 'EXCEL', tone: 'sheet' };
+    if (/powerpoint|presentation/.test(m) || /^(ppt|pptx)$/.test(ext)) return { label: 'PPT', tone: 'sheet' };
+    if (/zip|rar|7z|tar|gzip/.test(m) || /^(zip|rar|7z|tar|gz)$/.test(ext)) return { label: 'ZIP', tone: 'archive' };
+    return { label: ext ? ext.toUpperCase() : 'FILE', tone: 'file' };
+}

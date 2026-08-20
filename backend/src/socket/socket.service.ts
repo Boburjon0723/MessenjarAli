@@ -680,6 +680,9 @@ export class SocketService {
 
                     const content = lessonNotifyChatContent(mentorName, 'end', sessionStyle);
                     if (chatId) {
+                        const { expireAllPanelInvitesForChat } = await import('../services/panelInvite.service');
+                        await expireAllPanelInvitesForChat(chatId, this.io);
+
                         const mentor = await UserModel.findById(userId);
                         const mentorAvatar = mentor?.avatar_url || authSocket.user?.avatar_url || null;
 

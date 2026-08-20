@@ -15,6 +15,7 @@ import {
     getExpertPanelLabels,
 } from '@/lib/expert-roles';
 import { getPublicApiUrl } from '@/lib/public-origin';
+import { inferSendTypeFromFile } from '@/lib/telegram-message-kind';
 import { getToken } from '@/lib/auth-storage';
 import { uploadFileWithProgress } from '@/lib/upload';
 import { useLanguage } from '@/context/LanguageContext';
@@ -120,7 +121,9 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
 
     // Groups State
     const [groups, setGroups] = useState<any[]>([]);
-    const [selectedGroupId, setSelectedGroupId] = useState(sessionId || '');
+    const [selectedGroupId, setSelectedGroupId] = useState(
+        sessionId && sessionId !== 'demo-session-id' && !showMentorClassroomTools ? sessionId : ''
+    );
     const [showNewGroupPrompt, setShowNewGroupPrompt] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupTime, setNewGroupTime] = useState('');
@@ -135,6 +138,13 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
     /** LiveKit + socket xonasi: `demo-session-id` truthy bo‘lib qolsa ham haqiqiy `sessionId` ga tushsin (aks holda doska boshqa room ga ketadi). */
     const socketRoomId =
         (selectedGroupId && selectedGroupId !== 'demo-session-id' ? selectedGroupId : '') ||
+        (sessionId && sessionId !== 'demo-session-id' ? sessionId : '');
+
+    /** Guruh tanlanmaguncha mentor kutish xonasi — panel LiveKit token olishi uchun */
+    const mentorLobbyRoomId = showMentorClassroomTools && user?.id ? `consult-lobby-${user.id}` : '';
+    const liveKitRoomId =
+        (selectedGroupId && selectedGroupId !== 'demo-session-id' ? selectedGroupId : '') ||
+        mentorLobbyRoomId ||
         (sessionId && sessionId !== 'demo-session-id' ? sessionId : '');
 
     // Live Quiz State
@@ -234,8 +244,14 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         if (!selectedGroupId) return;
         const hints: string[] = [];
         try {
-            const resMat = await apiFetch(`/api/sessions/${selectedGroupId}/materials`);
-            if (resMat.status === 404) {
+            const matQs = showMentorClassroomTools ? '?currentLesson=1' : '';
+            const resMat =
+                showMentorClassroomTools && !isLessonStarted
+                    ? null
+                    : await apiFetch(`/api/sessions/${selectedGroupId}/materials${matQs}`);
+            if (!resMat) {
+                setMaterials([]);
+            } else if (resMat.status === 404) {
                 setMaterials([]);
                 hints.push(t('materials_schedule_empty'));
             } else if (resMat.ok) {
@@ -272,7 +288,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             setQuizzes([]);
         }
         setSessionResourcesNote(hints.length > 0 ? hints.join(' ') : null);
-    }, [selectedGroupId, showMentorClassroomTools, t]);
+    }, [selectedGroupId, showMentorClassroomTools, isLessonStarted, t]);
 
     const fetchHistory = useCallback(async () => {
         try {
@@ -297,36 +313,49 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             if (res.ok) {
                 const data = await res.json();
                 setGroups(data);
-                if ((!sessionId || sessionId === 'demo-session-id') && data.length > 0) {
-                    setSelectedGroupId(data[0].id);
-                }
+                setSelectedGroupId((prev) => {
+                    if (!prev || prev === 'demo-session-id') return '';
+                    const stillValid =
+                        Array.isArray(data) &&
+                        data.some((g: any) => String(g.id || g.chatId) === String(prev));
+                    return stillValid ? prev : '';
+                });
             }
         } catch (err) {
             console.error("Failed to fetch expert groups", err);
             setGlobalError(t('groups_load_error'));
         }
-    }, [user?.id, showMentorClassroomTools, sessionId]);
+    }, [user?.id, showMentorClassroomTools]);
 
     const fetchLiveKitToken = useCallback(async () => {
-        if (!selectedGroupId || selectedGroupId === 'demo-session-id') return;
+        if (!liveKitRoomId) return;
         try {
-            const res = await apiFetch(`/api/livekit/token?room=${selectedGroupId}&username=${encodeURIComponent(user?.name || 'Mentor')}`);
+            const res = await apiFetch(
+                `/api/livekit/token?room=${encodeURIComponent(liveKitRoomId)}&username=${encodeURIComponent(user?.name || 'Mentor')}`
+            );
             if (res.ok) {
                 const data = await res.json();
                 setLkToken(data.token);
                 setLkWsUrl(data.wsUrl);
+            } else {
+                console.error('[SpecialistDashboard] LiveKit token failed:', res.status);
             }
         } catch (err) {
-            console.error("[SpecialistDashboard] Error fetching LiveKit token:", err);
+            console.error('[SpecialistDashboard] Error fetching LiveKit token:', err);
         }
-    }, [selectedGroupId, user?.name]);
+    }, [liveKitRoomId, user?.name]);
 
     useEffect(() => {
         loadSessionResources();
         fetchHistory();
         fetchGroups();
-        if (selectedGroupId) fetchLiveKitToken();
-    }, [loadSessionResources, fetchHistory, fetchGroups, fetchLiveKitToken, selectedGroupId]);
+    }, [loadSessionResources, fetchHistory, fetchGroups, selectedGroupId]);
+
+    useEffect(() => {
+        setLkToken('');
+        setLkWsUrl('');
+        if (liveKitRoomId) void fetchLiveKitToken();
+    }, [liveKitRoomId, fetchLiveKitToken]);
 
     useEffect(() => {
         if (socket && socketRoomId && String(socketRoomId) !== 'demo-session-id') {
@@ -568,15 +597,16 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         setQuizResults({});
     };
 
-    const handleQuickPoll = () => {
+    const handleQuickPoll = (questionText?: string) => {
         if (!socket || !selectedGroupId) return;
+        const question = String(questionText || '').trim() || 'Hozirgi mavzu tushunarlimi?';
         const quickPoll = {
             id: `poll-${Date.now()}`,
             title: 'Tezkor So\'rov',
             isQuickPoll: true,
             questions: [
                 {
-                    text: 'Hozirgi mavzu tushunarlimi?',
+                    text: question,
                     typeof: 'multiple_choice',
                     options: [
                         { id: '1', text: 'Ha, tushunarli', isCorrect: true },
@@ -586,12 +616,6 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             ]
         };
         socket.emit('quiz_start', { sessionId: selectedGroupId, quizId: quickPoll.id, quizDetails: quickPoll });
-        socket.emit('send_message', {
-            roomId: selectedGroupId,
-            content:
-                '⚡ **Tezkor so‘rov:** Mavzu tushunarlimi?\n• Ha, tushunarli\n• Yo‘q, tushunarsiz\n_(Talabalar dars oynasida tanlaydi.)_',
-            type: 'text',
-        });
         setActiveQuiz(quickPoll);
         setQuizResults({});
     };
@@ -617,8 +641,21 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
 
             if (socket) {
                 socket.emit('material_uploaded', { sessionId: selectedGroupId, material: newMaterial });
-                const url = newMaterial.file_url?.startsWith('http') ? newMaterial.file_url : `${getPublicApiUrl()}${newMaterial.file_url?.startsWith('/') ? '' : '/'}${newMaterial.file_url || ''}`;
-                socket.emit('send_message', { roomId: selectedGroupId, content: `📎 **${newMaterial.title || (t('file') as string)}**\n${url}`, type: 'text' });
+                const fileUrl = String(newMaterial.file_url || '');
+                const title = String(newMaterial.title || file.name || (t('file') as string));
+                const mime = String(newMaterial.file_type || file.type || '');
+                socket.emit('send_message', {
+                    roomId: selectedGroupId,
+                    content: fileUrl,
+                    type: inferSendTypeFromFile(title, mime),
+                    metadata: {
+                        name: title,
+                        file_name: title,
+                        size: newMaterial.file_size_bytes || file.size,
+                        mimetype: mime,
+                        is_material: true,
+                    },
+                });
             }
             setMaterials(prev => [newMaterial, ...prev]);
             showSuccess(t('material_uploaded_success'));
@@ -660,7 +697,6 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                     mentorName,
                     sessionStyle: showMentorClassroomTools ? 'mentor' : 'consult',
                 });
-                const API_BASE = getPublicApiUrl();
                 const postToChat = (content: string, type = 'text') => {
                     socket.emit('send_message', { roomId: chatId, content, type });
                 };
@@ -677,10 +713,6 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                     });
                     postToChat(lines.join('\n'));
                 });
-                materials.forEach((m: any) => {
-                    const url = m.file_url?.startsWith('http') ? m.file_url : `${API_BASE}${m.file_url?.startsWith('/') ? '' : '/'}${m.file_url || ''}`;
-                    postToChat(`📎 **${m.title || (t('file') as string)}**\n${url}`);
-                });
             }
             const res = await apiFetch(`/api/specialists/sessions/${selectedGroupId}/close`, {
                 method: 'PATCH'
@@ -689,6 +721,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             if (res.ok) {
                 showSuccess(t('session_finished_success', { word: panelLabels.sessionNotifyWord }) as string);
                 setIsLessonStarted(false);
+                setMaterials([]);
                 if (onBack) onBack();
             }
         } catch (err) {
@@ -784,6 +817,10 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
 
     const handleGroupSelectChange = useCallback(
         (newId: string) => {
+            if (isLessonStarted && String(newId) !== String(selectedGroupId)) {
+                showError(t('lesson_group_locked_hint'));
+                return;
+            }
             if (
                 (isRecording || isUploadingRecording) &&
                 String(newId) !== String(selectedGroupId)
@@ -794,7 +831,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             setSelectedGroupId(newId);
             setIsLessonStarted(false);
         },
-        [isRecording, isUploadingRecording, selectedGroupId]
+        [isRecording, isUploadingRecording, isLessonStarted, selectedGroupId, showError, t]
     );
 
     const mentorNoGroupsHint = showMentorClassroomTools && groups.length === 0;
@@ -995,7 +1032,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 /** HTTP yo‘q / eski deploy — socket zaxira */
-                if (socket?.connected) {
+                if (socket?.connected && data?.message === 'Route not found') {
                     socket.emit('lesson_start', {
                         sessionId: gid,
                         mentorName: specialistDisplayName,
@@ -1018,20 +1055,14 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
                 return;
             }
         }
-        const w = panelLabels.sessionNotifyWord;
-        showSuccess(`${w} ${t('status_started')}`);
+        showSuccess(`${t('lesson_started_broadcast')}`);
         setIsLessonStarted(true);
         setShowStartLessonModal(false);
     };
 
     const handleStartLesson = () => {
-        if (groups.length > 1) {
-            setLessonPickGroupId(selectedGroupId || groups[0]?.id || '');
-            setShowStartLessonModal(true);
-            return;
-        }
-        const gid = selectedGroupId || groups[0]?.id;
-        if (!gid) {
+        const gid = String(selectedGroupId || '').trim();
+        if (!gid || gid === 'demo-session-id') {
             showError(
                 showMentorClassroomTools
                     ? t('select_or_create_group')
@@ -1111,7 +1142,7 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         );
     }
 
-    if (!lkToken || !lkWsUrl) {
+    if (liveKitRoomId && (!lkToken || !lkWsUrl)) {
         return (
             <div className="flex h-full w-full items-center justify-center bg-[rgba(var(--glass-rgb),0.8)] text-white">
                 <div className="flex flex-col items-center gap-4">
@@ -1122,8 +1153,17 @@ export default function SpecialistDashboard({ user, sessionId, socket, onBack, o
         );
     }
 
+    if (!liveKitRoomId) {
+        return (
+            <div className="flex h-full w-full items-center justify-center bg-[rgba(var(--glass-rgb),0.8)] text-white px-6 text-center">
+                <p className="text-sm text-slate-300">{t('select_or_create_group')}</p>
+            </div>
+        );
+    }
+
     return (
         <LiveKitRoom
+            key={liveKitRoomId}
             token={lkToken}
             serverUrl={lkWsUrl}
             video={false}

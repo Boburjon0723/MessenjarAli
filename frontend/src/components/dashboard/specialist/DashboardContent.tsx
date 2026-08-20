@@ -14,7 +14,6 @@ import { Track, ConnectionState } from "livekit-client";
 import { LiveVideoFrame } from "../shared/LiveVideoFrame";
 import RecordingPlaybackModal from "../shared/RecordingPlaybackModal";
 import {
-    FileText,
     Video as VideoIcon,
     Link as LinkIcon,
     Mic,
@@ -39,6 +38,7 @@ import {
     HelpCircle,
     AlignLeft,
     ArrowLeft,
+    ChevronDown,
     ChevronLeft,
     ChevronRight,
     UserPlus,
@@ -46,22 +46,18 @@ import {
     VideoOff,
     MonitorUp,
     LogOut,
-    Settings,
-    Maximize2,
     PenTool,
-    MonitorOff,
     Trash2,
     Globe,
     ExternalLink,
-    History,
     Phone,
 } from "lucide-react";
 import { getConsultPanelInviteSessionStyle } from "@/lib/expert-roles";
+import { describeDocumentKind } from "@/lib/telegram-message-kind";
 import { isExpertListingChat } from "@/lib/listing-chat";
 import { getExpertComplianceNotice } from "@/lib/expert-compliance-copy";
 import { getPublicApiUrl } from "@/lib/public-origin";
 import { useLanguage } from "@/context/LanguageContext";
-import { TabItem } from "./TabItem";
 import DashboardQuizModal from "./DashboardQuizModal";
 import DashboardTopBar from "./DashboardTopBar";
 import ChatPaymentStatusCard from "@/components/chat/ChatPaymentStatusCard";
@@ -112,7 +108,6 @@ export function DashboardContent({
     mentorNoGroupsHint,
     mentorNeedsRealRoomHint,
     isWhiteboardOpen, setIsWhiteboardOpen,
-    isSettingsOpen, setIsSettingsOpen,
     pastSessions, setPastSessions,
     playbackSession, setPlaybackSession,
     attendees, setAttendees,
@@ -227,6 +222,9 @@ export function DashboardContent({
         : '00:00';
 
     const [mentorRightPanelOpen, setMentorRightPanelOpen] = React.useState(true);
+    const [mentorLeftPanelOpen, setMentorLeftPanelOpen] = React.useState(true);
+    const [groupPickerOpen, setGroupPickerOpen] = React.useState(false);
+    const groupPickerRef = useRef<HTMLDivElement>(null);
     /** Konsultatsiya / huquqshunos: o‘ng hujjatlar paneli (mentor `mentorRightPanelOpen` bilan alohida) */
     const [consultRightPanelOpen, setConsultRightPanelOpen] = React.useState(true);
     const [consultLeftPanelOpen, setConsultLeftPanelOpen] = React.useState(true);
@@ -240,10 +238,32 @@ export function DashboardContent({
     consultLeftWidthLiveRef.current = consultLeftPanelWidthPx;
 
     React.useEffect(() => {
+        if (isLessonStarted) setGroupPickerOpen(false);
+    }, [isLessonStarted]);
+
+    React.useEffect(() => {
         setMentorRightPanelOpen(true);
+        setMentorLeftPanelOpen(true);
         setConsultRightPanelOpen(true);
         setConsultLeftPanelOpen(true);
+        setGroupPickerOpen(false);
     }, [selectedGroupId]);
+
+    React.useEffect(() => {
+        if (!groupPickerOpen) return;
+        const onDoc = (e: MouseEvent) => {
+            if (!groupPickerRef.current?.contains(e.target as Node)) setGroupPickerOpen(false);
+        };
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') setGroupPickerOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDoc);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [groupPickerOpen]);
 
     const materialsSidePanelOpen = showMentorClassroomTools ? mentorRightPanelOpen : consultRightPanelOpen;
     const rightPanelOpenWidthClass = showMentorClassroomTools
@@ -259,6 +279,8 @@ export function DashboardContent({
     const [consultSearchLoading, setConsultSearchLoading] = useState(false);
     const [consultDdgResult, setConsultDdgResult] = useState<any>(null);
     const [consultSearchError, setConsultSearchError] = useState<string | null>(null);
+    const [quickPollComposerOpen, setQuickPollComposerOpen] = useState(false);
+    const [quickPollQuestion, setQuickPollQuestion] = useState('');
     const [consultClientChats, setConsultClientChats] = useState<any[]>([]);
     const [consultClientsLoading, setConsultClientsLoading] = useState(false);
     const [consultAcceptSendingId, setConsultAcceptSendingId] = useState<string | null>(null);
@@ -717,14 +739,17 @@ export function DashboardContent({
             />
 
             {/* ─── MAIN CONTENT ─── */}
-            <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <div className="flex-1 flex overflow-hidden min-h-0">
 
 
 
                 {/* ═══ LEFT PANEL ═══ */}
                 <div
                     className={`relative z-10 flex flex-col mentor-glass-surface overflow-hidden shadow-2xl shadow-black/25 transition-[width,max-width,opacity] duration-300 ease-out ${showMentorClassroomTools
-                            ? 'w-72 shrink-0'
+                            ? (mentorLeftPanelOpen
+                                ? 'w-[19.5rem] max-w-[19.5rem] shrink-0 opacity-100 border-r border-white/[0.08]'
+                                : 'w-0 max-w-0 shrink-0 opacity-0 pointer-events-none border-r-0')
                             : consultLeftPanelOpen
                                 ? `shrink-0 opacity-100 ${expertPanelMode === 'legal'
                                     ? 'border-r border-amber-500/20'
@@ -740,75 +765,111 @@ export function DashboardContent({
                 >
                     <div className="absolute inset-0 bg-gradient-to-b from-white/[0.04] via-transparent to-indigo-500/[0.06] pointer-events-none" />
                     {/* Manage Session */}
-                    <div className="relative px-4 pt-4 pb-2 flex items-center justify-between border-b border-white/5">
-                        <span className="text-sm font-bold text-white uppercase tracking-widest opacity-80">{manageSessionSectionTitle}</span>
-                        <div className="flex items-center gap-2">
-                            {showMentorClassroomTools && (
-                                <button
-                                    onClick={() => setShowNewGroupPrompt(true)}
-                                    className="text-slate-500 hover:text-white transition-colors"
-                                    title={t('create_group') as string}
+                    <div className="relative px-3 pt-3 pb-2.5 flex items-center justify-between gap-2 border-b border-white/[0.07]">
+                        <div className="min-w-0">
+                            <span className="block text-[13px] font-semibold text-white tracking-tight truncate">
+                                {manageSessionSectionTitle}
+                            </span>
+                            {showMentorClassroomTools ? (
+                                <span
+                                    className={`mt-1 inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                                        isLessonStarted
+                                            ? 'bg-emerald-500/15 text-emerald-300'
+                                            : 'bg-white/[0.06] text-slate-400'
+                                    }`}
                                 >
-                                    <Plus className="w-4 h-4" />
-                                </button>
-                            )}
-                            <button onClick={() => setIsSettingsOpen(true)} className="text-slate-500 hover:text-white transition-colors" title={t('settings_label')}>
-                                <Settings className="w-4 h-4" />
-                            </button>
+                                    <span
+                                        className={`h-1.5 w-1.5 rounded-full ${
+                                            isLessonStarted ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'
+                                        }`}
+                                    />
+                                    {isLessonStarted ? t('lesson_status_live') : t('lesson_status_idle')}
+                                </span>
+                            ) : null}
                         </div>
                     </div>
 
                     {groups.length > 0 && (
-                        <div className="relative px-4 pt-3 pb-1 border-b border-white/5">
-                            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">{activeRoomSelectLabel}</label>
-                            <select
-                                value={selectedGroupId}
-                                onChange={(e) => handleGroupSelectChange(e.target.value)}
-                                className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        <div className="relative px-3 pt-3 pb-2.5 border-b border-white/[0.07]" ref={groupPickerRef}>
+                            <label className="block text-[11px] font-medium text-slate-400 mb-1.5">
+                                {activeRoomSelectLabel}
+                            </label>
+                            <button
+                                type="button"
+                                disabled={isLessonStarted}
+                                onClick={() => {
+                                    if (isLessonStarted) return;
+                                    setGroupPickerOpen((v) => !v);
+                                }}
+                                title={isLessonStarted ? (t('lesson_group_locked_hint') as string) : undefined}
+                                className={`w-full flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left text-[12px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/40 ${
+                                    isLessonStarted
+                                        ? 'cursor-not-allowed border-white/[0.06] bg-white/[0.03] text-slate-400 opacity-80'
+                                        : 'border-white/10 bg-[#12141c] text-white hover:border-white/20'
+                                }`}
                             >
-                                {groups.map((g: any) => (
-                                    <option key={g.id || g.chatId} value={g.id || g.chatId}>
-                                        {g.name || t('group_label')}
-                                    </option>
-                                ))}
-                            </select>
+                                <span className="truncate">
+                                    {groups.find((g: any) => String(g.id || g.chatId) === String(selectedGroupId))?.name
+                                        || t('select_group_label')}
+                                </span>
+                                <ChevronDown
+                                    className={`w-4 h-4 shrink-0 text-slate-400 transition-transform ${groupPickerOpen ? 'rotate-180' : ''}`}
+                                />
+                            </button>
+                            {groupPickerOpen && !isLessonStarted ? (
+                                <div className="absolute left-3 right-3 z-30 mt-1 max-h-48 overflow-y-auto rounded-xl border border-white/10 bg-[#161822] py-1 shadow-xl shadow-black/50 custom-scrollbar">
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            handleGroupSelectChange('');
+                                            setGroupPickerOpen(false);
+                                        }}
+                                        className={`w-full px-3 py-2 text-left text-[12px] ${
+                                            !selectedGroupId ? 'bg-sky-500/15 text-sky-100' : 'text-slate-300 hover:bg-white/[0.06]'
+                                        }`}
+                                    >
+                                        {t('select_group_label')}
+                                    </button>
+                                    {groups.map((g: any) => {
+                                        const gid = String(g.id || g.chatId);
+                                        const selected = gid === String(selectedGroupId);
+                                        return (
+                                            <button
+                                                key={gid}
+                                                type="button"
+                                                onClick={() => {
+                                                    handleGroupSelectChange(gid);
+                                                    setGroupPickerOpen(false);
+                                                }}
+                                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-left text-[12px] ${
+                                                    selected
+                                                        ? 'bg-sky-500/20 text-white'
+                                                        : 'text-slate-200 hover:bg-white/[0.07]'
+                                                }`}
+                                            >
+                                                <span className="truncate">{g.name || t('group_label')}</span>
+                                                {selected ? <Check className="w-3.5 h-3.5 shrink-0 text-sky-300" /> : null}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            ) : null}
                         </div>
                     )}
                     {showMentorClassroomTools ? (
-                        <div className="flex-1 overflow-y-auto no-scrollbar flex flex-col">
-                            {/* Tabs for extra tools */}
-                            <div className="flex border-b border-white/5 mx-2 mb-3 mt-2 shrink-0">
-                                <TabItem
-                                    active={activeTab === 'attendees'}
-                                    onClick={() => setActiveTab('attendees')}
-                                    icon={<Users className="w-4 h-4" />}
-                                    label={t('attendees_label')}
-                                />
-                                <TabItem
-                                    active={activeTab === 'materials'}
-                                    onClick={() => setActiveTab('materials')}
-                                    icon={<FileText className="w-4 h-4" />}
-                                    label={t('materials_label')}
-                                />
-                                <TabItem
-                                    active={activeTab === 'history'}
-                                    onClick={() => setActiveTab('history')}
-                                    icon={<History className="w-4 h-4" />}
-                                    label={t('history_label')}
-                                />
-                            </div>
-                            {activeTab === 'attendees' && (
-                                <div className="flex flex-col flex-1 min-h-0">
-                                    <div className="px-4 py-2 flex items-center justify-between text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-white/5 mb-2">
-                                        <span>{t('participants_count', { count: attendees.length })}</span>
+                        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                                <div className={`shrink-0 flex flex-col border-b border-white/[0.07] ${attendees.length === 0 ? '' : 'max-h-[38%] min-h-0'}`}>
+                                    <div className="px-3 py-2 flex items-center justify-between text-[11px] font-medium text-slate-400 border-b border-white/[0.05]">
+                                        <span>{t('attendees_label')}</span>
+                                        <span className="tabular-nums text-slate-300">{attendees.length}</span>
                                     </div>
 
                                     {/* Attendees List */}
-                                    <div className="px-3 space-y-2 overflow-y-auto no-scrollbar flex-1 min-h-0">
+                                    <div className={`px-2.5 overflow-y-auto no-scrollbar ${attendees.length === 0 ? 'py-2' : 'space-y-1.5 py-2 flex-1 min-h-0'}`}>
                                         {attendees.length === 0 ? (
-                                            <div className="py-12 flex flex-col items-center justify-center gap-3 opacity-20 border-2 border-dashed border-white/5 rounded-2xl mx-1">
-                                                <Users className="w-8 h-8" />
-                                                <span className="text-[10px] font-bold uppercase tracking-widest text-center px-4">{waitAttendeesEmpty}</span>
+                                            <div className="flex items-center gap-2.5 rounded-xl bg-white/[0.04] px-3 py-2.5">
+                                                <Users className="w-4 h-4 text-slate-500 shrink-0" />
+                                                <span className="text-[11px] text-slate-400 leading-snug">{waitAttendeesEmpty}</span>
                                             </div>
                                         ) : (
                                             attendees.map((student: any, i: number) => {
@@ -935,130 +996,74 @@ export function DashboardContent({
                                         )}
                                     </div>
                                 </div>
-                            )}
 
-
-                {/* MATERIALS tab */}
-                {activeTab === 'materials' && (
-                    <div className="flex flex-col flex-1 pb-4 animate-fade-in overflow-hidden">
-                        {sessionResourcesNote && (
-                            <div className="mx-3 mb-2 rounded-lg border border-sky-400/35 bg-sky-500/10 px-3 py-2 text-[10px] text-sky-100/95 leading-snug">
-                                {sessionResourcesNote}
-                            </div>
-                        )}
-                        {/* Upload Action */}
-                        <div className="px-3 mb-3">
-                            <button
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isUploading}
-                                className="w-full py-3 flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-blue-500/20 transition-all active:scale-95"
-                            >
-                                {isUploading ? (
-                                    <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                                ) : (
-                                    <Upload className="w-4 h-4" />
-                                )}
-                                {isUploading ? t('uploading_label') : t('upload_material_label')}
-                            </button>
-                            <input
-                                type="file"
-                                ref={fileInputRef}
-                                className="hidden"
-                                onChange={handleFileUpload}
-                            />
-                            <p className="mt-2 text-[9px] text-slate-500 text-center font-medium italic">
-                                {showMentorClassroomTools
-                                    ? t('material_upload_hint_mentor')
-                                    : t('material_upload_hint_consult')}
-                            </p>
+                                <div className="flex-1 min-h-0 flex flex-col bg-[#0e1016]/80">
+                    <div className="px-3 py-2 flex items-center justify-between border-b border-white/[0.06] shrink-0">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-sky-500/15">
+                                <MessageSquare className="w-3.5 h-3.5 text-sky-300" />
+                            </span>
+                            <span className="text-[12px] font-semibold text-white truncate">{t('in_meeting_chat_label')}</span>
                         </div>
-
-                        <div className="flex-1 overflow-y-auto no-scrollbar px-3 space-y-2">
-                            {materials.length === 0 ? (
-                                <div className="py-8 flex flex-col items-center justify-center gap-3 opacity-20 border-2 border-dashed border-white/5 rounded-2xl">
-                                    <FileText className="w-8 h-8" />
-                                    <span className="text-[10px] font-bold uppercase tracking-widest">{t('no_materials_label')}</span>
-                                </div>
-                            ) : (
-                                materials.map((mat: any) => {
-                                    const isVideo = mat.file_type?.includes('video');
-                                    const isImage = mat.file_type?.includes('image');
-                                    const isPdf = mat.file_type?.includes('pdf');
-
-                                    return (
-                                        <div key={mat.id} className="group relative bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 transition-all p-3 shadow-sm">
-                                            <div className="flex items-start gap-3">
-                                                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-inner ${isVideo ? 'bg-blue-500/20 text-blue-400' :
-                                                    isImage ? 'bg-emerald-500/20 text-emerald-400' :
-                                                        isPdf ? 'bg-red-500/20 text-red-400' : 'bg-slate-500/20 text-slate-400'
-                                                    }`}>
-                                                    {isVideo ? <VideoIcon className="w-5 h-5" /> :
-                                                        isImage ? <Camera className="w-5 h-5" /> :
-                                                            <FileText className="w-5 h-5" />}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-[11px] font-bold text-white truncate mb-0.5">{mat.title}</div>
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[9px] text-slate-500 font-bold uppercase">{mat.file_type?.split('/')[1] || 'FILE'}</span>
-                                                        <span className="w-1 h-1 rounded-full bg-white/10" />
-                                                        <div className="flex items-center gap-1 text-blue-400">
-                                                            <Check className="w-2.5 h-2.5" />
-                                                            <span className="text-[8px] font-black uppercase tracking-tighter">{t('shared_in_chat_label')}</span>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                                <a
-                                                    href={`${getPublicApiUrl()}${mat.file_url.startsWith('/') ? '' : '/'}${mat.file_url}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/5 hover:bg-white/20 text-slate-400 hover:text-white transition-all"
-                                                >
-                                                    <Maximize2 className="w-3.5 h-3.5" />
-                                                </a>
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            )}
-                        </div>
+                        <span className="text-[10px] font-medium text-slate-500 tabular-nums">{t('messages_count', { count: chatMessages.length })}</span>
                     </div>
-                )}
 
-
-                {/* HISTORY tab */}
-                {activeTab === 'history' && (
-                    <div className="flex-1 p-3 space-y-2 overflow-y-auto no-scrollbar">
-                        <div className="text-xs font-bold text-slate-300 mb-2 px-1">{historySectionTitle}</div>
-                        {pastSessions.length === 0 ? (
-                            <div className="text-[10px] text-slate-500 italic px-1">{historyEmptyHint}</div>
+                    <div ref={chatScrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 min-h-0">
+                        {chatMessages.length === 0 ? (
+                            <div className="h-full min-h-[7rem] flex flex-col items-center justify-center gap-2 text-slate-500">
+                                <MessageSquare className="w-6 h-6 opacity-40" />
+                                <span className="text-[12px] font-medium">{t('no_messages_label')}</span>
+                            </div>
                         ) : (
-                            pastSessions.map((session: any) => (
-                                <div key={session.id} className="p-3 bg-white/5 border border-white/10 rounded-xl hover:bg-white/10 transition-all">
-                                    <div className="flex items-start justify-between mb-2">
-                                        <div className="flex-1 min-w-0 pr-2">
-                                            <h4 className="text-xs font-bold text-white truncate">{session.title || historyRecordingFallbackTitle}</h4>
-                                            <p className="text-[9px] text-slate-400 mt-0.5">{new Date(session.created_at).toLocaleDateString()}</p>
+                            chatMessages.map((m: any, i: number) => {
+                                const senderName = m.sender_name || m.sender || t('user_label');
+                                const senderAvatar = m.sender_avatar || m.avatar;
+
+                                return (
+                                    <div key={m.id || i} className="flex gap-2.5 animate-slide-up group/msg">
+                                        <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5 border border-white/5">
+                                            <img
+                                                src={getAvatarUrl(senderAvatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${senderName}&backgroundColor=1e293b`}
+                                                alt="avatar"
+                                                className="w-full h-full object-cover"
+                                                onError={(e: any) => { e.target.src = "https://api.dicebear.com/7.x/avataaars/svg?seed=User&backgroundColor=1e293b" }}
+                                            />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                                                <span className="text-[10px] font-black text-white/50 truncate uppercase tracking-tighter group-hover/msg:text-blue-400 transition-colors">{senderName}</span>
+                                            </div>
+                                            <p className="text-[11px] text-white/90 leading-snug break-words bg-white/5 px-2.5 py-1.5 rounded-xl rounded-tl-none border border-white/5 inline-block max-w-full">
+                                                {m.text || m.message || m.content}
+                                            </p>
                                         </div>
                                     </div>
-                                    {session.recording_url && (
-                                        <button
-                                            onClick={() => setPlaybackSession(session)}
-                                            className="w-full py-1.5 bg-blue-600/20 hover:bg-blue-600 border border-blue-500/30 text-blue-400 hover:text-white text-[10px] font-bold rounded-lg transition-all flex items-center justify-center gap-1.5"
-                                        >
-                                            <VideoIcon className="w-3 h-3" />
-                                            {t('view_recording_btn')}
-                                        </button>
-                                    )}
-                                    {!session.recording_url && (
-                                        <div className="text-[9px] text-slate-500 italic flex items-center gap-1">
-                                            <MonitorOff className="w-3 h-3" /> {t('no_recording_label')}
-                                        </div>
-                                    )}
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
-                )}
+
+                    <div className="p-3 bg-white/[0.03] backdrop-blur-sm border-t border-white/10 shrink-0">
+                        <form className="relative flex gap-2" onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
+                            <input
+                                type="text"
+                                placeholder={t('chat_input_placeholder')}
+                                value={chatInput}
+                                onChange={e => setChatInput(e.target.value)}
+                                aria-label={t('chat_input_label')}
+                                className="flex-1 bg-white/5 rounded-xl py-2 px-3.5 text-[11px] text-white placeholder-white/25 border border-white/10 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-medium"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!chatInput.trim()}
+                                aria-label={t('send_btn')}
+                                className="p-2 aspect-square rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-30 transition-all shadow-lg shadow-blue-500/20 active:scale-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+                            >
+                                <Send className="w-3.5 h-3.5" aria-hidden />
+                            </button>
+                        </form>
+                    </div>
+                </div>
             </div>
             ) : (
             <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
@@ -1284,75 +1289,6 @@ export function DashboardContent({
             </div>
                     )}
 
-            {/* In-meeting chat — faqat ustoz (dars) rejimida; advokat/psixologda alohida chatdan foydalaniladi */}
-            {showMentorClassroomTools && (
-                <div className="h-[310px] shrink-0 flex flex-col border-t border-white/10 bg-white/[0.03] backdrop-blur-md">
-                    <div className="px-4 py-2.5 flex items-center justify-between border-b border-white/5 bg-white/[0.04] backdrop-blur-sm">
-                        <div className="flex items-center gap-2">
-                            <MessageSquare className="w-3.5 h-3.5 text-blue-400" />
-                            <span className="text-[10px] font-black text-white uppercase tracking-widest">{t('in_meeting_chat_label')}</span>
-                        </div>
-                        <span className="text-[9px] font-bold text-slate-500 uppercase">{t('messages_count', { count: chatMessages.length })}</span>
-                    </div>
-
-                    <div ref={chatScrollRef} className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-3 min-h-0">
-                        {chatMessages.length === 0 ? (
-                            <div className="h-full flex flex-col items-center justify-center opacity-10 gap-2">
-                                <MessageSquare className="w-10 h-10" />
-                                <span className="text-xs uppercase font-black tracking-tighter">{t('no_messages_label')}</span>
-                            </div>
-                        ) : (
-                            chatMessages.map((m: any, i: number) => {
-                                const senderName = m.sender_name || m.sender || t('user_label');
-                                const senderAvatar = m.sender_avatar || m.avatar;
-
-                                return (
-                                    <div key={m.id || i} className="flex gap-2.5 animate-slide-up group/msg">
-                                        <div className="w-6 h-6 rounded-full overflow-hidden shrink-0 mt-0.5 border border-white/5">
-                                            <img
-                                                src={getAvatarUrl(senderAvatar) || `https://api.dicebear.com/7.x/avataaars/svg?seed=${senderName}&backgroundColor=1e293b`}
-                                                alt="avatar"
-                                                className="w-full h-full object-cover"
-                                                onError={(e: any) => { e.target.src = "https://api.dicebear.com/7.x/avataaars/svg?seed=User&backgroundColor=1e293b" }}
-                                            />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                                <span className="text-[10px] font-black text-white/50 truncate uppercase tracking-tighter group-hover/msg:text-blue-400 transition-colors">{senderName}</span>
-                                            </div>
-                                            <p className="text-[11px] text-white/90 leading-snug break-words bg-white/5 px-2.5 py-1.5 rounded-xl rounded-tl-none border border-white/5 inline-block max-w-full">
-                                                {m.text || m.message || m.content}
-                                            </p>
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
-                    </div>
-
-                    <div className="p-3 bg-white/[0.03] backdrop-blur-sm border-t border-white/10">
-                        <form className="relative flex gap-2" onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}>
-                            <input
-                                type="text"
-                                placeholder={t('chat_input_placeholder')}
-                                value={chatInput}
-                                onChange={e => setChatInput(e.target.value)}
-                                aria-label={t('chat_input_label')}
-                                className="flex-1 bg-white/5 rounded-xl py-2 px-3.5 text-[11px] text-white placeholder-white/25 border border-white/10 outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/30 transition-all font-medium"
-                            />
-                            <button
-                                type="submit"
-                                disabled={!chatInput.trim()}
-                                aria-label={t('send_btn')}
-                                className="p-2 aspect-square rounded-xl bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-30 transition-all shadow-lg shadow-blue-500/20 active:scale-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
-                            >
-                                <Send className="w-3.5 h-3.5" aria-hidden />
-                            </button>
-                        </form>
-                    </div>
-                </div>
-            )}
-
             {!showMentorClassroomTools && consultLeftPanelOpen ? (
                 <button
                     type="button"
@@ -1375,6 +1311,25 @@ export function DashboardContent({
                 {/* ═══ CENTER PANEL (VIDEO) ═══ */ }
     <div className="flex-1 flex flex-col relative z-10 overflow-hidden bg-slate-950/35 backdrop-blur-sm border-x border-white/[0.06] min-w-0">
         {showMentorClassroomTools ? (
+            <>
+            <button
+                type="button"
+                onClick={() => setMentorLeftPanelOpen((v) => !v)}
+                aria-expanded={mentorLeftPanelOpen}
+                aria-label={
+                    mentorLeftPanelOpen
+                        ? t('close_left_panel_label')
+                        : t('open_left_panel_label')
+                }
+                className="absolute left-0 top-1/2 z-[25] -translate-y-1/2 flex items-center justify-center w-8 h-24 rounded-r-xl bg-[#1a1d2e]/95 border border-white/10 border-l-0 text-white/90 hover:bg-[#232636] hover:text-white shadow-lg pointer-events-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/70 focus-visible:ring-offset-2 focus-visible:ring-offset-[#0d0f1a] transition-colors"
+                title={mentorLeftPanelOpen ? t('close_left_panel_title') : t('open_left_panel_title')}
+            >
+                {mentorLeftPanelOpen ? (
+                    <ChevronLeft className="w-5 h-5 shrink-0" aria-hidden />
+                ) : (
+                    <ChevronRight className="w-5 h-5 shrink-0" aria-hidden />
+                )}
+            </button>
             <button
                 type="button"
                 onClick={() => setMentorRightPanelOpen((v) => !v)}
@@ -1393,6 +1348,7 @@ export function DashboardContent({
                     <ChevronLeft className="w-5 h-5 shrink-0" aria-hidden />
                 )}
             </button>
+            </>
         ) : (
             <>
                 <button
@@ -1445,6 +1401,7 @@ export function DashboardContent({
         )}
 
         {/* Shared Video Frame Component */}
+        <div className="flex-1 min-h-0 w-full">
         <LiveVideoFrame
             isMentor={true}
             showClassroomLayout={showMentorClassroomTools}
@@ -1456,6 +1413,7 @@ export function DashboardContent({
             handsRaised={handsRaised}
             mentorMaterialsPanelOpen={mentorRightPanelOpen}
         />
+        </div>
 
         {/* Pastki boshqaruv: qatnashchilar / layout / sozlamalar chap panelda */}
         <div className="h-[76px] shrink-0 flex items-center gap-3 px-4 sm:px-6 mentor-glass-bar border-t border-white/10 relative z-10 w-full min-w-0">
@@ -1519,7 +1477,7 @@ export function DashboardContent({
                         </div>
                     </div>
 
-                    <div className="flex items-center justify-end shrink-0">
+                    <div className="flex items-center justify-end shrink-0 gap-2">
                         <button
                             type="button"
                             onClick={handleToggleRecording}
@@ -1533,6 +1491,21 @@ export function DashboardContent({
                                 <Circle className={`w-4 h-4 shrink-0 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
                             )}
                             <span className="hidden sm:inline">{isRecording ? t('recording_label') : t('record_label')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleStartLesson}
+                            disabled={isLessonStarted || !mentorRoomReady}
+                            className={`h-10 px-3 sm:px-4 rounded-xl text-white text-xs font-bold transition-all whitespace-nowrap ${isLessonStarted || !mentorRoomReady ? 'bg-blue-600/40 cursor-not-allowed border border-blue-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/20'}`}
+                        >
+                            {isLessonStarted ? panelLabels.primaryStartedLabel : panelLabels.primaryStartLabel}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleEndSession}
+                            className="h-10 px-3 sm:px-4 rounded-xl text-white text-xs font-bold transition-all whitespace-nowrap bg-red-500/90 hover:bg-red-600 border border-red-500/40"
+                        >
+                            {showMentorClassroomTools ? t('end_lesson_btn') : endSessionButtonLabel}
                         </button>
                     </div>
                 </>
@@ -1573,7 +1546,7 @@ export function DashboardContent({
                         </button>
                     </div>
 
-                    <div className="flex items-center justify-end flex-1 min-w-0">
+                    <div className="flex items-center justify-end flex-1 min-w-0 gap-2">
                         <button
                             type="button"
                             onClick={handleToggleRecording}
@@ -1587,6 +1560,21 @@ export function DashboardContent({
                                 <Circle className={`w-4 h-4 shrink-0 ${isRecording ? 'fill-current animate-pulse' : ''}`} />
                             )}
                             <span className="hidden sm:inline">{t('recording_label')}</span>
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleStartLesson}
+                            disabled={isLessonStarted || !mentorRoomReady}
+                            className={`h-10 px-3 rounded-xl text-white text-xs font-bold transition-all whitespace-nowrap ${isLessonStarted || !mentorRoomReady ? 'bg-blue-600/40 cursor-not-allowed border border-blue-500/20' : 'bg-blue-600 hover:bg-blue-500'}`}
+                        >
+                            {isLessonStarted ? panelLabels.primaryStartedLabel : panelLabels.primaryStartLabel}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleEndSession}
+                            className="h-10 px-3 rounded-xl text-white text-xs font-bold transition-all whitespace-nowrap bg-red-500/90 hover:bg-red-600 border border-red-500/40"
+                        >
+                            {showMentorClassroomTools ? t('end_lesson_btn') : endSessionButtonLabel}
                         </button>
                     </div>
                 </>
@@ -1618,49 +1606,29 @@ export function DashboardContent({
             </div>
 
             {/* Yuklash / Viktorina yaratish */}
-            <div className={`px-3 mb-3 grid gap-2 shrink-0 ${showMentorClassroomTools ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`px-3 mb-2 grid gap-1.5 shrink-0 ${showMentorClassroomTools ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
                 <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
                     disabled={isUploading || !mentorRoomReady}
-                    title={!mentorRoomReady ? t('select_group_first') : undefined}
-                    className={`group flex flex-col items-stretch gap-1 rounded-xl border px-2.5 py-2.5 text-left transition-all active:scale-[0.98] ${isUploading || !mentorRoomReady
-                            ? 'cursor-not-allowed border-white/5 bg-white/[0.03] opacity-50'
+                    title={!mentorRoomReady ? t('select_group_first') : (panelLabels.rightPanelUploadHint || t('material_upload_hint_mentor'))}
+                    className={`flex items-center justify-center gap-1.5 h-9 rounded-lg border px-2 text-[11px] font-bold transition-all ${isUploading || !mentorRoomReady
+                            ? 'cursor-not-allowed border-white/5 bg-white/[0.03] opacity-50 text-white/60'
                             : expertPanelMode === 'legal'
-                                ? 'border-amber-500/25 bg-gradient-to-br from-amber-500/10 to-white/[0.02] hover:border-amber-400/45 hover:from-amber-500/16 hover:shadow-[0_0_20px_rgba(245,158,11,0.08)]'
-                                : 'border-white/12 bg-gradient-to-br from-white/[0.07] to-white/[0.02] hover:border-sky-400/40 hover:from-sky-500/12 hover:shadow-[0_0_20px_rgba(56,189,248,0.08)]'
+                                ? 'border-amber-500/25 bg-amber-500/10 text-amber-50 hover:bg-amber-500/20'
+                                : 'border-sky-400/25 bg-sky-500/10 text-sky-50 hover:bg-sky-500/20'
                         }`}
                 >
-                    <span className="flex items-center gap-2 min-w-0">
-                        <span
-                            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg group-hover:opacity-95 ${expertPanelMode === 'legal'
-                                    ? 'bg-amber-500/25 text-amber-100 group-hover:bg-amber-500/35'
-                                    : 'bg-sky-500/20 text-sky-200 group-hover:bg-sky-500/30'
-                                }`}
-                        >
-                            {isUploading ? (
-                                <span
-                                    className={`h-3.5 w-3.5 border-2 rounded-full animate-spin ${expertPanelMode === 'legal'
-                                            ? 'border-amber-300/40 border-t-amber-100'
-                                            : 'border-sky-300/40 border-t-sky-200'
-                                        }`}
-                                />
-                            ) : (
-                                <Upload className="w-4 h-4" />
-                            )}
-                        </span>
-                        <span className="text-[11px] font-bold text-white leading-tight truncate">
-                            {isUploading
-                                ? t('uploading_label')
-                                : panelLabels.rightPanelUploadLabel || t('upload_material_label')}
-                        </span>
-                    </span>
-                    <span className="text-[9px] text-slate-500 leading-snug pl-10">
-                        {panelLabels.rightPanelUploadHint ||
-                            (showMentorClassroomTools
-                                ? t('material_upload_hint_mentor')
-                                : t('material_upload_hint_consult'))}
+                    {isUploading ? (
+                        <span className="h-3 w-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                    ) : (
+                        <Upload className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">
+                        {isUploading
+                            ? t('uploading_label')
+                            : panelLabels.rightPanelUploadLabel || t('upload_material_label')}
                     </span>
                 </button>
                 {showMentorClassroomTools && (
@@ -1668,19 +1636,14 @@ export function DashboardContent({
                         type="button"
                         onClick={() => mentorRoomReady && setIsCreatingQuiz(true)}
                         disabled={!mentorRoomReady}
-                        title={!mentorRoomReady ? t('select_group_first') : undefined}
-                        className={`group flex flex-col items-stretch gap-1 rounded-xl border px-2.5 py-2.5 text-left transition-all active:scale-[0.98] ${!mentorRoomReady
-                                ? 'cursor-not-allowed border-white/5 bg-white/[0.03] opacity-50'
-                                : 'border-white/12 bg-gradient-to-br from-violet-500/10 to-white/[0.02] hover:border-violet-400/40 hover:from-violet-500/18 hover:shadow-[0_0_20px_rgba(167,139,250,0.1)]'
+                        title={!mentorRoomReady ? t('select_group_first') : t('quiz_save_hint')}
+                        className={`flex items-center justify-center gap-1.5 h-9 rounded-lg border px-2 text-[11px] font-bold transition-all ${!mentorRoomReady
+                                ? 'cursor-not-allowed border-white/5 bg-white/[0.03] opacity-50 text-white/60'
+                                : 'border-violet-400/25 bg-violet-500/10 text-violet-50 hover:bg-violet-500/20'
                             }`}
                     >
-                        <span className="flex items-center gap-2 min-w-0">
-                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-500/25 text-violet-100 group-hover:bg-violet-500/35">
-                                <ClipboardList className="w-4 h-4" />
-                            </span>
-                            <span className="text-[11px] font-bold text-white leading-tight truncate">{t('create_quiz_label')}</span>
-                        </span>
-                        <span className="text-[9px] text-slate-500 leading-snug pl-10">{t('quiz_save_hint')}</span>
+                        <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{t('create_quiz_label')}</span>
                     </button>
                 )}
             </div>
@@ -1782,15 +1745,25 @@ export function DashboardContent({
                         <div className="text-xs text-slate-500 italic py-2">{t('no_materials_label')}</div>
                     ) : (
                         materials.map((mat: any) => {
-                            const isVideo = mat.file_type?.includes('video');
+                            const kind = describeDocumentKind(mat.title, mat.file_type);
+                            const toneClass =
+                                kind.tone === 'pdf'
+                                    ? 'bg-red-500/20 text-red-200'
+                                    : kind.tone === 'doc'
+                                        ? 'bg-sky-500/20 text-sky-200'
+                                        : kind.tone === 'sheet'
+                                            ? 'bg-emerald-500/20 text-emerald-200'
+                                            : kind.tone === 'archive'
+                                                ? 'bg-amber-500/20 text-amber-200'
+                                                : kind.tone === 'video'
+                                                    ? 'bg-blue-500/20 text-blue-200'
+                                                    : 'bg-white/10 text-slate-300';
+                            const href = `${getPublicApiUrl()}${String(mat.file_url || '').startsWith('/') ? '' : '/'}${mat.file_url || ''}`;
                             return (
-                                <a href={`${getPublicApiUrl()}${mat.file_url.startsWith('/') ? '' : '/'}${mat.file_url}`} target="_blank" rel="noreferrer" key={mat.id} className="w-full flex items-center gap-2.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left group">
-
-                                    {isVideo ? (
-                                        <div className="w-3.5 h-3.5 rounded bg-blue-500 flex items-center justify-center shrink-0"><VideoIcon className="w-2 h-2 text-white" /></div>
-                                    ) : (
-                                        <FileText className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                    )}
+                                <a href={href} target="_blank" rel="noreferrer" key={mat.id} className="w-full flex items-center gap-2.5 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors text-left group">
+                                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[9px] font-bold tracking-wide ${toneClass}`}>
+                                        {kind.label}
+                                    </span>
                                     <span className="text-xs font-medium text-slate-300 group-hover:text-white flex-1 truncate">{mat.title}</span>
                                     <ExternalLink className="w-3.5 h-3.5 text-slate-500 opacity-60 group-hover:opacity-100 shrink-0" aria-hidden />
                                 </a>
@@ -1845,26 +1818,62 @@ export function DashboardContent({
                 <div className="px-3 mb-2 shrink-0">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-slate-400">{t('quick_poll_label')}</span>
+                        <button
+                            type="button"
+                            disabled={!mentorRoomReady || !socket}
+                            onClick={() => setQuickPollComposerOpen((v) => !v)}
+                            title={t('create_quick_poll')}
+                            className="w-6 h-6 flex items-center justify-center rounded-md bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 disabled:opacity-40"
+                        >
+                            <Plus className="w-3.5 h-3.5" />
+                        </button>
                     </div>
+                    {quickPollComposerOpen ? (
+                        <form
+                            className="mb-2 space-y-1.5"
+                            onSubmit={(e) => {
+                                e.preventDefault();
+                                const q = quickPollQuestion.trim();
+                                if (!q) return;
+                                handleQuickPoll(q);
+                                setQuickPollQuestion('');
+                                setQuickPollComposerOpen(false);
+                            }}
+                        >
+                            <textarea
+                                value={quickPollQuestion}
+                                onChange={(e) => setQuickPollQuestion(e.target.value)}
+                                placeholder={t('quick_poll_question_placeholder')}
+                                rows={2}
+                                className="w-full rounded-lg border border-white/10 bg-white/5 px-2.5 py-2 text-[11px] text-white placeholder:text-slate-500 focus:outline-none focus:border-amber-400/40 resize-none"
+                            />
+                            <button
+                                type="submit"
+                                disabled={!quickPollQuestion.trim() || !mentorRoomReady || !socket}
+                                className="w-full h-8 rounded-lg bg-amber-500/90 hover:bg-amber-500 text-[11px] font-bold text-white disabled:opacity-40"
+                            >
+                                {t('send_btn')}
+                            </button>
+                        </form>
+                    ) : null}
                     <button
                         type="button"
-                        onClick={handleQuickPoll}
+                        onClick={() => handleQuickPoll(t('is_topic_clear_label'))}
                         disabled={!mentorRoomReady || !socket}
-                        className="w-full flex items-center gap-2.5 py-2.5 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors text-left group disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="w-full flex items-center gap-2.5 py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20 transition-colors text-left group disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         <HelpCircle className="w-4 h-4 text-amber-400 shrink-0" />
                         <span className="text-xs font-medium text-slate-200 group-hover:text-white">{t('is_topic_clear_label')}</span>
                     </button>
-                    <p className="text-[10px] text-slate-500 mt-1.5 px-0.5">{t('quick_poll_hint')}</p>
                 </div>
             )}
 
         </div>
 
-        {/* Pastki blok: sessiya qaydlari + dars tugmalari (har doim pastda) */}
-        <div className="relative shrink-0 border-t border-white/10 bg-[#0a0c12]/90 backdrop-blur-md px-3 pt-3 pb-3 space-y-3">
-            <div className="flex flex-col">
-                <div className="flex items-center justify-between mb-2">
+        {/* Pastki blok: sessiya qaydlari */}
+        <div className="relative flex-1 min-h-[10rem] flex flex-col border-t border-white/10 bg-[#0a0c12]/90 backdrop-blur-md px-3 pt-3 pb-3">
+            <div className="flex flex-col flex-1 min-h-0">
+                <div className="flex items-center justify-between mb-2 shrink-0">
                     <span className="text-xs font-bold text-slate-400">{t('session_notes_label')}</span>
                 </div>
                 <textarea
@@ -1872,42 +1881,25 @@ export function DashboardContent({
                     onChange={(e) => setSessionNotes(e.target.value)}
                     placeholder={t('session_notes_placeholder')}
                     disabled={!mentorRoomReady || savingNote}
-                    className="w-full h-24 bg-white/5 border border-white/5 rounded-xl p-3 text-xs text-white resize-none focus:outline-none focus:border-white/20 transition-colors placeholder:text-slate-600 disabled:opacity-50"
+                    className="w-full flex-1 min-h-[8rem] bg-white/5 border border-white/5 rounded-xl p-3 text-xs text-white resize-none focus:outline-none focus:border-white/20 transition-colors placeholder:text-slate-600 disabled:opacity-50"
                 />
                 <button
                     type="button"
                     onClick={handleSaveNote}
                     disabled={!mentorRoomReady || savingNote || !sessionNotes.trim()}
-                    className="w-full mt-2 py-2.5 bg-white/10 hover:bg-white/15 disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all border border-white/10"
+                    className="w-full mt-2 py-2.5 bg-white/10 hover:bg-white/15 disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl transition-all border border-white/10 shrink-0"
                 >
                     {savingNote ? t('saving_label') : t('save_note_btn')}
                 </button>
                 {!mentorRoomReady ? (
-                    <p className="text-[9px] text-slate-500 mt-1.5">{t('select_group_note_hint')}</p>
+                    <p className="text-[9px] text-slate-500 mt-1.5 shrink-0">{t('select_group_note_hint')}</p>
                 ) : null}
-            </div>
-
-            <div className="flex items-stretch gap-2">
-                <button
-                    type="button"
-                    onClick={handleStartLesson}
-                    disabled={isLessonStarted}
-                    className={`flex-1 min-w-0 flex items-center justify-center gap-2 py-3 rounded-xl text-white text-xs sm:text-sm font-bold shadow-lg transition-all ${isLessonStarted ? 'bg-blue-600/40 cursor-not-allowed border border-blue-500/20' : 'bg-blue-600 hover:bg-blue-500 shadow-blue-600/20 active:scale-95'}`}
-                >
-                    {isLessonStarted ? panelLabels.primaryStartedLabel : panelLabels.primaryStartLabel}
-                </button>
-                <button
-                    type="button"
-                    onClick={handleEndSession}
-                    className="flex-1 min-w-0 flex items-center justify-center gap-2 py-3 rounded-xl text-white text-xs sm:text-sm font-bold shadow-lg transition-all bg-red-500/90 hover:bg-red-600 border border-red-500/40 active:scale-95"
-                >
-                    {showMentorClassroomTools ? t('end_lesson_btn') : endSessionButtonLabel}
-                </button>
             </div>
         </div>
     </div>
 
 </div>
+            </div>
             {showMentorClassroomTools && (
                 <DashboardQuizModal
                     t={t}
@@ -2023,6 +2015,47 @@ export function DashboardContent({
                                 className="w-full py-2.5 rounded-xl border border-amber-500/40 bg-amber-500/15 hover:bg-amber-500/25 text-xs font-bold text-amber-100 disabled:opacity-50"
                             >
                                 {t('request_payment')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            ) : null}
+
+            {showStartLessonModal ? (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4">
+                    <div className="w-full max-w-md rounded-2xl border border-white/10 bg-[#12151e] p-4 shadow-2xl space-y-3">
+                        <h3 className="text-sm font-bold text-white">{lessonPickModalTitle}</h3>
+                        <p className="text-[11px] text-slate-400">{lessonPickModalHint}</p>
+                        <select
+                            value={lessonPickGroupId}
+                            onChange={(e) => setLessonPickGroupId(e.target.value)}
+                            className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-medium text-white focus:outline-none focus:ring-2 focus:ring-blue-500/40"
+                        >
+                            <option value="">{t('select_group_label')}</option>
+                            {groups.map((g: any) => (
+                                <option key={g.id || g.chatId} value={g.id || g.chatId}>
+                                    {g.name || t('group_label')}
+                                </option>
+                            ))}
+                        </select>
+                        <div className="flex gap-2 pt-1">
+                            <button
+                                type="button"
+                                onClick={() => setShowStartLessonModal(false)}
+                                className="flex-1 py-2.5 rounded-xl border border-white/10 bg-white/5 text-xs font-bold text-white/80 hover:bg-white/10"
+                            >
+                                {t('cancel')}
+                            </button>
+                            <button
+                                type="button"
+                                disabled={!lessonPickGroupId}
+                                onClick={() => {
+                                    if (!lessonPickGroupId) return;
+                                    void executeLessonStart(lessonPickGroupId);
+                                }}
+                                className="flex-1 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-xs font-bold text-white disabled:opacity-50"
+                            >
+                                {panelLabels.primaryStartLabel}
                             </button>
                         </div>
                     </div>

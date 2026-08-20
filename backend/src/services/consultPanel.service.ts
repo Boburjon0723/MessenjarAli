@@ -245,7 +245,8 @@ export async function sendLessonStartNotify(params: {
     await expirePreviousPanelInvites(chatId, undefined, params.io);
 
     const startMeta = {
-        sessionId,
+        sessionId: chatId,
+        chatId,
         sessionStyle: params.sessionStyle ?? 'mentor',
         invite_token: newInviteToken(),
         invite_status: 'active',
