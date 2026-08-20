@@ -633,20 +633,41 @@ export function ChatDetailScreen({ route, navigation }: Props) {
     const target = callerId || (peerInfo?.id ? String(peerInfo.id) : "");
     if (socket && target) {
         socket.emit('accept_call', { to: target });
-        setCallStatus('connected');
-        
-        try {
-           const username = useAuthStore.getState().user?.name || 'Mijoz';
-           const data = await getLiveKitTokenRequest(chatId, username);
-           if (data && data.token) {
-              setLkToken(data.token);
-              setLkWsUrl(data.wsUrl);
-              console.log("[LiveKit] Token received:", data.token, "WS:", data.wsUrl);
-           }
-        } catch (e) {
-           console.error("[LiveKit] Token fetch error:", e);
-           Alert.alert("Xatolik", "Sessiyaga ulanishda muammo yuz berdi");
-        }
+    }
+    await joinLiveSession(chatId);
+  };
+
+  /** Dars / konsultatsiya xonasiga ulanish — 1:1 qo‘ng‘iroq talab qilmaydi */
+  const joinLiveSession = async (roomId?: string | null) => {
+    const sessionId = String(roomId || chatId || "").trim();
+    if (!sessionId) {
+      Alert.alert("Xatolik", "Sessiya ID topilmadi");
+      return;
+    }
+    setCallType('video');
+    setCallStatus('connected');
+    setCallVisible(true);
+
+    const socket = getSocket();
+    if (socket) {
+      socket.emit('join_room', sessionId);
+      socket.emit('session_join', { sessionId });
+    }
+
+    try {
+      const username = useAuthStore.getState().user?.name || 'Talaba';
+      const data = await getLiveKitTokenRequest(sessionId, username);
+      if (data?.token) {
+        setLkToken(data.token);
+        setLkWsUrl(data.wsUrl);
+        console.log("[LiveKit] Session token OK:", sessionId);
+      } else {
+        throw new Error("Token yo'q");
+      }
+    } catch (e) {
+      console.error("[LiveKit] Session join error:", e);
+      Alert.alert("Xatolik", "Sessiyaga ulanishda muammo yuz berdi");
+      setCallVisible(false);
     }
   };
 
@@ -917,10 +938,11 @@ export function ChatDetailScreen({ route, navigation }: Props) {
              <Pressable 
                style={[styles.payNowBtn, { marginTop: 12, backgroundColor: '#10b981' }]}
                onPress={() => {
-                  setCallType('video');
-                  setCallStatus('connected');
-                  setCallVisible(true);
-                  acceptCall();
+                  const sid =
+                    item.metadata?.sessionId != null
+                      ? String(item.metadata.sessionId)
+                      : chatId;
+                  void joinLiveSession(sid);
                }}
              >
                 <VideoIcon color="#fff" size={18} />
@@ -930,14 +952,22 @@ export function ChatDetailScreen({ route, navigation }: Props) {
         )}
 
 
-        {(item.messageType === 'consult_panel_invite' || item.type === 'consult_panel_invite' || item.type === 'lesson_start') && item.metadata?.kind !== 'payment_request' && item.metadata?.kind !== 'panel_open' && !isExpert && (
+        {(item.messageType === 'consult_panel_invite' ||
+          item.messageType === 'lesson_start' ||
+          item.type === 'consult_panel_invite' ||
+          item.type === 'lesson_start') &&
+          item.metadata?.kind !== 'payment_request' &&
+          item.metadata?.kind !== 'panel_open' &&
+          item.metadata?.kind !== 'listing_payment_request' &&
+          !isExpert && (
            <Pressable 
              style={styles.joinSessionBtn}
              onPress={() => {
-                setCallType('video');
-                setCallStatus('connected');
-                setCallVisible(true);
-                acceptCall();
+                const sid =
+                  item.metadata?.sessionId != null
+                    ? String(item.metadata.sessionId)
+                    : chatId;
+                void joinLiveSession(sid);
              }}
            >
              <VideoIcon color="#fff" size={16} />
