@@ -56,23 +56,58 @@ export function promptMobileNotificationPermissionEarly(): void {
   }, 900);
 }
 
-function playInlineBeep(): void {
+let sharedAudioCtx: AudioContext | null = null;
+
+function getAlertAudioCtx(): AudioContext | null {
   try {
     const Ctx =
       window.AudioContext ||
       (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!Ctx) return;
-    const ctx = new Ctx();
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    oscillator.connect(gain);
-    gain.connect(ctx.destination);
-    oscillator.frequency.value = 880;
-    oscillator.type = "sine";
-    gain.gain.setValueAtTime(0.12, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.28);
-    oscillator.start(ctx.currentTime);
-    oscillator.stop(ctx.currentTime + 0.28);
+    if (!Ctx) return null;
+    if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
+      sharedAudioCtx = new Ctx();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      void sharedAudioCtx.resume();
+    }
+    return sharedAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Telegram Web uslubidagi yumshoq "pop" — qisqa, past, ikki tonli.
+ * Eski 880 Hz uzoq bip o‘rniga.
+ */
+function playInlineBeep(): void {
+  try {
+    const ctx = getAlertAudioCtx();
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.0001, t0);
+    master.gain.exponentialRampToValueAtTime(0.07, t0 + 0.012);
+    master.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    master.connect(ctx.destination);
+
+    const tone = (freq: number, start: number, dur: number, peak: number) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t0 + start);
+      g.gain.setValueAtTime(0.0001, t0 + start);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + start + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + start + dur);
+      osc.connect(g);
+      g.connect(master);
+      osc.start(t0 + start);
+      osc.stop(t0 + start + dur + 0.02);
+    };
+
+    // Yumshoq juft ovoz (Telegramga yaqin "du-dip")
+    tone(784, 0, 0.07, 0.55); // G5
+    tone(1046.5, 0.055, 0.09, 0.4); // C6
   } catch {
     /* ignore */
   }
@@ -80,9 +115,10 @@ function playInlineBeep(): void {
 
 /**
  * Yangi chat xabari uchun bildirishnoma:
- * - Mobil: faqat tizim bildirishnomasi (`silent: false` → foydalanuvchi tanlagan bildirishnoma ovozi) + vibratsiya;
- *   qo‘shimcha Web Audio bip yo‘q (tizim ovozi bilan ikkilanmaydi).
- * - Ruxsat yo‘q bo‘lsa: engil ichki bip.
+ * - Mobil: tizim bildirishnomasi ovozi + vibratsiya (ikkilanmasin).
+ * - Desktop: yumshoq ichki ovoz (Telegram uslubi); tizim banner `silent`
+ *   — Windows/Chrome default "asabga tegadigan" ovoz o‘rniga.
+ * - Ruxsat yo‘q: faqat yumshoq ichki ovoz.
  */
 export function alertIncomingChatMessage(opts: { title: string; body: string; tag: string }): void {
   const canNotify = typeof Notification !== "undefined" && Notification.permission === "granted";
@@ -94,7 +130,8 @@ export function alertIncomingChatMessage(opts: { title: string; body: string; ta
         body: opts.body,
         icon: "/icon.png",
         tag: opts.tag,
-        silent: false,
+        // Desktopda tizim ovozini o‘chirib, yumshoq ichki tonni qo‘yamiz
+        silent: !mobile,
       });
     } catch {
       /* Safari / xavfsizlik */
@@ -107,6 +144,7 @@ export function alertIncomingChatMessage(opts: { title: string; body: string; ta
       }
       return;
     }
+    playInlineBeep();
     return;
   }
 
