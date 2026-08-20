@@ -15,6 +15,7 @@ import {
     isExpertListingChat,
     isApplicationRejected,
     isListingExpertSide,
+    isListingMarketplacePrivateChat,
 } from '@/lib/listing-chat';
 import { isListingChat, isMessagingUnlocked } from '@/lib/chat-consent';
 import ListingDealBar from './ListingDealBar';
@@ -1314,7 +1315,13 @@ export default function ChatWindow({
                 };
                 const meIdForE2e = meId;
                 const peerId = getPrivateChatPeerUserId(chat);
-                if (meIdForE2e && peerId) {
+                // Murojaat/e'lon chatlari ochiq matn — E2E faqat oddiy shaxsiy suhbatlarda
+                const allowE2e =
+                    !!meIdForE2e &&
+                    !!peerId &&
+                    !isListingMarketplacePrivateChat(chat) &&
+                    !isExpertListingChat(chat);
+                if (allowE2e) {
                     try {
                         const enc = await encryptTextForPeer(String(meIdForE2e), String(peerId), inputContent);
                         if (enc) {
