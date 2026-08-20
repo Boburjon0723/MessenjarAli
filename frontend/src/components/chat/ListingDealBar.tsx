@@ -99,7 +99,7 @@ export default function ListingDealBar({
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || t('server_error'));
       setDeal(data.deal);
-      setMsg(`${t('waiting_client_payment').replace('{amount}', String(parsed))}`);
+      setMsg(t('listing_payment_sms_sent') as string);
     } catch (e: any) {
       setMsg(e?.message || t('server_error'));
     } finally {
@@ -254,7 +254,7 @@ export default function ListingDealBar({
                   onClick={requestPay}
                   className="inline-flex shrink-0 px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold disabled:opacity-50"
                 >
-                  {t('request_payment')}
+                  {t('send_payment_sms')}
                 </button>
               </div>
             </>
@@ -274,19 +274,9 @@ export default function ListingDealBar({
       )}
 
       {role === 'client' && deal?.status === 'pending_payment' && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-white/80">
-            {t('waiting_client_payment').replace('{amount}', String(amt))}
-          </span>
-          <button
-            type="button"
-            disabled={loading}
-            onClick={pay}
-            className="w-full sm:w-auto px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-900 text-xs font-bold disabled:opacity-50"
-          >
-            {t('pay_now')}
-          </button>
-        </div>
+        <p className="text-[11px] text-white/60 leading-snug">
+          {t('listing_pay_via_chat_msg')}
+        </p>
       )}
 
       {/* NEW: Escrow Held Logic */}

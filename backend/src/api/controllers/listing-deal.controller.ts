@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { pool } from '../../config/database';
 import { TokenService } from '../../services/token.service';
+import { MessageModel } from '../../models/postgres/Message';
+import { UserModel } from '../../models/postgres/User';
 
 function parseChatMeta(raw: unknown): Record<string, any> {
     if (!raw) return {};
@@ -103,14 +105,53 @@ export const requestListingPayment = async (req: Request, res: Response) => {
              RETURNING *`,
             [chatId, ctx.expertId, ctx.clientId, amt, String(ctx.meta.snapshot?.currency || 'MALI')]
         );
+        const deal = ins.rows[0];
+
+        const expert = await UserModel.findById(ctx.expertId);
+        const expertName =
+            [expert?.name, expert?.surname].filter(Boolean).join(' ').trim() || 'Mutaxassis';
+        const content = `💳 **${expertName}** xizmat uchun **${amt} MALI** to‘lov so‘radi. To‘lovdan so‘ng mablag‘ escrowda saqlanadi.`;
+        const meta = {
+            kind: 'listing_payment_request',
+            dealId: String(deal.id),
+            serviceAmountMali: amt,
+            invite_status: 'active',
+            sessionStyle: 'consult',
+        };
+        const newMessage = await MessageModel.create(
+            chatId,
+            ctx.expertId,
+            content,
+            'listing_payment_request',
+            meta
+        );
+        const payload = {
+            id: newMessage.id,
+            chat_id: chatId,
+            roomId: chatId,
+            sender_id: ctx.expertId,
+            sender_name: expertName,
+            sender_avatar: expert?.avatar_url || null,
+            content,
+            type: 'listing_payment_request',
+            metadata: meta,
+            created_at: new Date().toISOString(),
+        };
 
         const io = req.app.get('io');
         if (io) {
+            io.to(chatId).emit('receive_message', payload);
+            io.to(ctx.clientId).emit('receive_message', payload);
+            io.to(ctx.clientId).emit('new_notification', {
+                type: 'listing_payment_request',
+                chatId,
+                message: payload,
+            });
             io.to(ctx.clientId).emit('listing_deal_updated', { chatId });
             io.to(ctx.expertId).emit('listing_deal_updated', { chatId });
         }
 
-        res.status(201).json({ deal: ins.rows[0] });
+        res.status(201).json({ deal, messageId: String(newMessage.id) });
     } catch (e: any) {
         console.error(e);
         res.status(500).json({ message: e.message || 'Server error' });
@@ -143,6 +184,16 @@ export const payListingDeal = async (req: Request, res: Response) => {
         await pool.query(
             `UPDATE listing_service_deals SET status = 'escrow_held', transaction_id = $1, updated_at = NOW() WHERE id = $2`,
             [tx.id, deal.id]
+        );
+
+        // Chatdagi to'lov SMS tugmasini "paid" qilish
+        await pool.query(
+            `UPDATE messages
+             SET metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object('invite_status', 'paid')
+             WHERE chat_id = $1::uuid
+               AND type = 'listing_payment_request'
+               AND metadata->>'dealId' = $2`,
+            [deal.chat_id, String(deal.id)]
         );
 
         const io = req.app.get('io');

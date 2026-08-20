@@ -385,15 +385,21 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         messageType === 'lesson_start' ||
         messageType === 'consult_panel_invite' ||
         messageType === 'group_join_invite' ||
+        messageType === 'listing_payment_request' ||
         messageType === 'phone_call';
 
     const isMentorStyle =
         String(fileMeta.sessionStyle ?? '') === 'mentor' ||
         messageType === 'group_join_invite';
 
+    const isListingPayRequest =
+        messageType === 'listing_payment_request' ||
+        inviteKind === 'listing_payment_request';
+
     if (isService) {
         const isConsult =
             messageType === 'consult_panel_invite' ||
+            messageType === 'listing_payment_request' ||
             String(fileMeta.sessionStyle ?? '') === 'consult' ||
             /\bkonsultatsiy/i.test(message.text || '');
 
@@ -459,6 +465,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                 {messageType === 'consult_panel_invite' &&
                     (inviteKind === 'payment_request' || !!fileMeta.serviceAmountMali) &&
                     inviteKind !== 'panel_open' &&
+                    inviteKind !== 'listing_payment_request' &&
                     !isOwn &&
                     !isMentorStyle ? (
                         <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-blue-500/30 bg-blue-950/40 p-3 shadow-lg">
@@ -520,6 +527,63 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                             </button>
                         </div>
                     ) : null}
+                {isListingPayRequest && !isOwn && (
+                    <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-blue-500/30 bg-blue-950/40 p-3 shadow-lg">
+                        <p className="text-[13px] font-semibold text-blue-200 mb-2">
+                            {t('consult_payment_title')}
+                        </p>
+                        <p className="text-[15px] font-bold text-white tabular-nums mb-3">
+                            {Number(fileMeta.serviceAmountMali) || 0} MALI
+                        </p>
+                        <button
+                            type="button"
+                            disabled={payLoading || fileMeta.invite_status === 'paid'}
+                            onClick={async () => {
+                                const dealId = fileMeta.dealId != null ? String(fileMeta.dealId) : '';
+                                const amount = Number(fileMeta.serviceAmountMali) || 0;
+                                if (!dealId || amount <= 0) {
+                                    showError(t('server_error') as string);
+                                    return;
+                                }
+                                const ok = await confirm({
+                                    title: t('consult_payment_title') as any,
+                                    description: `${amount} MALI`,
+                                    confirmLabel: t('consult_pay_now_btn') as any,
+                                });
+                                if (!ok) return;
+                                setPayLoading(true);
+                                try {
+                                    const res = await apiFetch('/api/listing-deals/pay', {
+                                        method: 'POST',
+                                        body: JSON.stringify({ dealId }),
+                                    });
+                                    const data = await res.json().catch(() => ({}));
+                                    if (!res.ok) {
+                                        throw new Error(
+                                            typeof data?.message === 'string'
+                                                ? data.message
+                                                : t('server_error')
+                                        );
+                                    }
+                                    showSuccess(t('payment_phase_completed') as string);
+                                } catch (e) {
+                                    showError(
+                                        e instanceof Error ? e.message : (t('server_error') as string)
+                                    );
+                                } finally {
+                                    setPayLoading(false);
+                                }
+                            }}
+                            className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-[13px] font-semibold disabled:opacity-50"
+                        >
+                            {payLoading
+                                ? '...'
+                                : fileMeta.invite_status === 'paid'
+                                  ? (t('payment_phase_completed') as string)
+                                  : (t('consult_pay_now_btn') as string)}
+                        </button>
+                    </div>
+                )}
                 {messageType === 'group_join_invite' && !isOwn && (
                     <div className="mt-2 w-full max-w-[280px] rounded-2xl border border-[#8774e1]/30 bg-[#8774e1]/10 p-3 shadow-lg">
                         <p className="text-[13px] font-semibold text-[#c4b5fd] mb-1">

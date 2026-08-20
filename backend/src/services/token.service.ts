@@ -399,9 +399,14 @@ export class TokenService {
             throw new Error('Bu ustozga allaqachon faol obuna mavjud');
         }
 
+        // Faqat mentor obuna escrowlari — e'lon/listing escrow bloklamasligi kerak
         const pendingRes = await pool.query(
             `SELECT id FROM transactions
-             WHERE sender_id = $1 AND receiver_id = $2 AND type = 'booking' AND status = 'pending'`,
+             WHERE sender_id = $1 AND receiver_id = $2 AND type = 'booking' AND status = 'pending'
+               AND (
+                 note ILIKE 'Mentor 30 kun%'
+                 OR COALESCE(metadata->>'kind', '') = 'mentor_subscription'
+               )`,
             [studentId, mentorId]
         );
         if (pendingRes.rows.length > 0) {
@@ -433,7 +438,8 @@ export class TokenService {
                 net_amount: amount,
                 type: 'booking',
                 status: 'pending',
-                note: 'Mentor 30 kun obuna (escrow — 30 kundan keyin ustoz hisobiga)'
+                note: 'Mentor 30 kun obuna (escrow — 30 kundan keyin ustoz hisobiga)',
+                metadata: { kind: 'mentor_subscription' },
             });
 
             // Production bazada UNIQUE(student_id, mentor_id) bo'lmasa ham ishlashi uchun
