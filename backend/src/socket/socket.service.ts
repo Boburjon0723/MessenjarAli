@@ -289,33 +289,38 @@ export class SocketService {
                     }
 
                     if (chatRow.type === 'private') {
-                        const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [roomId]);
-                        const otherParticipant = participants.rows.find(
-                            (p: any) => String(p.user_id) !== String(authSocket.user.id)
-                        );
-                        if (!otherParticipant) {
-                            return authSocket.emit('error', {
-                                message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
-                                peerUnavailable: true,
-                            });
-                        }
-                        const peerOk = await pool.query(
-                            `SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_active, true) = true LIMIT 1`,
-                            [otherParticipant.user_id]
-                        );
-                        if ((peerOk.rowCount ?? 0) === 0) {
-                            return authSocket.emit('error', {
-                                message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
-                                peerUnavailable: true,
-                            });
-                        }
-                        const isBlocked = await UserModel.isBlocked(authSocket.user.id, otherParticipant.user_id);
-                        if (isBlocked) {
-                            return authSocket.emit('error', { message: 'Xabar yuborish imkonsiz: Foydalanuvchi bloklangan' });
-                        }
                         const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [roomId]);
                         const { parseChatMetadata, isListingMessagingUnlocked } = await import('../services/chatConsent.service');
                         const chatMeta = parseChatMetadata(metaRow.rows[0]?.metadata);
+                        const isSaved = chatMeta?.kind === 'saved_messages';
+
+                        if (!isSaved) {
+                            const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [roomId]);
+                            const otherParticipant = participants.rows.find(
+                                (p: any) => String(p.user_id) !== String(authSocket.user.id)
+                            );
+                            if (!otherParticipant) {
+                                return authSocket.emit('error', {
+                                    message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
+                                    peerUnavailable: true,
+                                });
+                            }
+                            const peerOk = await pool.query(
+                                `SELECT 1 FROM users WHERE id = $1 AND COALESCE(is_active, true) = true LIMIT 1`,
+                                [otherParticipant.user_id]
+                            );
+                            if ((peerOk.rowCount ?? 0) === 0) {
+                                return authSocket.emit('error', {
+                                    message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
+                                    peerUnavailable: true,
+                                });
+                            }
+                            const isBlocked = await UserModel.isBlocked(authSocket.user.id, otherParticipant.user_id);
+                            if (isBlocked) {
+                                return authSocket.emit('error', { message: 'Xabar yuborish imkonsiz: Foydalanuvchi bloklangan' });
+                            }
+                        }
+
                         if (!isListingMessagingUnlocked(chatMeta)) {
                             return authSocket.emit('error', {
                                 message: 'Murojaat qabul qilinguncha xabar yuborib bo\'lmaydi',
@@ -401,7 +406,29 @@ export class SocketService {
                         if (offlineRecipients.length > 0) {
                             try {
                                 const pushSvc = await import('../services/push.service');
-                                const preview = typeof content === 'string' ? content : 'Yangi xabar';
+                                const msgType = String(type || savedMessage.type || 'text').toLowerCase();
+                                let preview =
+                                    typeof content === 'string' ? content : 'Yangi xabar';
+                                if (isE2eEnvelope(savedMessage.metadata)) {
+                                    preview = '🔒 Shifrlangan xabar';
+                                } else if (msgType === 'video') preview = '🎬 Video';
+                                else if (msgType === 'audio' || msgType === 'song' || msgType === 'music') {
+                                    preview = '🎵 Musiqa';
+                                } else if (msgType === 'voice') preview = '🎤 Ovozli xabar';
+                                else if (msgType === 'image' || msgType === 'photo') preview = '📷 Rasm';
+                                else if (msgType === 'sticker') preview = '✨ Stiker';
+                                else if (msgType === 'file' || msgType === 'document') preview = '📁 Fayl';
+                                else if (typeof content === 'string' && /https?:\/\//i.test(content)) {
+                                    const u = content;
+                                    if (/\.(mp3|flac|wav|m4a|aac)(\?|#|$)/i.test(u)) preview = '🎵 Musiqa';
+                                    else if (/\.(mp4|webm|mov|mkv)(\?|#|$)/i.test(u)) preview = '🎬 Video';
+                                    else if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(u)) preview = '📷 Rasm';
+                                    else if (
+                                        /storage\.googleapis\.com|firebasestorage/i.test(u)
+                                    ) {
+                                        preview = '📁 Fayl';
+                                    }
+                                }
                                 const sName = broadcastSenderName || 'Foydalanuvchi';
                                 for (const uid of offlineRecipients) {
                                     void pushSvc.pushNewMessage(uid, sName, preview, roomId);
@@ -426,21 +453,29 @@ export class SocketService {
                 }
             });
 
-            // Read Receipts
+            // Read Receipts (Telegram: 1 check = sent, 2 checks = peer read)
             authSocket.on('mark_messages_read', async (data: { roomId: string, messageIds: string[] }) => {
                 try {
                     const { roomId, messageIds } = data;
                     const userId = authSocket.user.id;
+                    const cid = String(roomId || '').trim();
+                    if (!cid || !Array.isArray(messageIds) || messageIds.length === 0) return;
 
-                    // Mark as read in DB
-                    const updatedMessageIds = await MessageModel.markAsRead(roomId, messageIds, userId);
+                    const updatedMessageIds = await MessageModel.markAsRead(cid, messageIds.map(String), userId);
 
                     if (updatedMessageIds.length > 0) {
-                        // Broadcast to everyone in the room (including sender) that these messages were read
-                        this.io.to(roomId).emit('messages_read', {
-                            roomId,
+                        const participantsRes = await pool.query(
+                            'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                            [cid]
+                        );
+                        const targetRooms = [
+                            cid,
+                            ...participantsRes.rows.map((r: { user_id: string }) => String(r.user_id)),
+                        ];
+                        this.io.to(targetRooms).emit('messages_read', {
+                            roomId: cid,
                             messageIds: updatedMessageIds,
-                            readBy: userId
+                            readBy: String(userId),
                         });
                     }
                 } catch (error) {
@@ -572,13 +607,72 @@ export class SocketService {
                 this.io.to(String(data.to)).emit('call_signal', { signal: data.signal, from: String(authSocket.user.id) });
             });
 
-            authSocket.on('typing', (roomId: string) => {
-                authSocket.to(roomId).emit('typing', { senderId: authSocket.user.id, roomId });
+            authSocket.on('typing', (payload: string | { roomId?: string }) => {
+                const roomId =
+                    typeof payload === 'string'
+                        ? payload
+                        : payload && typeof payload === 'object'
+                          ? payload.roomId
+                          : null;
+                if (!roomId) return;
+                const rid = String(roomId);
+                authSocket.to(rid).emit('typing', { senderId: authSocket.user.id, roomId: rid });
             });
 
-            authSocket.on('stop_typing', (roomId: string) => {
-                authSocket.to(roomId).emit('stop_typing', { senderId: authSocket.user.id, roomId });
+            authSocket.on('stop_typing', (payload: string | { roomId?: string }) => {
+                const roomId =
+                    typeof payload === 'string'
+                        ? payload
+                        : payload && typeof payload === 'object'
+                          ? payload.roomId
+                          : null;
+                if (!roomId) return;
+                const rid = String(roomId);
+                authSocket.to(rid).emit('stop_typing', { senderId: authSocket.user.id, roomId: rid });
             });
+
+            authSocket.on(
+                'edit_message',
+                async (data: { roomId?: string; messageId?: string; content?: string }) => {
+                    try {
+                        const roomId = data?.roomId != null ? String(data.roomId) : '';
+                        const messageId = data?.messageId != null ? String(data.messageId) : '';
+                        const content = typeof data?.content === 'string' ? data.content.trim() : '';
+                        if (!roomId || !messageId || !content) return;
+                        const { MessageModel } = await import('../models/postgres/Message');
+                        const { ChatModel } = await import('../models/postgres/Chat');
+                        const ok = await ChatModel.isParticipant(roomId, String(authSocket.user.id));
+                        if (!ok) return;
+                        const updated = await MessageModel.updateContent(
+                            messageId,
+                            roomId,
+                            String(authSocket.user.id),
+                            content
+                        );
+                        if (!updated) return;
+                        const payload = {
+                            chatId: roomId,
+                            roomId,
+                            messageId,
+                            content,
+                            metadata: updated.metadata,
+                            editedAt: new Date().toISOString(),
+                        };
+                        const participantsRes = await pool.query(
+                            'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                            [roomId]
+                        );
+                        const targetRooms = [
+                            roomId,
+                            ...participantsRes.rows.map((r: { user_id: string }) => String(r.user_id)),
+                        ];
+                        this.io.to(targetRooms).emit('message_edited', payload);
+                    } catch (error) {
+                        console.error('edit_message error:', error);
+                        authSocket.emit('error', { message: 'Failed to edit message' });
+                    }
+                }
+            );
 
             // Live Session Chat System
             authSocket.on('session_chat:send', async (data: { sessionId: string, receiverId?: string, content: string, fileUrl?: string, type?: string }) => {

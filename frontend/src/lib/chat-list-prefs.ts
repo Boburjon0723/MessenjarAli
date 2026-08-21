@@ -65,6 +65,13 @@ export function getChatPref(chatId: string | number | null | undefined): ChatLis
     return readStore()[String(chatId)] || {};
 }
 
+/** Optimistic local prefs: ignore server hydrate briefly (fetch race) */
+const pendingLocalUntil = new Map<string, number>();
+
+export function clearPendingChatPref(chatId: string | number) {
+    pendingLocalUntil.delete(String(chatId));
+}
+
 export function patchChatPref(chatId: string | number, patch: Partial<ChatListPref>) {
     const id = String(chatId);
     const store = { ...readStore() };
@@ -74,6 +81,7 @@ export function patchChatPref(chatId: string | number, patch: Partial<ChatListPr
     if (empty) delete store[id];
     else store[id] = next;
     writeStore(store);
+    pendingLocalUntil.set(id, Date.now() + 12_000);
 }
 
 export function subscribeChatListPrefs(cb: () => void) {
@@ -119,9 +127,16 @@ export function hydratePrefsFromChats(
     }>
 ) {
     const store = { ...readStore() };
+    const now = Date.now();
     for (const c of chats) {
         const id = c.id ?? c._id;
         if (id == null) continue;
+        const sid = String(id);
+        const until = pendingLocalUntil.get(sid);
+        if (until && until > now) {
+            continue; // keep optimistic local mute/pin/archive
+        }
+        if (until) pendingLocalUntil.delete(sid);
         const pinnedAt =
             typeof c.pinnedAt === 'number'
                 ? c.pinnedAt
@@ -136,8 +151,8 @@ export function hydratePrefsFromChats(
             unreadMarked: !!c.unreadMarked,
         };
         const empty = !next.pinned && !next.muted && !next.archived && !next.unreadMarked;
-        if (empty) delete store[String(id)];
-        else store[String(id)] = next;
+        if (empty) delete store[sid];
+        else store[sid] = next;
     }
     writeStore(store);
 }
@@ -180,6 +195,7 @@ export async function syncChatPrefToServer(chatId: string | number, patch: Parti
             method: 'PATCH',
             body: JSON.stringify(body),
         });
+        if (res?.ok) clearPendingChatPref(chatId);
         return !!res?.ok;
     } catch {
         return false;

@@ -8,6 +8,11 @@ export interface Chat {
   type?: string;
   avatarUrl?: string | null;
   otherUserId?: string | null;
+  /** Telegram Saved Messages */
+  is_saved_messages?: boolean;
+  muted?: boolean;
+  pinned?: boolean;
+  archived?: boolean;
 }
 
 export interface Message {
@@ -16,6 +21,8 @@ export interface Message {
   text: string;
   senderId: string;
   timestamp: string;
+  /** ISO yoki millis — qidiruv sana filtri uchun */
+  createdAt?: string | number | null;
   status: "sent" | "delivered" | "read";
   /** API: text | image | file | voice | ... */
   messageType?: string;
@@ -23,5 +30,12 @@ export interface Message {
   remoteFileUrl?: string | null;
   metadata?: any;
   e2e?: boolean;
+  /** Reply: ota xabar ID */
+  parentId?: string | null;
+  parentPreview?: {
+    text?: string;
+    senderName?: string;
+    type?: string;
+  } | null;
 }
 

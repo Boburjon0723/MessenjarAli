@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo } from 'react';
+﻿import React, { useEffect, useLayoutEffect, useState, useRef, useCallback, useMemo, useSyncExternalStore } from 'react';
 import SendCoinModal from './SendCoinModal';
 import MediaUploadModal from './MediaUploadModal';
 import MediaViewerOverlay from './MediaViewerOverlay';
@@ -28,6 +28,11 @@ import type { Sticker } from '@/lib/sticker-packs';
 import ChatCallOverlay from './ChatCallOverlay';
 import ChatMessageList from './ChatMessageList';
 import ChatWindowBanners from './ChatWindowBanners';
+import { songPlayer } from '@/lib/song-player-store';
+import { getChatDraft, setChatDraft, clearChatDraft, getChatDraftReply, setChatDraftReply } from '@/lib/chat-draft-store';
+import { setChatTyping } from '@/lib/chat-typing-store';
+import { toggleChatMuted, syncChatPrefToServer } from '@/lib/chat-list-prefs';
+import { useChatListPrefs } from '@/hooks/useChatListPrefs';
 import { summarizeChat } from '@/lib/summarize';
 import { maliDB, OfflineMessage } from '@/lib/indexeddb';
 import {
@@ -46,7 +51,7 @@ import {
 import { getPrivateChatPeerUserId, isPrivatePeerUnavailable } from '@/lib/private-chat-peer';
 import { encryptTextForPeer } from '@/lib/e2e-crypto';
 import { decryptChatMessage, decryptChatMessages } from '@/lib/e2e-chat';
-import { isE2eEnvelope } from '@/lib/e2e-envelope';
+import { E2E_SEND_ENABLED, isE2eEnvelope } from '@/lib/e2e-envelope';
 import { chatDebug } from '@/lib/chat-debug';
 import type { ChatMessage } from '@/types/chat-message';
 import { logChatEmitSend, inferMessageTypeFromFile, parseMessageDate } from './chatWindowHelpers';
@@ -98,8 +103,10 @@ export default function ChatWindow({
     const { socket, isConnected } = useSocket();
     const { showSuccess, showError } = useNotification();
     const { confirm } = useConfirm();
+    const { prefOf } = useChatListPrefs();
     const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
     const [inputValue, setInputValue] = useState("");
+    const editingMessageRef = useRef<ChatMessage | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const [debugError, setDebugError] = useState<string | null>(null);
     const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
@@ -121,6 +128,7 @@ export default function ChatWindow({
     const [recordingTime, setRecordingTime] = useState(0);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
+    const recordingCancelledRef = useRef(false);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
     const [mediaPreviewFile, setMediaPreviewFile] = useState<File | null>(null);
     const [isUploadingMedia, setIsUploadingMedia] = useState(false);
@@ -148,6 +156,7 @@ export default function ChatWindow({
     const [isMuted, setIsMuted] = useState(false);
     const [isSpeaker, setIsSpeaker] = useState(false);
     const [isOnline, setIsOnline] = useState(false);
+    const [peerLastSeen, setPeerLastSeen] = useState<string | number | Date | null>(null);
     const [callTimer, setCallTimer] = useState(0);
     const callIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const callTimerRef = useRef(0);
@@ -176,6 +185,7 @@ export default function ChatWindow({
     const [isDragging, setIsDragging] = useState(false);
     const folderInputRef = useRef<HTMLInputElement>(null);
     const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+    const [pendingCaption, setPendingCaption] = useState('');
     const [viewerMedia, setViewerMedia] = useState<{ url: string, type: 'image' | 'video' | 'file' } | null>(null);
 
     // Selection Mode
@@ -364,6 +374,21 @@ export default function ChatWindow({
         }
     };
 
+    const setComposerValue = useCallback(
+        (v: string) => {
+            setInputValue(v);
+            if (chat?.id && !editingMessageRef.current) {
+                setChatDraft(String(chat.id), v);
+            }
+        },
+        [chat?.id]
+    );
+
+    const cancelEditing = useCallback(() => {
+        setEditingMessage(null);
+        setInputValue(chat?.id ? getChatDraft(String(chat.id)) : '');
+    }, [chat?.id]);
+
     const handlePinMessage = async (msg: ChatMessage) => {
         if (!chat?.id) return;
         try {
@@ -486,7 +511,7 @@ export default function ChatWindow({
     }, [chat?.id]);
 
     const checkIfContact = useCallback(async () => {
-        if (!chat || chat.type !== 'private' || chat.isTrade) {
+        if (!chat || chat.type !== 'private' || chat.isTrade || chat.is_saved_messages) {
             setIsContact(true);
             return;
         }
@@ -502,7 +527,7 @@ export default function ChatWindow({
                 setIsContact(!!found);
             }
         } catch (e) { console.error("Contact check error:", e); }
-    }, [chat?.id, chat?.type, chat?.isTrade, chat?.userId, chat?.participantId, chat?.participants, chat?.otherUser?.id, chat?.otherUser?.user_id]);
+    }, [chat?.id, chat?.type, chat?.isTrade, chat?.is_saved_messages, chat?.userId, chat?.participantId, chat?.participants, chat?.otherUser?.id, chat?.otherUser?.user_id]);
 
     const handleAddContact = async () => {
         if (!chat) return;
@@ -595,6 +620,14 @@ export default function ChatWindow({
             if (chat.isTrade) fetchTradeDetails();
         }
     }, [chat?.id, chat?.isTrade, fetchActiveSession, checkIfContact, fetchTradeDetails, fetchBlockStatus]);
+
+    useEffect(() => {
+        const onContactsUpdated = () => {
+            void checkIfContact();
+        };
+        window.addEventListener('contacts_updated', onContactsUpdated);
+        return () => window.removeEventListener('contacts_updated', onContactsUpdated);
+    }, [checkIfContact]);
 
     useEffect(() => {
         setHeaderImageError(false);
@@ -842,7 +875,13 @@ export default function ChatWindow({
             return;
         }
         if (!socket || !chat) return;
-        const targetUserId = String(chat.otherUser?.id || chat.userId || chat.id);
+        const targetUserId = String(
+            getPrivateChatPeerUserId(chat) || chat.otherUser?.id || chat.userId || ''
+        );
+        if (!targetUserId) {
+            showError(t('user_not_found'));
+            return;
+        }
         const myName = (getUser() || {}).name || "User";
         const finalType: 'audio' | 'video' = typeOverride || callType;
 
@@ -857,6 +896,8 @@ export default function ChatWindow({
             callType: finalType,
         });
     };
+    const handleCallRef = useRef(handleCall);
+    handleCallRef.current = handleCall;
 
     const handleAcceptCall = async () => {
         if (!CHAT_CALLS_ALLOWED) {
@@ -1078,14 +1119,128 @@ export default function ChatWindow({
     const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     useEffect(() => {
+        editingMessageRef.current = editingMessage;
+    }, [editingMessage]);
+
+    useLayoutEffect(() => {
+        if (!chat?.id) return;
+        setEditingMessage(null);
+        setInputValue(getChatDraft(String(chat.id)));
+        const savedReply = getChatDraftReply(String(chat.id));
+        if (savedReply?.id) {
+            setReplyTo({
+                id: savedReply.id,
+                text: savedReply.text || '',
+                sender: (savedReply.sender as ChatMessage['sender']) || 'them',
+                senderName: savedReply.senderName,
+                type: (savedReply.type as ChatMessage['type']) || 'text',
+            } as ChatMessage);
+        } else {
+            setReplyTo(null);
+        }
+        setShowSearch(false);
+        setSearchQuery('');
+        setIsSomeoneTyping(false);
+        if (chatInputRef.current) {
+            chatInputRef.current.style.height = 'auto';
+        }
+        setPeerLastSeen(
+            (chat as any).lastSeen ??
+                chat.otherUser?.last_seen ??
+                chat.otherUser?.lastSeen ??
+                null
+        );
+    }, [chat?.id]);
+
+    useEffect(() => {
+        if (!chat?.id || editingMessage) return;
+        if (!replyTo?.id) {
+            setChatDraftReply(chat.id, null);
+            return;
+        }
+        setChatDraftReply(chat.id, {
+            id: String(replyTo.id),
+            text: replyTo.text,
+            sender: typeof replyTo.sender === 'string' ? replyTo.sender : undefined,
+            senderName: replyTo.senderName,
+            type: replyTo.type,
+        });
+    }, [replyTo, chat?.id, editingMessage]);
+
+    useEffect(() => {
+        if (!showSearch || !chat?.id) return;
+        const q = searchQuery.trim();
+        if (q.length < 2) return;
+        let cancelled = false;
+        const timer = setTimeout(() => {
+            void (async () => {
+                try {
+                    const res = await apiFetch(
+                        `/api/chats/${chat.id}/search?q=${encodeURIComponent(q)}`
+                    );
+                    if (!res.ok || cancelled) return;
+                    const found = await res.json();
+                    if (!Array.isArray(found) || cancelled) return;
+                    const mapped = mapApiMessagesToLocal(found);
+                    if (!mapped.length) return;
+                    setMessages((prev) => mergeFetchedChatMessages(prev, mapped));
+                } catch {
+                    /* ignore */
+                }
+            })();
+        }, 280);
+        return () => {
+            cancelled = true;
+            clearTimeout(timer);
+        };
+    }, [showSearch, searchQuery, chat?.id]);
+
+    useEffect(() => {
         if (!socket || !chat) return;
+        const peerId = chat.participantId ?? chat.otherUser?.id;
+        const syncOnline = () => {
+            const fromChat =
+                chat.status === 'online' ||
+                chat.online === true ||
+                chat.otherUser?.online === true ||
+                chat.otherUser?.status === 'online';
+            setIsOnline(!!fromChat);
+        };
+        syncOnline();
+        const handleStatus = (data: {
+            userId?: string | number;
+            status?: string;
+            lastSeen?: string | number | Date;
+        }) => {
+            if (peerId == null || data?.userId == null) return;
+            if (String(data.userId) !== String(peerId)) return;
+            setIsOnline(data.status === 'online');
+            if (data.lastSeen != null) {
+                setPeerLastSeen(data.lastSeen);
+            } else if (data.status === 'offline') {
+                setPeerLastSeen(Date.now());
+            }
+        };
+        socket.on('user_status_change', handleStatus);
+        return () => {
+            socket.off('user_status_change', handleStatus);
+        };
+    }, [socket, chat?.id, chat?.participantId, chat?.status, chat?.online, chat?.otherUser?.online, chat?.otherUser?.status, chat?.otherUser?.id]);
+
+    useEffect(() => {
+        if (!socket || !chat) return;
+        const meId = (getUser() || {}).id;
         const handleTyping = (data: TypingPayload) => {
-            if (String(data.roomId) === String(chat.id) && data.senderId !== (getUser() || {}).id) {
+            if (String(data.roomId) === String(chat.id) && String(data.senderId) !== String(meId)) {
                 setIsSomeoneTyping(true);
+                setChatTyping(data.roomId, true);
             }
         };
         const handleStopTyping = (data: TypingPayload) => {
-            if (String(data.roomId) === String(chat.id)) setIsSomeoneTyping(false);
+            if (String(data.roomId) === String(chat.id)) {
+                setIsSomeoneTyping(false);
+                setChatTyping(data.roomId, false);
+            }
         };
         socket.on('typing', handleTyping);
         socket.on('stop_typing', handleStopTyping);
@@ -1142,41 +1297,111 @@ export default function ChatWindow({
         [markAsRead]
     );
 
-    // Handle incoming messages_read from socket
+    // Handle incoming messages_read from socket (Telegram: 2 checks)
     useEffect(() => {
         if (!socket || !chat?.id) return;
-        const handleMessagesRead = (data: { roomId: string, messageIds: string[], readBy: string }) => {
-            if (String(data.roomId) === String(chat.id) && data.readBy !== (getUser() || {}).id) {
-                setMessages(prev => prev.map(m =>
-                    data.messageIds.includes(m.id) ? { ...m, is_read: true } : m
-                ));
-            }
+        const applyRead = (roomId: string, messageIds: string[], readBy: string) => {
+            const myId = String((getUser() as { id?: string } | null)?.id ?? '');
+            if (String(roomId) !== String(chat.id)) return;
+            if (myId && String(readBy) === myId) return;
+            const idSet = new Set((messageIds || []).map(String));
+            if (idSet.size === 0) return;
+            setMessages((prev) =>
+                prev.map((m) => (idSet.has(String(m.id)) ? { ...m, is_read: true } : m))
+            );
+        };
+        const handleMessagesRead = (data: { roomId: string; messageIds: string[]; readBy: string }) => {
+            applyRead(data.roomId, data.messageIds || [], data.readBy);
+        };
+        const handleMessagesReadWindow = (ev: Event) => {
+            const detail = (ev as CustomEvent<{ roomId?: string; messageIds?: string[]; readBy?: string }>)
+                .detail;
+            if (!detail?.roomId) return;
+            applyRead(detail.roomId, detail.messageIds || [], detail.readBy || '');
+        };
+        const handleMessageEdited = (data: {
+            chatId?: string;
+            roomId?: string;
+            messageId?: string;
+            content?: string;
+        }) => {
+            const cid = String(data.chatId || data.roomId || '');
+            if (cid !== String(chat.id) || !data.messageId || data.content == null) return;
+            setMessages((prev) =>
+                prev.map((m) =>
+                    String(m.id) === String(data.messageId)
+                        ? { ...m, text: data.content!, content: data.content }
+                        : m
+                )
+            );
+        };
+        const handleMessagesDeleted = (data: { chatId?: string; messageIds?: string[] }) => {
+            if (String(data.chatId) !== String(chat.id)) return;
+            const idSet = new Set((data.messageIds || []).map(String));
+            if (!idSet.size) return;
+            setMessages((prev) => prev.filter((m) => !idSet.has(String(m.id))));
         };
         socket.on('messages_read', handleMessagesRead);
-        return () => { socket.off('messages_read', handleMessagesRead); };
+        socket.on('message_edited', handleMessageEdited);
+        socket.on('messages_deleted', handleMessagesDeleted);
+        window.addEventListener('el_messages_read', handleMessagesReadWindow);
+        return () => {
+            socket.off('messages_read', handleMessagesRead);
+            socket.off('message_edited', handleMessageEdited);
+            socket.off('messages_deleted', handleMessagesDeleted);
+            window.removeEventListener('el_messages_read', handleMessagesReadWindow);
+        };
     }, [socket, chat?.id]);
 
-    // Intersection Observer for marking messages as read
-    const observer = useRef<IntersectionObserver | null>(null);
+    // Intersection Observer: ko‘rinadigan barcha peer xabarlarini batch o‘qildi qilish
+    const readObserverRef = useRef<IntersectionObserver | null>(null);
+    const pendingReadIdsRef = useRef<Set<string>>(new Set());
+    const flushReadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    useEffect(() => {
+        if (!socket || !chat?.id) return;
+        const roomId = String(chat.id);
+        readObserverRef.current = new IntersectionObserver(
+            (entries) => {
+                for (const entry of entries) {
+                    if (!entry.isIntersecting) continue;
+                    const id = (entry.target as HTMLElement).dataset.msgId;
+                    if (!id || id.startsWith('temp_')) continue;
+                    pendingReadIdsRef.current.add(id);
+                    readObserverRef.current?.unobserve(entry.target);
+                }
+                if (pendingReadIdsRef.current.size === 0) return;
+                if (flushReadTimerRef.current) clearTimeout(flushReadTimerRef.current);
+                flushReadTimerRef.current = setTimeout(() => {
+                    const ids = [...pendingReadIdsRef.current];
+                    pendingReadIdsRef.current.clear();
+                    if (!ids.length || !socket) return;
+                    socket.emit('mark_messages_read', { roomId, messageIds: ids });
+                    // Local: bu mening kiruvchi xabarlarim — UI da is_read faqat senderga muhim
+                    setMessages((prev) =>
+                        prev.map((m) => (ids.includes(String(m.id)) ? { ...m, is_read: true } : m))
+                    );
+                }, 120);
+            },
+            { threshold: 0.35 }
+        );
+        return () => {
+            if (flushReadTimerRef.current) clearTimeout(flushReadTimerRef.current);
+            readObserverRef.current?.disconnect();
+            readObserverRef.current = null;
+            pendingReadIdsRef.current.clear();
+        };
+    }, [socket, chat?.id]);
+
     const observeMessage = useCallback((node: HTMLDivElement | null, msg: ChatMessage) => {
-        if (!node || !socket || !chat?.id) return;
-        if (msg.sender === 'me' || msg.is_read) return; // Only observe unread messages from them
-
-        if (observer.current) observer.current.disconnect();
-
-        observer.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting) {
-                socket.emit('mark_messages_read', {
-                    roomId: chat.id,
-                    messageIds: [msg.id]
-                });
-                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, is_read: true } : m));
-                observer.current?.disconnect();
-            }
-        }, { threshold: 0.5 }); // Message should be at least 50% visible
-
-        observer.current.observe(node);
-    }, [socket, chat?.id]);
+        const obs = readObserverRef.current;
+        if (!node || !obs) return;
+        if (msg.sender === 'me' || msg.is_read) return;
+        const id = String(msg.id || '');
+        if (!id || id.startsWith('temp_') || id.startsWith('voice_')) return;
+        node.dataset.msgId = id;
+        obs.observe(node);
+    }, []);
 
     useEffect(() => {
         if (!socket || !chat?.id || subscribeSocket === false) return;
@@ -1274,6 +1499,8 @@ export default function ChatWindow({
                 if (isNetworkOnline && isConnected && socket) {
                     socket.emit('edit_message', { roomId: chat.id, messageId: editId, content });
                 }
+                // restore draft after edit (edit text was not persisted as draft)
+                setInputValue(getChatDraft(String(chat.id)));
                 sendMessageReentrantGuardRef.current = false;
                 return;
             }
@@ -1282,9 +1509,15 @@ export default function ChatWindow({
             const currentReplyTo = replyTo;
 
             setInputValue("");
+            clearChatDraft(chat.id);
             setReplyTo(null);
             if (chatInputRef.current) {
                 chatInputRef.current.style.height = 'auto';
+            }
+            if (socket) {
+                try {
+                    socket.emit('stop_typing', chat.id);
+                } catch { /* ignore */ }
             }
             markScrollToBottomOnSend();
 
@@ -1315,8 +1548,9 @@ export default function ChatWindow({
                 };
                 const meIdForE2e = meId;
                 const peerId = getPrivateChatPeerUserId(chat);
-                // Murojaat/e'lon chatlari ochiq matn — E2E faqat oddiy shaxsiy suhbatlarda
+                // E2E_SEND_ENABLED=false: ko‘p brauzerda «Shifrlangan xabar» noqulayligi yo‘q
                 const allowE2e =
+                    E2E_SEND_ENABLED &&
                     !!meIdForE2e &&
                     !!peerId &&
                     !isListingMarketplacePrivateChat(chat) &&
@@ -1365,6 +1599,13 @@ export default function ChatWindow({
         const clientSideId = `temp_${Date.now()}`;
         const meId = (getUser() as { id?: string } | null)?.id;
         const chatTimeLocale = language === 'uz' ? 'uz-UZ' : language === 'ru' ? 'ru-RU' : 'en-US';
+        const stickerMeta = {
+            emoji: sticker.emoji,
+            stickerCode: sticker.code,
+            code: sticker.code,
+            mimetype: 'image/webp',
+            url: sticker.webp,
+        };
         markScrollToBottomOnSend();
         setMessages(prev => {
             const optimistic = createOptimisticChatMessage({
@@ -1376,7 +1617,18 @@ export default function ChatWindow({
                 isPending: !isNetworkOnline || !isConnected,
                 locale: chatTimeLocale,
             });
-            return sortChatMessagesLocal([...prev, optimistic]);
+            return sortChatMessagesLocal([
+                ...prev,
+                {
+                    ...optimistic,
+                    metadata: {
+                        ...(optimistic.metadata && typeof optimistic.metadata === 'object'
+                            ? (optimistic.metadata as Record<string, unknown>)
+                            : {}),
+                        ...stickerMeta,
+                    },
+                },
+            ]);
         });
         if (isNetworkOnline && isConnected && socket) {
             socket.emit('send_message', {
@@ -1384,9 +1636,12 @@ export default function ChatWindow({
                 content: sticker.webp,
                 type: 'sticker',
                 clientSideId,
+                metadata: stickerMeta,
+                parentId: replyTo?.id,
             });
+            if (replyTo) setReplyTo(null);
         }
-    }, [chat?.id, socket, isNetworkOnline, isConnected, language]);
+    }, [chat, socket, isNetworkOnline, isConnected, language, replyTo]);
 
     // O'ng panel (UserInfoPanel) dan xabar yuborishni qo'llab-quvvatlash
     useEffect(() => {
@@ -1397,19 +1652,69 @@ export default function ChatWindow({
         return () => window.removeEventListener('panel_quick_send', handler as EventListener);
     }, [chat?.id]);
 
+    // Profil: ovozli chaqiruv
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent<{ chatId?: string; callType?: 'audio' | 'video' }>).detail;
+            if (!chat?.id || !detail?.chatId) return;
+            if (String(detail.chatId) !== String(chat.id)) return;
+            void handleCallRef.current(detail.callType === 'video' ? 'video' : 'audio');
+        };
+        window.addEventListener('panel_start_call', handler);
+        return () => window.removeEventListener('panel_start_call', handler);
+    }, [chat?.id]);
+
+    // Profil shared media: xabarga sakrash
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent<{ chatId?: string; messageId?: string }>).detail;
+            if (!chat?.id || !detail?.messageId) return;
+            if (detail.chatId && String(detail.chatId) !== String(chat.id)) return;
+            const el = document.getElementById(`msg-${detail.messageId}`);
+            if (el) {
+                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                el.classList.add('ring-2', 'ring-[#8774e1]/60');
+                window.setTimeout(() => el.classList.remove('ring-2', 'ring-[#8774e1]/60'), 1600);
+            }
+        };
+        window.addEventListener('panel_jump_message', handler);
+        return () => window.removeEventListener('panel_jump_message', handler);
+    }, [chat?.id]);
+
     const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, isFolder = false) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
         if (chat && isListingChat(chat) && !isMessagingUnlocked(chat)) return;
+        setPendingCaption('');
         setPendingFiles(Array.from(files));
         if (e.target) e.target.value = '';
     };
+
+    /** Telegram: Ctrl+V rasm/fayl → preview + caption (darhol yubormaydi) */
+    const handlePasteFiles = useCallback(
+        (files: File[]) => {
+            if (!files.length || !chat) return;
+            if (isListingChat(chat) && !isMessagingUnlocked(chat)) return;
+            if (isPrivatePeerUnavailable(chat)) return;
+            const draft = inputValue.trim();
+            if (draft) {
+                setPendingCaption(draft);
+                setComposerValue('');
+                if (chatInputRef.current) {
+                    chatInputRef.current.style.height = 'auto';
+                }
+            }
+            setPendingFiles((prev) => [...prev, ...files]);
+        },
+        [chat, inputValue, setComposerValue]
+    );
 
     const handleConfirmUpload = async (files: File[], caption: string, compress: boolean) => {
         if (!chat) return;
         if (isListingChat(chat) && !isMessagingUnlocked(chat)) return;
         const currentReplyTo = replyTo; // Capture current reply state
         setPendingFiles([]);
+        setPendingCaption('');
         setReplyTo(null); // Clear reply state after starting upload
         setIsUploadingMedia(true);
         const { uploadFileWithRetry } = await import('@/lib/upload');
@@ -1515,6 +1820,11 @@ export default function ChatWindow({
         setIsDragging(false);
         if (chat && isListingChat(chat) && !isMessagingUnlocked(chat)) return;
         if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+            setPendingCaption(inputValue.trim());
+            if (inputValue.trim()) {
+                setComposerValue('');
+                clearChatDraft(chat?.id);
+            }
             setPendingFiles(Array.from(e.dataTransfer.files));
         }
     };
@@ -1528,13 +1838,22 @@ export default function ChatWindow({
             const mediaRecorder = new MediaRecorder(stream);
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
+            recordingCancelledRef.current = false;
 
             mediaRecorder.ondataavailable = (e) => {
+                if (recordingCancelledRef.current) return;
                 if (e.data.size > 0) audioChunksRef.current.push(e.data);
             };
 
             mediaRecorder.onstop = async () => {
+                stream.getTracks().forEach((track) => track.stop());
+                if (recordingCancelledRef.current) {
+                    audioChunksRef.current = [];
+                    recordingCancelledRef.current = false;
+                    return;
+                }
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                if (audioBlob.size < 64) return;
                 const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
 
                 setIsUploadingMedia(true);
@@ -1569,8 +1888,6 @@ export default function ChatWindow({
                     });
                 } catch (err) { console.error("Voice upload error:", err); }
                 finally { setIsUploadingMedia(false); }
-
-                stream.getTracks().forEach(track => track.stop());
             };
 
             mediaRecorder.start();
@@ -1587,11 +1904,30 @@ export default function ChatWindow({
 
     const stopRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
+            recordingCancelledRef.current = false;
             mediaRecorderRef.current.stop();
             setIsRecording(false);
             if (timerRef.current) clearInterval(timerRef.current);
         }
     };
+
+    const cancelRecording = useCallback(() => {
+        recordingCancelledRef.current = true;
+        audioChunksRef.current = [];
+        if (timerRef.current) clearInterval(timerRef.current);
+        setIsRecording(false);
+        setRecordingTime(0);
+        const rec = mediaRecorderRef.current;
+        if (rec && rec.state !== 'inactive') {
+            try {
+                rec.ondataavailable = null;
+                rec.stop();
+            } catch {
+                /* ignore */
+            }
+        }
+        mediaRecorderRef.current = null;
+    }, []);
 
     const filteredMessages = useMemo(() => {
         const filtered = messages.filter((m) => {
@@ -1686,7 +2022,7 @@ export default function ChatWindow({
             if (e.key !== 'Escape') return;
             if (forwardMessage) { setForwardMessage(null); return; }
             if (showMoreMenu) { setShowMoreMenu(false); return; }
-            if (editingMessage) { setEditingMessage(null); setInputValue(''); return; }
+            if (editingMessage) { cancelEditing(); return; }
             if (isSelecting) { setIsSelecting(false); setSelectedMessageIds([]); return; }
             if (showSearch) { setShowSearch(false); setSearchQuery(''); return; }
             if (replyTo) { setReplyTo(null); return; }
@@ -1694,7 +2030,9 @@ export default function ChatWindow({
         };
         window.addEventListener('keydown', handleEsc);
         return () => window.removeEventListener('keydown', handleEsc);
-    }, [forwardMessage, showMoreMenu, editingMessage, isSelecting, showSearch, replyTo, onBack]);
+    }, [forwardMessage, showMoreMenu, editingMessage, isSelecting, showSearch, replyTo, onBack, cancelEditing]);
+
+    const songTrack = useSyncExternalStore(songPlayer.subscribe, songPlayer.getSnapshot, songPlayer.getSnapshot).track;
 
     if (!chat) return <div className="flex-1 flex items-center justify-center text-white/40">{t('select_chat')}</div>;
 
@@ -1725,7 +2063,61 @@ export default function ChatWindow({
     const roleLabel = isTrade ? (isBuyer ? t('buyer') : isSeller ? t('seller') : t('trade_participant')) : null;
     const displayName = isTrade ? roleLabel : chat.name;
 
-    const isOnlineHeader = chat.online || isOnline || chat.otherUser?.online;
+    const isOnlineHeader =
+        chat.status === 'online' ||
+        chat.online === true ||
+        isOnline ||
+        chat.otherUser?.online === true ||
+        chat.otherUser?.status === 'online';
+
+    const lastSeenLabel = (() => {
+        if (isOnlineHeader || chat.type !== 'private') return undefined;
+        const raw =
+            peerLastSeen ??
+            (chat as any).lastSeen ??
+            chat.otherUser?.last_seen ??
+            chat.otherUser?.lastSeen ??
+            null;
+        if (raw == null) return undefined;
+        const ms = typeof raw === 'number' ? raw : new Date(raw).getTime();
+        if (!Number.isFinite(ms)) return undefined;
+        const diff = Date.now() - ms;
+        if (diff < 60_000) return t('last_seen_recent') as string;
+        const d = new Date(ms);
+        const time = d.toLocaleTimeString(language === 'ru' ? 'ru-RU' : language === 'uz' ? 'uz-UZ' : 'en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+        });
+        const today = new Date();
+        const sameDay =
+            d.getFullYear() === today.getFullYear() &&
+            d.getMonth() === today.getMonth() &&
+            d.getDate() === today.getDate();
+        if (sameDay) {
+            return language === 'uz'
+                ? `oxirgi marta ${time}`
+                : language === 'ru'
+                  ? `был(а) в ${time}`
+                  : `last seen at ${time}`;
+        }
+        const date = d.toLocaleDateString(language === 'ru' ? 'ru-RU' : language === 'uz' ? 'uz-UZ' : 'en-US', {
+            day: 'numeric',
+            month: 'short',
+        });
+        return language === 'uz'
+            ? `oxirgi marta ${date}`
+            : language === 'ru'
+              ? `был(а) ${date}`
+              : `last seen ${date}`;
+    })();
+
+    const chatMuted = !!prefOf(chat.id).muted;
+    const handleHeaderMute = () => {
+        if (!chat?.id) return;
+        const muted = toggleChatMuted(chat.id);
+        void syncChatPrefToServer(chat.id, { muted });
+        showSuccess(muted ? t('mute_chat') : t('unmute_chat'));
+    };
     const composerLocked = Boolean(
         (chat && isListingChat(chat) && !isMessagingUnlocked(chat)) ||
             (chat && isPrivatePeerUnavailable(chat))
@@ -1769,14 +2161,23 @@ export default function ChatWindow({
                 </div>
             )}
 
-            {/* Header — Telegram Web: floating plate, max 696px, wallpaper yonlardan ko‘rinadi */}
-            <div className="relative z-20 shrink-0 px-2 pt-[max(1rem,env(safe-area-inset-top))] lg:px-4 lg:pt-4">
+            {/* Header — Telegram Web: floating plate; pleyer main ustunda bo‘lsa pt kamayadi */}
+            <div
+                className={`relative z-20 shrink-0 px-2 lg:px-4 ${
+                    songTrack
+                        ? 'pt-1 lg:pt-1'
+                        : 'pt-[max(1rem,env(safe-area-inset-top))] lg:pt-4'
+                }`}
+            >
                 <div className="tg-chat-column">
                     <ChatWindowHeader
                 chat={chat}
                 displayName={displayName || ''}
                 isTrade={!!isTrade}
                 isOnlineHeader={!!isOnlineHeader}
+                isSomeoneTyping={isSomeoneTyping}
+                lastSeenLabel={lastSeenLabel}
+                chatMuted={chatMuted}
                 inputFocused={inputFocused}
                 debugError={debugError}
                 isSelecting={isSelecting}
@@ -1800,7 +2201,12 @@ export default function ChatWindow({
                 onSearchTypeChange={setSearchType}
                 onSearchDateFromChange={setSearchDateFrom}
                 onSearchDateToChange={setSearchDateTo}
-                onToggleSearch={() => setShowSearch(!showSearch)}
+                onToggleSearch={() => {
+                    setShowSearch((v) => {
+                        if (v) setSearchQuery('');
+                        return !v;
+                    });
+                }}
                 onStartAudioCall={() => void handleCall('audio')}
                 onStartVideoCall={() => void handleCall('video')}
                 onToggleMoreMenu={() => setShowMoreMenu(!showMoreMenu)}
@@ -1810,6 +2216,7 @@ export default function ChatWindow({
                 onExportHistory={() => { handleExportHistory(); setShowMoreMenu(false); }}
                 onClearHistory={() => { handleClearHistory(); setShowMoreMenu(false); }}
                 onDeleteChat={() => { handleDeleteChat(); setShowMoreMenu(false); }}
+                onToggleMute={handleHeaderMute}
             />
                 </div>
             </div>
@@ -1943,7 +2350,7 @@ export default function ChatWindow({
                     timerRef={timerRef}
                     mediaRecorderRef={mediaRecorderRef}
                     inputValue={inputValue}
-                    setInputValue={setInputValue}
+                    setInputValue={setComposerValue}
                     socket={socket}
                     chat={chat}
                     typingTimeoutRef={typingTimeoutRef}
@@ -1954,9 +2361,12 @@ export default function ChatWindow({
                     sendMessage={sendMessage}
                     stopRecording={stopRecording}
                     startRecording={startRecording}
+                    cancelRecording={cancelRecording}
                     onSendSticker={sendSticker}
                     composerLocked={composerLocked}
                     composerLockedHint={composerLockedHint}
+                    onPasteFiles={handlePasteFiles}
+                    onCancelEdit={cancelEditing}
                 />
                 )}
                 </div>
@@ -1967,7 +2377,11 @@ export default function ChatWindow({
             <MediaUploadModal
                 open={pendingFiles.length > 0}
                 files={pendingFiles}
-                onClose={() => setPendingFiles([])}
+                initialCaption={pendingCaption}
+                onClose={() => {
+                    setPendingFiles([]);
+                    setPendingCaption('');
+                }}
                 onSend={handleConfirmUpload}
             />
 

@@ -732,7 +732,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                 </button>
 
                                 <button
-                                    onClick={() => { setMarketTab(marketTab === 'buy' ? 'none' : 'buy'); fetchAds(); }}
+                                    onClick={() => showSuccess(t('p2p_coming_soon'))}
                                     className="group flex flex-col items-center gap-2 transition-all active:scale-90"
                                 >
                                     <div className={`w-14 h-14 rounded-2xl backdrop-blur-2xl border flex items-center justify-center shadow-xl transition-all duration-500 ${marketTab === 'buy' ? 'bg-indigo-500 border-indigo-400' : 'bg-white/10 border-white/20 group-hover:bg-indigo-500'}`}>
@@ -744,7 +744,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                 </button>
 
                                 <button
-                                    onClick={() => { setMarketTab(marketTab === 'sell' ? 'none' : 'sell'); fetchAds(); }}
+                                    onClick={() => showSuccess(t('p2p_coming_soon'))}
                                     className="group flex flex-col items-center gap-2 transition-all active:scale-90"
                                 >
                                     <div className={`w-14 h-14 rounded-2xl backdrop-blur-2xl border flex items-center justify-center shadow-xl transition-all duration-500 ${marketTab === 'sell' ? 'bg-amber-500 border-amber-400' : 'bg-white/10 border-white/20 group-hover:bg-amber-500'}`}>
@@ -814,7 +814,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                             <GlassCard className="!p-3 !rounded-[1.25rem] bg-white/10 border-white/20 shadow-xl">
                                 <div className="grid grid-cols-2 gap-2">
                                     <button
-                                        onClick={() => { setMarketTab(marketTab === 'buy' ? 'none' : 'buy'); fetchAds(); }}
+                                        onClick={() => showSuccess(t('p2p_coming_soon'))}
                                         className="group flex flex-col items-center gap-1.5 transition-all active:scale-95"
                                     >
                                         <div className={`w-11 h-11 rounded-xl backdrop-blur-2xl border flex items-center justify-center shadow-lg transition-all duration-500 ${marketTab === 'buy' ? 'bg-indigo-500 border-indigo-400' : 'bg-white/10 border-white/20 group-hover:bg-indigo-500'}`}>
@@ -826,7 +826,7 @@ export default function WalletPanel({ onChatSelect }: { onChatSelect?: (chat: an
                                     </button>
 
                                     <button
-                                        onClick={() => { setMarketTab(marketTab === 'sell' ? 'none' : 'sell'); fetchAds(); }}
+                                        onClick={() => showSuccess(t('p2p_coming_soon'))}
                                         className="group flex flex-col items-center gap-1.5 transition-all active:scale-95"
                                     >
                                         <div className={`w-11 h-11 rounded-xl backdrop-blur-2xl border flex items-center justify-center shadow-lg transition-all duration-500 ${marketTab === 'sell' ? 'bg-amber-500 border-amber-400' : 'bg-white/10 border-white/20 group-hover:bg-amber-500'}`}>

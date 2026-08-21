@@ -131,6 +131,35 @@ export const MessageModel = {
         await pool.query(query, [chatId, messageIds]);
     },
 
+    async updateContent(
+        messageId: string,
+        chatId: string,
+        senderId: string,
+        content: string
+    ): Promise<Message | null> {
+        const metaPatch = JSON.stringify({
+            edited: true,
+            edited_at: new Date().toISOString(),
+        });
+        const query = `
+            UPDATE messages
+            SET content = $1,
+                metadata = (
+                    COALESCE(
+                        CASE
+                            WHEN metadata IS NULL THEN '{}'::jsonb
+                            ELSE metadata::jsonb
+                        END,
+                        '{}'::jsonb
+                    ) || $5::jsonb
+                )
+            WHERE id = $2 AND chat_id = $3 AND sender_id = $4
+            RETURNING *
+        `;
+        const result = await pool.query(query, [content, messageId, chatId, senderId, metaPatch]);
+        return result.rows[0] || null;
+    },
+
     async markAsRead(chatId: string, messageIds: string[], userId: string): Promise<string[]> {
         if (!messageIds || messageIds.length === 0) return [];
         // Only mark messages as read if the current user is NOT the sender
@@ -138,9 +167,24 @@ export const MessageModel = {
             UPDATE messages 
             SET is_read = TRUE 
             WHERE chat_id = $1 AND sender_id != $3 AND id = ANY($2::uuid[])
+              AND COALESCE(is_read, FALSE) = FALSE
             RETURNING id
         `;
         const result = await pool.query(query, [chatId, messageIds, userId]);
-        return result.rows.map(row => row.id);
+        return result.rows.map(row => String(row.id));
+    },
+
+    /** Chat ochilganda: boshqalardan kelgan barcha o‘qilmagan xabarlarni o‘qildi qilish */
+    async markAllUnreadAsRead(chatId: string, userId: string): Promise<string[]> {
+        const query = `
+            UPDATE messages
+            SET is_read = TRUE
+            WHERE chat_id = $1
+              AND sender_id != $2
+              AND COALESCE(is_read, FALSE) = FALSE
+            RETURNING id
+        `;
+        const result = await pool.query(query, [chatId, userId]);
+        return result.rows.map(row => String(row.id));
     }
 };

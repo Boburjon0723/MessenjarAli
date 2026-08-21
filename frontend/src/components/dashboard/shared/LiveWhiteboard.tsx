@@ -178,7 +178,7 @@ function resolveLocalUserId(): string {
 }
 
 export function LiveWhiteboard({ socket, sessionId, isMentor, onClose, isOverlay = false, userId }: LiveWhiteboardProps) {
-    const { showSuccess } = useNotification();
+    const { showSuccess, showError } = useNotification();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const boardSurfaceRef = useRef<HTMLDivElement>(null);
@@ -615,7 +615,7 @@ export function LiveWhiteboard({ socket, sessionId, isMentor, onClose, isOverlay
                                         if (!canvasRef.current) return;
                                         const dataUrl = canvasRef.current.toDataURL('image/png');
                                         try {
-                                            await apiFetch('/api/specialists/whiteboard/snapshot', {
+                                            const res = await apiFetch('/api/specialists/whiteboard/snapshot', {
                                                 method: 'POST',
                                                 body: JSON.stringify({
                                                     session_id: sessionId,
@@ -623,9 +623,14 @@ export function LiveWhiteboard({ socket, sessionId, isMentor, onClose, isOverlay
                                                     chat_id: sessionId
                                                 })
                                             });
-                                            showSuccess("Saqlandi!");
-                                        } catch (e) {
+                                            if (!res.ok) {
+                                                const err = await res.json().catch(() => ({}));
+                                                throw new Error(err?.message || 'Saqlash xatosi');
+                                            }
+                                            showSuccess("Doska guruhga saqlandi!");
+                                        } catch (e: any) {
                                             console.error("Snapshot save error:", e);
+                                            showError(e?.message ? String(e.message) : "Saqlashda xatolik");
                                         }
                                     }}
                                     className="px-3 h-8 bg-indigo-500/20 hover:bg-indigo-500 text-indigo-200 hover:text-white border border-indigo-500/30 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all shadow-lg"

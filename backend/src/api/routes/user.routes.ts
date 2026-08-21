@@ -2,7 +2,7 @@ import { Router } from 'express';
 import {
     getUsers, getProfile, updateProfile, searchUsers, listExperts, getContacts,
     addContact, removeContact, getUserById, blockUser, unblockUser,
-    updateContact, getChatStats, registerPushToken
+    updateContact, getChatStats, getChatSharedMedia, registerPushToken
 } from '../controllers/user.controller';
 import { authenticateToken } from '../../middleware/auth.middleware';
 
@@ -21,6 +21,7 @@ router.post('/block', authenticateToken, blockUser);
 router.post('/unblock', authenticateToken, unblockUser);
 router.post('/push-token', authenticateToken, registerPushToken);
 router.get('/chat-stats/:chatId', authenticateToken, getChatStats);
+router.get('/chat-shared/:chatId', authenticateToken, getChatSharedMedia);
 router.get('/:userId', authenticateToken, getUserById);
 
 export default router;

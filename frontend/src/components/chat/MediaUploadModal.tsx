@@ -17,13 +17,19 @@ interface MediaUploadModalProps {
     files: File[];
     onClose: () => void;
     onSend: (files: File[], caption: string, compress: boolean) => void;
+    /** Clipboard paste: compose matni caption ga ko‘chadi (Telegram) */
+    initialCaption?: string;
 }
 
-export default function MediaUploadModal({ open, files: initialFiles, onClose, onSend }: MediaUploadModalProps) {
+export default function MediaUploadModal({ open, files: initialFiles, onClose, onSend, initialCaption = '' }: MediaUploadModalProps) {
     const [mediaList, setMediaList] = useState<MediaFile[]>([]);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [caption, setCaption] = useState("");
     const [compress, setCompress] = useState(true);
+
+    useEffect(() => {
+        if (open) setCaption(initialCaption || '');
+    }, [open, initialCaption, initialFiles]);
 
     useEffect(() => {
         const detectType = (file: File): MediaFile['type'] => {

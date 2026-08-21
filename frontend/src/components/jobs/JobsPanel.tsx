@@ -14,6 +14,7 @@ import {
     Scale,
     Search,
     Star,
+    Tag,
     UserRound,
 } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
@@ -29,10 +30,11 @@ import {
     type ExpertPanelMode,
 } from '@/lib/expert-roles';
 import type { MarketplaceContactPayload } from '@/lib/marketplace-chat';
+import MyListingsPanel from '@/components/listings/MyListingsPanel';
 
 type WorkTab = 'online' | 'offline';
 type RoleFilter = 'all' | 'employer' | 'seeker';
-type MarketTab = 'listings' | 'experts';
+type MarketTab = 'listings' | 'experts' | 'mine';
 type ExpertModeFilter = 'all' | ExpertPanelMode;
 
 const EXPERT_MODES: ExpertPanelMode[] = ['mentor', 'legal', 'psychology', 'consult'];
@@ -218,6 +220,10 @@ export type JobsPanelProps = {
     onBack?: () => void;
     initialMarketTab?: MarketTab;
     initialExpertId?: string | null;
+    currentUser?: any;
+    chats?: any[];
+    onOpenChat?: (chat: any) => void;
+    onOpenProfile?: () => void;
 };
 
 export default function JobsPanel({
@@ -225,6 +231,10 @@ export default function JobsPanel({
     onBack,
     initialMarketTab = 'listings',
     initialExpertId = null,
+    currentUser,
+    chats = [],
+    onOpenChat,
+    onOpenProfile,
 }: JobsPanelProps) {
     const { t, language } = useLanguage();
     const me = getUser() as { id?: string } | null;
@@ -289,6 +299,7 @@ export default function JobsPanel({
     };
 
     useEffect(() => {
+        if (marketTab === 'mine') return;
         if (marketTab === 'listings') void loadJobs();
         else void loadExperts();
     }, [marketTab, workTab]);
@@ -414,8 +425,49 @@ export default function JobsPanel({
     const ownJob = !!(me?.id && selectedJob?.user_id && String(me.id) === String(selectedJob.user_id));
     const ownExpert = !!(me?.id && selectedExpert?.id && String(me.id) === String(selectedExpert.id));
     const isListings = marketTab === 'listings';
+    const isMine = marketTab === 'mine';
     const totalCount = isListings ? jobs.length : experts.length;
     const emptyMsg = isListings ? t('job_empty') : t('experts_empty');
+
+    if (isMine) {
+        return (
+            <div className="flex flex-1 min-h-0 h-full w-full bg-[#181818] text-white overflow-hidden flex-col">
+                <div className="shrink-0 border-b border-white/[0.06] bg-[#212121] px-3 pt-3 pb-3 space-y-3">
+                    <div className="flex items-center gap-3 px-1">
+                        {onBack && (
+                            <button
+                                type="button"
+                                onClick={onBack}
+                                className="flex h-9 w-9 items-center justify-center rounded-full text-[#aaaaaa] hover:bg-white/[0.06] hover:text-white"
+                                aria-label={t('chats')}
+                            >
+                                <ArrowLeft className="h-5 w-5" />
+                            </button>
+                        )}
+                        <div className="w-10 h-10 rounded-lg bg-[#8774e1] flex items-center justify-center shrink-0">
+                            <Briefcase className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="min-w-0">
+                            <h2 className="text-[18px] font-semibold text-[#8774e1] truncate">{t('jobs')}</h2>
+                            <p className="text-[11px] text-[#aaaaaa] truncate">ExpertLine</p>
+                        </div>
+                    </div>
+                    <MarketTabSwitch marketTab={marketTab} onChange={setMarketTab} t={t} />
+                </div>
+                <div className="flex-1 min-h-0 overflow-hidden">
+                    <MyListingsPanel
+                        embedded
+                        currentUser={currentUser || me}
+                        chats={chats}
+                        onBack={onBack || (() => undefined)}
+                        onOpenChat={(chat) => onOpenChat?.(chat)}
+                        onOpenJobsMarket={() => setMarketTab('listings')}
+                        onOpenProfile={() => onOpenProfile?.()}
+                    />
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="flex flex-1 min-h-0 h-full w-full bg-[#181818] text-white overflow-hidden">
@@ -951,26 +1003,36 @@ function MarketTabSwitch({
     t: any;
 }) {
     return (
-        <div className="grid grid-cols-2 gap-1 p-0.5 rounded-lg bg-[#181818] border border-white/[0.06]">
+        <div className="grid grid-cols-3 gap-1 p-0.5 rounded-lg bg-[#181818] border border-white/[0.06]">
             <button
                 type="button"
                 onClick={() => onChange('listings')}
-                className={`h-9 rounded-md flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors ${
+                className={`h-9 rounded-md flex items-center justify-center gap-1 text-[11px] sm:text-[12px] font-semibold transition-colors px-1 ${
                     marketTab === 'listings' ? 'bg-[#8774e1] text-white' : 'text-[#aaaaaa] hover:text-white'
                 }`}
             >
-                <Briefcase className="h-3.5 w-3.5" />
-                {t('job_tab_listings')}
+                <Briefcase className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{t('job_tab_listings')}</span>
             </button>
             <button
                 type="button"
                 onClick={() => onChange('experts')}
-                className={`h-9 rounded-md flex items-center justify-center gap-1.5 text-[12px] font-semibold transition-colors ${
+                className={`h-9 rounded-md flex items-center justify-center gap-1 text-[11px] sm:text-[12px] font-semibold transition-colors px-1 ${
                     marketTab === 'experts' ? 'bg-[#8774e1] text-white' : 'text-[#aaaaaa] hover:text-white'
                 }`}
             >
-                <UserRound className="h-3.5 w-3.5" />
-                {t('job_tab_experts')}
+                <UserRound className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{t('job_tab_experts')}</span>
+            </button>
+            <button
+                type="button"
+                onClick={() => onChange('mine')}
+                className={`h-9 rounded-md flex items-center justify-center gap-1 text-[11px] sm:text-[12px] font-semibold transition-colors px-1 ${
+                    marketTab === 'mine' ? 'bg-[#8774e1] text-white' : 'text-[#aaaaaa] hover:text-white'
+                }`}
+            >
+                <Tag className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{t('job_tab_mine')}</span>
             </button>
         </div>
     );

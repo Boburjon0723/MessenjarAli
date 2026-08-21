@@ -968,12 +968,7 @@ export default function ProfileViewer({
             if (e.key === 'Escape') setAvatarPreviewUrl(null);
         };
         window.addEventListener('keydown', onKey);
-        const prevOverflow = document.body.style.overflow;
-        document.body.style.overflow = 'hidden';
-        return () => {
-            window.removeEventListener('keydown', onKey);
-            document.body.style.overflow = prevOverflow;
-        };
+        return () => window.removeEventListener('keydown', onKey);
     }, [avatarPreviewUrl]);
 
     // --- RENDERERS ---
@@ -1083,7 +1078,14 @@ export default function ProfileViewer({
                             onChange={handleProfileAvatarChange}
                         />
                     </div>
-                    <h2 className="mt-3.5 text-[20px] font-medium leading-tight text-center text-white tracking-tight">
+                    <h2
+                        className="mt-3.5 text-[20px] font-medium leading-tight text-center text-white tracking-tight cursor-pointer hover:opacity-90"
+                        onClick={() => {
+                            setEditFirstName(user.name || '');
+                            setEditLastName(user.surname || '');
+                            setShowNameModal(true);
+                        }}
+                    >
                         {fullName}
                     </h2>
                     <p className="text-[#6ab3f3] text-[14px] mt-0.5 font-normal">{t('online')}</p>
@@ -1222,7 +1224,7 @@ export default function ProfileViewer({
                                 }}
                                 className="w-full py-2.5 text-[#6ab3f3] text-[15px] font-medium hover:bg-white/[0.04] rounded-lg transition-colors"
                             >
-                                {t('edit_profile')}
+                                {t('edit_specialist')}
                             </button>
                         </div>
                     )}
@@ -1233,15 +1235,11 @@ export default function ProfileViewer({
                     <button
                         type="button"
                         className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
-                        onClick={() => {
-                            setEditFirstName(user.name || '');
-                            setEditLastName(user.surname || '');
-                            setShowNameModal(true);
-                        }}
+                        onClick={() => onEdit()}
                     >
                         <User className="h-5 w-5 text-[#6ab3f3] shrink-0 ml-1" />
                         <div className="flex-1 min-w-0">
-                            <p className="text-[16px] text-white">{t('profile')}</p>
+                            <p className="text-[16px] text-white">{t('edit_profile')}</p>
                             <p className="text-[13px] text-[#6d7f8f] mt-0.5">{t('edit_account_sub')}</p>
                         </div>
                     </button>

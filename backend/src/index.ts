@@ -567,6 +567,27 @@ const runAutoMigration = async () => {
             )`
         );
         await runQuery(
+            'CreateTable_Expenses',
+            `CREATE TABLE IF NOT EXISTS expenses (
+                id SERIAL PRIMARY KEY,
+                user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+                amount DECIMAL(15,2) NOT NULL,
+                category TEXT NOT NULL,
+                description TEXT,
+                type TEXT CHECK (type IN ('expense', 'income')) DEFAULT 'expense',
+                date DATE DEFAULT CURRENT_DATE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )`
+        );
+        await runQuery(
+            'Index_Expenses_UserDate',
+            'CREATE INDEX IF NOT EXISTS idx_expenses_user_date ON expenses (user_id, date DESC)'
+        );
+        await runQuery(
+            'Fix_Expenses_MaliCategory',
+            `UPDATE expenses SET category = 'Moliya' WHERE category = 'MALI'`
+        );
+        await runQuery(
             'AddCol_ChatPart_Muted',
             'ALTER TABLE chat_participants ADD COLUMN IF NOT EXISTS is_muted BOOLEAN DEFAULT FALSE'
         );

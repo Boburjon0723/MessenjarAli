@@ -11,6 +11,9 @@ export type ChatWindowHeaderProps = {
     displayName: string;
     isTrade: boolean;
     isOnlineHeader: boolean;
+    isSomeoneTyping?: boolean;
+    lastSeenLabel?: string;
+    chatMuted?: boolean;
     inputFocused: boolean;
     debugError: string | null;
     isSelecting: boolean;
@@ -44,6 +47,7 @@ export type ChatWindowHeaderProps = {
     onExportHistory: () => void;
     onClearHistory: () => void;
     onDeleteChat: () => void;
+    onToggleMute?: () => void;
 };
 
 const iconBtn =
@@ -54,6 +58,9 @@ export function ChatWindowHeader({
     displayName,
     isTrade,
     isOnlineHeader,
+    isSomeoneTyping = false,
+    lastSeenLabel,
+    chatMuted = false,
     debugError,
     isSelecting,
     selectedCount,
@@ -86,8 +93,26 @@ export function ChatWindowHeader({
     onExportHistory,
     onClearHistory,
     onDeleteChat,
+    onToggleMute,
 }: ChatWindowHeaderProps) {
     const { t } = useLanguage();
+
+    const statusSubtitle = (() => {
+        if ((chat as any).is_saved_messages) return '';
+        if (isTrade) return t('trade_dialog');
+        if (chat.type === 'group') {
+            return `${(chat as any).participantsCount ?? (chat as any).participants?.length ?? ''} ${t('members') || "a'zo"}`;
+        }
+        if (chat.type === 'channel') {
+            return `${(chat as any).participantsCount ?? (chat as any).participants?.length ?? ''} ${t('subscribers') || 'obunachi'}`;
+        }
+        if (isSomeoneTyping) return `${t('typing')}...`;
+        if (isOnlineHeader) return t('online');
+        return lastSeenLabel || t('last_seen_recent');
+    })();
+
+    const statusColor =
+        !isTrade && (isSomeoneTyping || isOnlineHeader) ? 'var(--tg-accent)' : 'var(--tg-secondary)';
 
     return (
         <header className="relative z-20 flex h-12 w-full shrink-0 items-center rounded-[24px] bg-[#212121] px-1.5 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
@@ -122,6 +147,47 @@ export function ChatWindowHeader({
                         </div>
                     )}
                 </div>
+            ) : showSearch ? (
+                <div className="flex w-full min-w-0 items-center gap-1 px-0.5">
+                    <button type="button" onClick={onToggleSearch} className={iconBtn} aria-label="Close search">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                        </svg>
+                    </button>
+                    <input
+                        autoFocus
+                        className="h-9 min-w-0 flex-1 rounded-full bg-[#181818] px-3 text-[14px] text-white outline-none"
+                        placeholder={t('search_messages') as string}
+                        value={searchQuery}
+                        onChange={(e) => onSearchQueryChange(e.target.value)}
+                    />
+                    <select
+                        className="hidden h-9 max-w-[7.5rem] shrink-0 rounded-full bg-[#181818] px-2 text-[12px] text-white outline-none sm:block"
+                        value={searchType}
+                        onChange={(e) =>
+                            onSearchTypeChange(e.target.value as 'all' | 'text' | 'media' | 'files')
+                        }
+                    >
+                        <option value="all">{t('all')}</option>
+                        <option value="text">Text</option>
+                        <option value="media">{t('image')}/{t('video')}</option>
+                        <option value="files">{t('file')}</option>
+                    </select>
+                    <input
+                        type="date"
+                        className="hidden h-9 max-w-[7.5rem] shrink-0 rounded-full bg-[#181818] px-1 text-[11px] text-white outline-none md:block"
+                        value={searchDateFrom}
+                        onChange={(e) => onSearchDateFromChange(e.target.value)}
+                        title={t('start_date') as string}
+                    />
+                    <input
+                        type="date"
+                        className="hidden h-9 max-w-[7.5rem] shrink-0 rounded-full bg-[#181818] px-1 text-[11px] text-white outline-none md:block"
+                        value={searchDateTo}
+                        onChange={(e) => onSearchDateToChange(e.target.value)}
+                        title={t('end_date') as string}
+                    />
+                </div>
             ) : (
                 <>
                     {onBack && (
@@ -136,10 +202,19 @@ export function ChatWindowHeader({
                         className="flex min-w-0 flex-1 items-center gap-2.5 px-1 text-left"
                         onClick={onToggleInfo}
                     >
-                        <div className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden rounded-full text-[15px] font-medium text-white ${isTrade ? 'bg-[#5cc85e]' : 'bg-[#8774e1]'}`}>
+                        <div className={`flex h-[42px] w-[42px] shrink-0 items-center justify-center overflow-hidden rounded-full text-[15px] font-medium text-white ${
+                            (chat as any).is_saved_messages ? 'bg-[#2AABEE]' : isTrade ? 'bg-[#5cc85e]' : 'bg-[#8774e1]'
+                        }`}>
                             {(() => {
+                                if ((chat as any).is_saved_messages || chat.avatar === 'saved_messages') {
+                                    return (
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="h-6 w-6 fill-white" aria-hidden>
+                                            <path d="M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z" />
+                                        </svg>
+                                    );
+                                }
                                 const avatar = chat.avatar || chat.avatar_url || chat.otherUser?.avatar || chat.otherUser?.avatar_url;
-                                if (avatar && avatar !== 'null' && avatar !== '' && !headerImageError) {
+                                if (avatar && avatar !== 'null' && avatar !== '' && avatar !== 'use_initials' && !headerImageError) {
                                     const src = avatar.startsWith('http') || avatar.startsWith('data:')
                                         ? avatar
                                         : `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000'}${avatar.startsWith('/') ? '' : '/'}${avatar}`;
@@ -149,39 +224,18 @@ export function ChatWindowHeader({
                             })()}
                         </div>
                         <div className="min-w-0">
-                            <h3 className="truncate text-[16px] font-medium leading-6 text-white">{displayName}</h3>
-                            <p className="truncate text-[14px] leading-5" style={{ color: isOnlineHeader && !isTrade ? 'var(--tg-accent)' : 'var(--tg-secondary)' }}>
-                                {isTrade ? t('trade_dialog') : chat.type === 'group' ? `${(chat as any).participantsCount ?? (chat as any).participants?.length ?? ''} ${t('members') || "a'zo"}` : chat.type === 'channel' ? `${(chat as any).participantsCount ?? (chat as any).participants?.length ?? ''} ${t('subscribers') || 'obunachi'}` : (isOnlineHeader ? t('online') : t('last_seen_recent'))}
+                            <h3 className="truncate text-[16px] font-medium leading-6 text-white">
+                                {(chat as any).is_saved_messages ? t('saved_messages') : displayName}
+                            </h3>
+                            {statusSubtitle ? (
+                            <p className="truncate text-[14px] leading-5" style={{ color: statusColor }}>
+                                {statusSubtitle}
                             </p>
+                            ) : null}
                         </div>
                     </button>
 
                     <div className="flex shrink-0 items-center">
-                        {showSearch && (
-                            <div className="mr-1 hidden items-center gap-1 md:flex">
-                                <input
-                                    autoFocus
-                                    className="h-8 w-36 rounded-full bg-[#181818] px-3 text-[13px] text-white outline-none"
-                                    placeholder={t('search_messages') as string}
-                                    value={searchQuery}
-                                    onChange={e => onSearchQueryChange(e.target.value)}
-                                />
-                                <select
-                                    className="h-8 rounded-full bg-[#181818] px-2 text-[12px] text-white outline-none"
-                                    value={searchType}
-                                    onChange={(e) =>
-                                        onSearchTypeChange(e.target.value as 'all' | 'text' | 'media' | 'files')
-                                    }
-                                >
-                                    <option value="all">{t('all')}</option>
-                                    <option value="text">{t('file')}</option>
-                                    <option value="media">{t('image')}/{t('video')}</option>
-                                    <option value="files">{t('file')}</option>
-                                </select>
-                                <input type="date" className="h-8 rounded-full bg-[#181818] px-2 text-[11px] text-white outline-none" value={searchDateFrom} onChange={e => onSearchDateFromChange(e.target.value)} title={t('start_date') as string} />
-                                <input type="date" className="h-8 rounded-full bg-[#181818] px-2 text-[11px] text-white outline-none" value={searchDateTo} onChange={e => onSearchDateToChange(e.target.value)} title={t('end_date') as string} />
-                            </div>
-                        )}
                         <button type="button" onClick={() => onToggleSearch()} className={iconBtn} title="Qidiruv">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                         </button>
@@ -206,6 +260,11 @@ export function ChatWindowHeader({
                                         <button type="button" onClick={() => { onStartSelecting(); onCloseMoreMenu(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-[15px] text-white hover:bg-white/[0.08]">
                                             <span>{t('select_messages')}</span>
                                         </button>
+                                        {onToggleMute && (
+                                            <button type="button" onClick={() => { onToggleMute(); onCloseMoreMenu(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-[15px] text-white hover:bg-white/[0.08]">
+                                                <span>{chatMuted ? t('unmute_chat') : t('mute_chat')}</span>
+                                            </button>
+                                        )}
                                         <button type="button" onClick={() => { onSummarize(); onCloseMoreMenu(); }} className="flex w-full items-center gap-3 px-4 py-2.5 text-[15px] text-white hover:bg-white/[0.08]">
                                             <span>{isSummarizing ? t('translating') : t('ai_summary')}</span>
                                         </button>

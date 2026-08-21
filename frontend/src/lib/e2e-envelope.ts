@@ -25,3 +25,12 @@ export function isE2eEnvelope(raw: unknown): boolean {
 }
 
 export const E2E_PLACEHOLDER = '🔒 Shifrlangan xabar';
+
+/** Ochib bo‘lmaganda (boshqa brauzer/qurilma kaliti). */
+export const E2E_FAILED_PLACEHOLDER = '🔒 Xabarni ochib bo‘lmadi';
+
+/**
+ * Ko‘p brauzer/qurilmada bitta public key — yangi qurilma eski kalitni ezadi.
+ * Multi-device kalitlar tayyor bo‘lguncha yangi xabarlar shifrlanmaydi.
+ */
+export const E2E_SEND_ENABLED = false;

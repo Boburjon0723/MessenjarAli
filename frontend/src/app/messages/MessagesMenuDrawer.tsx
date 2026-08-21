@@ -29,7 +29,7 @@ export type MessagesMenuDrawerProps = {
     onOpenExperts: () => void;
     onOpenJobs: () => void;
     onOpenFinance: () => void;
-    onOpenListings: () => void;
+    onOpenSavedMessages: () => void;
     onToggleExpertPanel?: () => void;
     onSupport: () => void;
     onCreateGroup: () => void;
@@ -53,7 +53,7 @@ export function MessagesMenuDrawer({
     onOpenExperts,
     onOpenJobs,
     onOpenFinance,
-    onOpenListings,
+    onOpenSavedMessages,
     onToggleExpertPanel,
     onSupport,
     onCreateGroup,
@@ -115,8 +115,8 @@ export function MessagesMenuDrawer({
                     <button type="button" onClick={onOpenFinance} className={itemCls}>
                         <LineChart className={iconCls} /> {t('finance')}
                     </button>
-                    <button type="button" onClick={onOpenListings} className={itemCls}>
-                        <Bookmark className={iconCls} /> {t('my_ads')}
+                    <button type="button" onClick={onOpenSavedMessages} className={itemCls}>
+                        <Bookmark className={iconCls} fill="currentColor" strokeWidth={0} /> {t('saved_messages')}
                     </button>
                     {currentUser?.is_expert && onToggleExpertPanel && !isMobile && (
                         <button type="button" onClick={onToggleExpertPanel} className={itemCls}>

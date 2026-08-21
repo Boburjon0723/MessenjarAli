@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Megaphone, Users, User, PenSquare, X } from 'lucide-react';
 import { useLanguage } from '@/context/LanguageContext';
 
@@ -31,7 +32,10 @@ export default function ComposeFabMenu({
     useEffect(() => {
         if (!open) return;
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === 'Escape') close();
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                close();
+            }
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
@@ -61,21 +65,30 @@ export default function ComposeFabMenu({
         },
     ].filter((item) => item.show);
 
+    const backdrop =
+        open && typeof document !== 'undefined'
+            ? createPortal(
+                  <button
+                      type="button"
+                      aria-label="Close menu"
+                      className="fixed inset-0 z-[240] cursor-default bg-transparent"
+                      onClick={close}
+                  />,
+                  document.body
+              )
+            : null;
+
     return (
         <>
-            {open && (
-                <button
-                    type="button"
-                    aria-label="Close menu"
-                    className="fixed inset-0 z-[15] bg-transparent"
-                    onClick={close}
-                />
-            )}
+            {backdrop}
 
-            <div ref={rootRef} className="absolute right-3.5 bottom-[3.75rem] z-20 flex flex-col items-end gap-3">
+            <div
+                ref={rootRef}
+                className="pointer-events-none absolute right-3.5 bottom-[3.75rem] z-[250] flex flex-col items-end gap-3"
+            >
                 {open && (
                     <div
-                        className="tg-compose-menu mb-1 min-w-[220px] overflow-hidden rounded-2xl bg-[#212121] py-1.5 shadow-[0_2px_16px_rgba(0,0,0,0.45)] animate-fade-in"
+                        className="pointer-events-auto tg-compose-menu mb-1 min-w-[220px] overflow-hidden rounded-2xl bg-[#212121] py-1.5 shadow-[0_2px_16px_rgba(0,0,0,0.45)] animate-fade-in"
                         role="menu"
                     >
                         {items.map((item) => {
@@ -99,9 +112,7 @@ export default function ComposeFabMenu({
                 <button
                     type="button"
                     onClick={() => setOpen((v) => !v)}
-                    className={`flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full bg-[#8774e1] text-white shadow-[0_1px_8px_rgba(0,0,0,0.4)] transition-all hover:bg-[#7b68d4] active:scale-95 ${
-                        open ? 'rotate-0' : ''
-                    }`}
+                    className="pointer-events-auto flex h-[3.75rem] w-[3.75rem] items-center justify-center rounded-full bg-[#8774e1] text-white shadow-[0_1px_8px_rgba(0,0,0,0.4)] transition-all hover:bg-[#7b68d4] active:scale-95"
                     aria-label={open ? t('cancel') : t('new_message')}
                     aria-expanded={open}
                 >

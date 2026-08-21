@@ -1,12 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import AddGroupMemberModal from './AddGroupMemberModal';
-import { X, Search, Copy, Check } from 'lucide-react';
+import UserInfoPanel from './UserInfoPanel';
+import { X, Search, Copy, Check, Bell, BellOff } from 'lucide-react';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
 import { useLanguage } from '@/context/LanguageContext';
 import { apiFetch } from '@/lib/api';
 import { getUser } from '@/lib/auth-storage';
 import { getPublicApiUrl } from '@/lib/public-origin';
+import { useChatListPrefs } from '@/hooks/useChatListPrefs';
+import { syncChatPrefToServer, toggleChatMuted } from '@/lib/chat-list-prefs';
 
 interface GroupInfoPanelProps {
     chat: any;
@@ -21,6 +25,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
     const { showSuccess, showError } = useNotification();
     const { confirm } = useConfirm();
     const { t } = useLanguage();
+    const { prefOf } = useChatListPrefs();
     const [fullChatDetails, setFullChatDetails] = useState<any>(null);
     const [loading, setLoading] = useState(false);
     const [showAddMemberModal, setShowAddMemberModal] = useState(false);
@@ -31,11 +36,23 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
     const [uploadingAvatar, setUploadingAvatar] = useState(false);
     const [memberSearch, setMemberSearch] = useState('');
     const [showMemberSearch, setShowMemberSearch] = useState(false);
-    const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+    /** Telegram Desktop: a'zo profili (stack) */
+    const [viewingMember, setViewingMember] = useState<any | null>(null);
+    const [memberMenu, setMemberMenu] = useState<{ member: any; x: number; y: number } | null>(null);
+    const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number }>({
+        timer: null,
+        x: 0,
+        y: 0,
+    });
     const [copiedLink, setCopiedLink] = useState(false);
     const [activeMediaTab, setActiveMediaTab] = useState('photos');
     const avatarInputRef = useRef<HTMLInputElement>(null);
     const lastFetchedGroupIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        setViewingMember(null);
+        setMemberMenu(null);
+    }, [chat?.id, chat?._id]);
 
     useEffect(() => {
         const user = getUser() || {};
@@ -124,7 +141,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
     const handleSendMemberInvite = async (member: any) => {
         const ok = await sendGroupJoinInvite(member);
         if (ok) {
-            setSelectedMemberId(null);
+            setMemberMenu(null);
         }
     };
 
@@ -265,7 +282,45 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
 
     const handleRemoveMember = (member: any) => {
         showSuccess(t('feature_coming_soon') || 'Bu funksiya tez orada qo\'shiladi');
-        setSelectedMemberId(null);
+        setMemberMenu(null);
+    };
+
+    const openMemberProfile = (member: any) => {
+        setMemberMenu(null);
+        setViewingMember(member);
+    };
+
+    const openMemberPrivateChat = (member: any) => {
+        setMemberMenu(null);
+        window.dispatchEvent(
+            new CustomEvent('panel_open_private_peer', {
+                detail: {
+                    user: {
+                        id: member.id,
+                        name: member.name,
+                        surname: member.surname,
+                        username: member.username,
+                        avatar: member.avatar || member.avatar_url,
+                        avatar_url: member.avatar_url || member.avatar,
+                    },
+                },
+            })
+        );
+    };
+
+    const clearMemberLongPress = () => {
+        if (longPressRef.current.timer) {
+            clearTimeout(longPressRef.current.timer);
+            longPressRef.current.timer = null;
+        }
+    };
+
+    const handleToggleMute = () => {
+        const id = chat?.id || chat?._id;
+        if (!id) return;
+        const muted = toggleChatMuted(id);
+        void syncChatPrefToServer(id, { muted });
+        showSuccess(muted ? t('mute_chat') : t('unmute_chat'));
     };
 
     const handleCopyInviteLink = () => {
@@ -304,6 +359,24 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                     Media fayllar tez orada...
                 </div>
             </div>
+        );
+    }
+
+    // Telegram Desktop: a'zo kartasi → foydalanuvchi profili (orqaga = guruh)
+    if (viewingMember) {
+        const peerChat = {
+            id: `peer-preview:${viewingMember.id}`,
+            type: 'private',
+            otherUser: viewingMember,
+            participantId: viewingMember.id,
+            name: `${viewingMember.name || ''} ${viewingMember.surname || ''}`.trim() || 'User',
+        };
+        return (
+            <UserInfoPanel
+                chat={peerChat}
+                onClose={() => setViewingMember(null)}
+                onOpenChat={() => openMemberPrivateChat(viewingMember)}
+            />
         );
     }
 
@@ -433,6 +506,22 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
 
             {/* Actions */}
             <div className="py-1">
+                <button
+                    type="button"
+                    onClick={handleToggleMute}
+                    className="w-full flex items-center gap-4 px-5 py-3 hover:bg-white/[0.04] transition-colors text-left"
+                >
+                    <div className="text-[#aaaaaa]">
+                        {prefOf(chat.id || chat._id).muted ? (
+                            <Bell className="h-5 w-5" />
+                        ) : (
+                            <BellOff className="h-5 w-5" />
+                        )}
+                    </div>
+                    <span className="text-[14px] text-white">
+                        {prefOf(chat.id || chat._id).muted ? t('unmute_chat') : t('mute_chat')}
+                    </span>
+                </button>
                 {canSendPaidInvite && (
                     <button
                         onClick={() => setShowAddMemberModal(true)}
@@ -507,18 +596,37 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                         const isCreatorMember =
                             fullChatDetails?.creator_id != null &&
                             String(member.id) === String(fullChatDetails.creator_id);
-                        const isMe = member.id === currentUser?.id;
-                        const isSelected = selectedMemberId === String(member.id);
+                        const isMe = String(member.id) === String(currentUser?.id);
 
                         return (
                             <div key={member.id} className="relative">
-                                <div
-                                    onClick={() => {
-                                        if (isCreator && !isCreatorMember && !isMe) {
-                                            setSelectedMemberId(isSelected ? null : String(member.id));
-                                        }
+                                <button
+                                    type="button"
+                                    onClick={() => openMemberProfile(member)}
+                                    onContextMenu={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        setMemberMenu({ member, x: e.clientX, y: e.clientY });
                                     }}
-                                    className={`flex items-center gap-3 px-4 py-2 hover:bg-white/[0.04] transition-colors ${isCreator && !isCreatorMember && !isMe ? 'cursor-pointer' : ''}`}
+                                    onTouchStart={(e) => {
+                                        const touch = e.touches[0];
+                                        if (!touch) return;
+                                        clearMemberLongPress();
+                                        longPressRef.current.x = touch.clientX;
+                                        longPressRef.current.y = touch.clientY;
+                                        longPressRef.current.timer = setTimeout(() => {
+                                            longPressRef.current.timer = null;
+                                            setMemberMenu({
+                                                member,
+                                                x: longPressRef.current.x,
+                                                y: longPressRef.current.y,
+                                            });
+                                        }, 480);
+                                    }}
+                                    onTouchMove={clearMemberLongPress}
+                                    onTouchEnd={clearMemberLongPress}
+                                    onTouchCancel={clearMemberLongPress}
+                                    className="w-full flex items-center gap-3 px-4 py-2 hover:bg-white/[0.04] transition-colors cursor-pointer text-left"
                                 >
                                     <div className="w-[54px] h-[54px] rounded-full bg-[#766ac8] flex items-center justify-center text-[18px] text-white font-medium flex-shrink-0 overflow-hidden">
                                         {avatarSrc ? (
@@ -542,24 +650,7 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                                             )}
                                         </div>
                                     </div>
-                                </div>
-
-                                {isSelected && canSendPaidInvite && !isCreatorMember && !isMe && (
-                                    <div className="absolute right-4 top-1/2 -translate-y-1/2 z-10 flex flex-col gap-1.5">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); void handleSendMemberInvite(member); }}
-                                            className="px-3 py-1.5 bg-[#2c2c2c] border border-white/10 rounded-lg text-[#8774e1] text-[13px] hover:bg-[#383838] transition-colors shadow-lg whitespace-nowrap"
-                                        >
-                                            {t('send_subscription_invite')}
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleRemoveMember(member); }}
-                                            className="px-3 py-1.5 bg-[#2c2c2c] border border-white/10 rounded-lg text-[#e53935] text-[13px] hover:bg-[#383838] transition-colors shadow-lg whitespace-nowrap"
-                                        >
-                                            Guruhdan chiqarish
-                                        </button>
-                                    </div>
-                                )}
+                                </button>
                             </div>
                         );
                     })}
@@ -607,6 +698,69 @@ export default function GroupInfoPanel({ chat, onClose, onDeleted, onLeft, onGro
                 onClose={() => setShowAddMemberModal(false)}
                 onAdded={handleAddMember}
             />
+
+            {memberMenu &&
+                typeof document !== 'undefined' &&
+                createPortal(
+                    <>
+                        <div
+                            className="fixed inset-0 z-[300]"
+                            onClick={() => setMemberMenu(null)}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                setMemberMenu(null);
+                            }}
+                        />
+                        <div
+                            className="fixed z-[301] min-w-[200px] overflow-hidden rounded-xl bg-[#212121] py-1 shadow-[0_2px_16px_rgba(0,0,0,0.45)] border border-white/[0.06]"
+                            style={{
+                                left: Math.min(memberMenu.x, window.innerWidth - 220),
+                                top: Math.min(memberMenu.y, window.innerHeight - 180),
+                            }}
+                        >
+                            <button
+                                type="button"
+                                className="flex w-full px-4 py-2.5 text-left text-[15px] text-white hover:bg-white/[0.08]"
+                                onClick={() => openMemberProfile(memberMenu.member)}
+                            >
+                                {t('show_profile') || 'Profilni ko‘rish'}
+                            </button>
+                            <button
+                                type="button"
+                                className="flex w-full px-4 py-2.5 text-left text-[15px] text-white hover:bg-white/[0.08]"
+                                onClick={() => openMemberPrivateChat(memberMenu.member)}
+                            >
+                                {t('chats') || 'Xabar'}
+                            </button>
+                            {canSendPaidInvite &&
+                                String(memberMenu.member.id) !== String(currentUser?.id) &&
+                                String(memberMenu.member.id) !== String(fullChatDetails?.creator_id) && (
+                                    <button
+                                        type="button"
+                                        className="flex w-full px-4 py-2.5 text-left text-[15px] text-[#8774e1] hover:bg-white/[0.08]"
+                                        onClick={() => {
+                                            void handleSendMemberInvite(memberMenu.member);
+                                            setMemberMenu(null);
+                                        }}
+                                    >
+                                        {t('send_subscription_invite')}
+                                    </button>
+                                )}
+                            {isCreator &&
+                                String(memberMenu.member.id) !== String(currentUser?.id) &&
+                                String(memberMenu.member.id) !== String(fullChatDetails?.creator_id) && (
+                                    <button
+                                        type="button"
+                                        className="flex w-full px-4 py-2.5 text-left text-[15px] text-[#e53935] hover:bg-white/[0.08]"
+                                        onClick={() => handleRemoveMember(memberMenu.member)}
+                                    >
+                                        Guruhdan chiqarish
+                                    </button>
+                                )}
+                        </div>
+                    </>,
+                    document.body
+                )}
         </div>
     );
 }

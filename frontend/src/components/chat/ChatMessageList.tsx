@@ -147,9 +147,9 @@ export function ChatMessageList({
             if (!url) return [];
             const rawName = String((meta as any).name || (meta as any).file_name || m.text.split('/').pop() || 'Audio');
             const title = rawName.replace(/\.[^.]+$/, '') || rawName;
-            return [{ id: m.id, url, title }];
+            return [{ id: m.id, url, title, filename: rawName, chatId: chatId ? String(chatId) : undefined }];
         });
-    }, [filteredMessages]);
+    }, [filteredMessages, chatId]);
 
     const expiredPanelInviteIds = useMemo(
         () => computeExpiredPanelInviteIds(filteredMessages),

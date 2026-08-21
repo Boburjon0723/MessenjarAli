@@ -84,7 +84,7 @@ export function WalletWithdrawModal({
                                 />
                             </div>
                             <div>
-                                <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">PIN (4)</label>
+                                <label className="text-[10px] font-bold text-white/50 uppercase tracking-wider">{t('confirm_pin_label')}</label>
                                 <input
                                     type="password"
                                     maxLength={4}

@@ -18,6 +18,8 @@ export interface IChatModel {
     findById(id: string): Promise<Chat | null>;
     findPrivateChat(user1: string, user2: string): Promise<Chat | null>;
     createPrivate(user1: string, user2: string, metadata?: Record<string, unknown> | null): Promise<Chat>;
+    findSavedMessages(userId: string): Promise<Chat | null>;
+    createSavedMessages(userId: string): Promise<Chat>;
     createGroup(creatorId: string, name: string, participantIds: string[], avatar_url?: string | null): Promise<Chat>;
     createChannel(creatorId: string, name: string, description?: string, link?: string): Promise<Chat>;
     findUserChats(userId: string): Promise<any[]>;
@@ -72,6 +74,45 @@ export const ChatModel: IChatModel = {
                 'INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2), ($1, $3)',
                 [chat.id, user1, user2]
             );
+            await client.query('COMMIT');
+            return chat;
+        } catch (e) {
+            await client.query('ROLLBACK');
+            throw e;
+        } finally {
+            client.release();
+        }
+    },
+
+    /** Telegram «Saved Messages» — faqat o‘zingiz ishtirokchi */
+    async findSavedMessages(userId: string): Promise<Chat | null> {
+        const result = await pool.query(
+            `SELECT c.* FROM chats c
+             JOIN chat_participants cp ON cp.chat_id = c.id
+             WHERE cp.user_id = $1
+               AND c.type = 'private'
+               AND (c.metadata->>'kind') = 'saved_messages'
+             LIMIT 1`,
+            [userId]
+        );
+        return result.rows[0] || null;
+    },
+
+    async createSavedMessages(userId: string): Promise<Chat> {
+        const client = await pool.connect();
+        try {
+            await client.query('BEGIN');
+            const chatRes = await client.query(
+                `INSERT INTO chats (type, name, metadata)
+                 VALUES ('private', 'Saved Messages', $1::jsonb)
+                 RETURNING *`,
+                [JSON.stringify({ kind: 'saved_messages' })]
+            );
+            const chat = chatRes.rows[0];
+            await client.query('INSERT INTO chat_participants (chat_id, user_id) VALUES ($1, $2)', [
+                chat.id,
+                userId,
+            ]);
             await client.query('COMMIT');
             return chat;
         } catch (e) {
@@ -141,6 +182,9 @@ export const ChatModel: IChatModel = {
             m.type as "lastMessageType",
             m.created_at as "lastMessageAt",
             m.metadata as "lastMessageMetaRaw",
+            m.sender_id as "lastSenderId",
+            m.sender_name as "lastSenderName",
+            COALESCE(m.is_read, false) as "lastMessageIsRead",
             COALESCE(cp.is_pinned, false) as pinned,
             cp.pinned_at as "pinnedAt",
             COALESCE(cp.is_muted, false) as muted,
@@ -155,7 +199,8 @@ export const ChatModel: IChatModel = {
             FROM chats c
             JOIN chat_participants cp ON c.id = cp.chat_id
             LEFT JOIN LATERAL (
-                SELECT content, type, created_at, metadata, sender_id
+                SELECT content, type, created_at, metadata, sender_id, is_read,
+                       (SELECT name FROM users WHERE id = messages.sender_id LIMIT 1) AS sender_name
                 FROM messages 
                 WHERE chat_id = c.id 
                 ORDER BY created_at DESC 
@@ -169,20 +214,91 @@ export const ChatModel: IChatModel = {
         `;
         const result = await pool.query(query, [userId]);
         return result.rows.map(row => {
-            const { lastMessageMetaRaw, ...rest } = row;
+            const { lastMessageMetaRaw, lastSenderName, ...rest } = row as any;
             let snippet = row.lastMessage;
             const e2e = isE2eEnvelope(lastMessageMetaRaw);
+            const t = String(row.lastMessageType || 'text').toLowerCase();
+            const meta =
+                lastMessageMetaRaw && typeof lastMessageMetaRaw === 'object'
+                    ? (lastMessageMetaRaw as Record<string, unknown>)
+                    : {};
+            const mime = String(
+                (meta.mimetype as string) ||
+                    (meta.mime as string) ||
+                    (meta.contentType as string) ||
+                    (meta.file_type as string) ||
+                    ''
+            ).toLowerCase();
+            const fileName = String(
+                (typeof meta.name === 'string' && meta.name) ||
+                    (typeof meta.file_name === 'string' && meta.file_name) ||
+                    ''
+            );
+            const caption = typeof meta.caption === 'string' ? meta.caption.trim() : '';
+            const snip = typeof snippet === 'string' ? snippet : '';
+            const decodedSnip = (() => {
+                try {
+                    return decodeURIComponent(snip);
+                } catch {
+                    return snip;
+                }
+            })();
+            const isStorage =
+                /storage\.googleapis\.com|firebasestorage\.googleapis\.com|\.firebasestorage\.app/i.test(
+                    snip
+                );
+            const asAudio =
+                /\.(mp3|flac|wav|m4a|aac|wma|opus)(\?|#|$)/i.test(decodedSnip) ||
+                /\.(mp3|flac|wav|m4a|aac)$/i.test(fileName) ||
+                mime.startsWith('audio/');
+            const asVideo =
+                /\.(mp4|webm|mov|mkv|m4v)(\?|#|$)/i.test(decodedSnip) ||
+                /\.(mp4|webm|mov|mkv|m4v)$/i.test(fileName) ||
+                mime.startsWith('video/');
+            const asImage =
+                /\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(decodedSnip) ||
+                mime.startsWith('image/');
+
             if (e2e) snippet = E2E_LIST_PLACEHOLDER;
-            else if (row.lastMessageType === 'image') snippet = '📷 Rasm';
-            else if (row.lastMessageType === 'voice') snippet = '🎤 Ovoosli xabar';
-            else if (row.lastMessageType === 'file') snippet = '📁 Fayl';
-            else if (row.lastMessageType === 'transaction') snippet = '💰 O\'tkazma';
+            else if (t === 'image' || t === 'photo' || t === 'img') {
+                snippet = caption ? `📷 ${caption}` : '📷 Rasm';
+            } else if (t === 'video' || (t === 'file' && asVideo)) {
+                snippet = caption ? `🎬 ${caption}` : '🎬 Video';
+            } else if (t === 'voice') snippet = '🎤 Ovozli xabar';
+            else if (t === 'sticker') {
+                const emoji = typeof meta.emoji === 'string' && meta.emoji ? meta.emoji : '✨';
+                snippet = `${emoji} Stiker`;
+            } else if (t === 'audio' || t === 'song' || t === 'music' || (t === 'file' && asAudio)) {
+                const title = fileName && !/^https?:\/\//i.test(fileName)
+                    ? fileName.replace(/\.[^.]+$/, '')
+                    : '';
+                snippet = title ? `🎵 ${title}` : '🎵 Musiqa';
+            } else if (t === 'file' || t === 'document') {
+                const name = fileName && !/^https?:\/\//i.test(fileName) ? fileName : '';
+                snippet = name ? `📁 ${name}` : '📁 Fayl';
+            } else if (t === 'transaction') snippet = "💰 O'tkazma";
+            else if (t === 'phone_call') snippet = '📞 Qo‘ng‘iroq';
+            else if (typeof snippet === 'string' && /https?:\/\//i.test(snippet)) {
+                if (/notoemoji|telemoji|fonts\.gstatic\.com.*emoji/i.test(snippet)) snippet = '✨ Stiker';
+                else if (asAudio) snippet = '🎵 Musiqa';
+                else if (asVideo) snippet = '🎬 Video';
+                else if (asImage) snippet = '📷 Rasm';
+                else if (isStorage) snippet = '📁 Fayl';
+                else if (/^https?:\/\//i.test(snippet.trim())) {
+                    // Oddiy web link — qisqa qoldirish mumkin; storage emas
+                    snippet = snippet;
+                }
+            }
 
             return {
                 ...rest,
                 lastMessage: snippet,
-                lastMessageMeta: e2e ? lastMessageMetaRaw : undefined,
+                // FE formatDialogPreview uchun mime/name kerak (E2E da cipher meta)
+                lastMessageMeta: lastMessageMetaRaw || undefined,
                 lastMessageCipher: e2e ? row.lastMessage : undefined,
+                lastSenderId: row.lastSenderId != null ? String(row.lastSenderId) : null,
+                lastSenderName: lastSenderName || null,
+                lastMessageIsRead: !!row.lastMessageIsRead,
             };
         });
     },

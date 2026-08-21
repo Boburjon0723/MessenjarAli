@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
     Volume2, Sliders, Users, Shield, LogOut, Trash2,
     Image as ImageIcon, Film, FileText, Link2, AlertCircle,
-    Plus, X, BellOff, ChevronLeft
+    Plus, X, Bell, BellOff, ChevronLeft
 } from 'lucide-react';
 import EditChannelModal from './EditChannelModal';
 import { apiFetch } from '@/lib/api';
@@ -10,6 +10,8 @@ import { getUser } from '@/lib/auth-storage';
 import { useLanguage } from '@/context/LanguageContext';
 import { useNotification } from '@/context/NotificationContext';
 import { useConfirm } from '@/context/ConfirmContext';
+import { useChatListPrefs } from '@/hooks/useChatListPrefs';
+import { syncChatPrefToServer, toggleChatMuted } from '@/lib/chat-list-prefs';
 
 interface ChannelInfoPanelProps {
     chat: any;
@@ -23,6 +25,7 @@ export default function ChannelInfoPanel({ chat, onClose, onLeft, onDeleted, onG
     const { t } = useLanguage();
     const { showSuccess, showError } = useNotification();
     const { confirm } = useConfirm();
+    const { prefOf } = useChatListPrefs();
 
     const [currentUser, setCurrentUser] = useState<any>(null);
     const [fullChatDetails, setFullChatDetails] = useState<any>(null);
@@ -108,7 +111,11 @@ export default function ChannelInfoPanel({ chat, onClose, onLeft, onDeleted, onG
     };
 
     const handleMute = () => {
-        showSuccess(t('feature_coming_soon' as any) || 'Feature coming soon');
+        const id = chat?.id || chat?._id;
+        if (!id) return;
+        const muted = toggleChatMuted(id);
+        void syncChatPrefToServer(id, { muted });
+        showSuccess(muted ? t('mute_chat') : t('unmute_chat'));
     };
 
     const handleReport = () => {
@@ -117,6 +124,7 @@ export default function ChannelInfoPanel({ chat, onClose, onLeft, onDeleted, onG
 
     if (!chat) return null;
 
+    const chatMuted = !!prefOf(chat.id || chat._id).muted;
     const isOwner = (chat.creator_id ?? chat.creatorId) === currentUser?.id;
     const participants: any[] = fullChatDetails?.participants || [];
     const subscribersCount = participants.length || chat.participantsCount || 0;
@@ -229,7 +237,7 @@ export default function ChannelInfoPanel({ chat, onClose, onLeft, onDeleted, onG
 
                 {/* Action Buttons Row */}
                 <div className="flex justify-center gap-6 px-6 py-4">
-                    <ActionButton icon={<BellOff className="h-5 w-5" />} label={t('mute' as any) || 'Mute'} onClick={handleMute} />
+                    <ActionButton icon={chatMuted ? <Bell className="h-5 w-5" /> : <BellOff className="h-5 w-5" />} label={chatMuted ? (t('unmute_chat') || 'Unmute') : (t('mute' as any) || 'Mute')} onClick={handleMute} />
                     {isOwner && (
                         <ActionButton
                             icon={<Sliders className="h-5 w-5" />}

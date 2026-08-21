@@ -49,21 +49,33 @@ export const getExpenses = async (req: Request, res: Response) => {
 export const getExpenseStats = async (req: Request, res: Response) => {
     // @ts-ignore
     const userId = req.user.id;
+    const { startDate, endDate } = req.query;
 
     try {
+        const params: any[] = [userId];
+        let dateFilter = '';
+        if (startDate && endDate) {
+            dateFilter = ' AND date BETWEEN $2 AND $3';
+            params.push(startDate, endDate);
+        }
+
         const stats = await pool.query(
-            'SELECT category, type, SUM(amount) as total, COUNT(*) as count FROM expenses WHERE user_id = $1 GROUP BY category, type',
-            [userId]
+            `SELECT category, type, SUM(amount)::numeric as total, COUNT(*)::int as count
+             FROM expenses WHERE user_id = $1${dateFilter}
+             GROUP BY category, type`,
+            params
         );
 
         const totals = await pool.query(
-            'SELECT type, SUM(amount) as total FROM expenses WHERE user_id = $1 GROUP BY type',
-            [userId]
+            `SELECT type, SUM(amount)::numeric as total
+             FROM expenses WHERE user_id = $1${dateFilter}
+             GROUP BY type`,
+            params
         );
 
         res.json({
             categories: stats.rows,
-            totals: totals.rows
+            totals: totals.rows,
         });
     } catch (error) {
         console.error('Get Expense Stats Error:', error);

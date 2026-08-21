@@ -87,10 +87,12 @@ export function getPrivateChatPeerUserId(chat: {
 export function isPrivatePeerUnavailable(chat: {
   type?: string;
   peerUnavailable?: boolean;
+  is_saved_messages?: boolean;
   otherUser?: { id?: string; name?: string } | null;
   name?: string;
 } | null): boolean {
   if (!chat || chat.type !== 'private') return false;
+  if (chat.is_saved_messages) return false;
   if (chat.peerUnavailable) return true;
   if (!chat.otherUser?.id) return true;
   const n = String(chat.name || chat.otherUser?.name || '')

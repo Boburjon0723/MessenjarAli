@@ -1,9 +1,9 @@
 
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { isExpertListingChat, getMurojaatSidebarSections, isListingMarketplacePrivateChat, isClientSideListingChat } from '@/lib/listing-chat';
 import { useLanguage } from '@/context/LanguageContext';
 import { useHorizontalNavWheel } from '@/hooks/useHorizontalNavWheel';
-import { Search, Menu, X } from 'lucide-react';
+import { Search, Menu, X, Bookmark } from 'lucide-react';
 import { getExpertPanelMode } from '@/lib/expert-roles';
 import ComposeFabMenu from './ComposeFabMenu';
 import ChatListContextMenu, { type ChatListContextAction } from './ChatListContextMenu';
@@ -11,6 +11,10 @@ import ChatPreviewPopover from './ChatPreviewPopover';
 import { useChatListPrefs } from '@/hooks/useChatListPrefs';
 import { apiFetch } from '@/lib/api';
 import { syncChatPrefToServer } from '@/lib/chat-list-prefs';
+import { formatDialogPreview, withDialogSenderPrefix } from '@/lib/dialog-preview';
+import { MessageDeliveryTicks } from './MessageDeliveryTicks';
+import { useChatDraftsMap } from '@/lib/chat-draft-store';
+import { useChatTypingMap } from '@/lib/chat-typing-store';
 
 /** Telegram folders: chat types only. Wallet/experts/finance live in the hamburger menu. */
 export const CHAT_FOLDERS = [
@@ -94,9 +98,62 @@ export default function ChatList({
 }: ChatListProps) {
     const { language, t } = useLanguage();
     const { prefOf, togglePinned, toggleMuted, toggleArchived, setUnreadMarked } = useChatListPrefs();
+    const drafts = useChatDraftsMap();
+    const typingMap = useChatTypingMap();
     const [menu, setMenu] = useState<{ chat: any; x: number; y: number } | null>(null);
     const [preview, setPreview] = useState<{ chat: any; x: number; y: number } | null>(null);
     const [viewingArchive, setViewingArchive] = useState(false);
+    const [searchFocused, setSearchFocused] = useState(false);
+    const searchInputRef = useRef<HTMLInputElement>(null);
+    const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout> | null; x: number; y: number }>({
+        timer: null,
+        x: 0,
+        y: 0,
+    });
+    const youLabel = language === 'uz' ? 'Siz' : language === 'ru' ? 'Вы' : 'You';
+    const searchActive = searchFocused || !!searchQuery.trim();
+
+    const exitSearch = () => {
+        onSearchChange('');
+        setSearchFocused(false);
+        searchInputRef.current?.blur();
+    };
+
+    useEffect(() => {
+        if (!searchActive) return;
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key !== 'Escape') return;
+            e.preventDefault();
+            if (searchQuery.trim()) {
+                onSearchChange('');
+                searchInputRef.current?.focus();
+            } else {
+                onSearchChange('');
+                setSearchFocused(false);
+                searchInputRef.current?.blur();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [searchActive, searchQuery, onSearchChange]);
+
+    const clearLongPress = () => {
+        if (longPressRef.current.timer) {
+            clearTimeout(longPressRef.current.timer);
+            longPressRef.current.timer = null;
+        }
+    };
+
+    const compareChatRows = (a: any, b: any) => {
+        const pa = prefOf(a.id ?? a._id);
+        const pb = prefOf(b.id ?? b._id);
+        const aPin = pa.pinned ? (pa.pinnedAt || 1) : 0;
+        const bPin = pb.pinned ? (pb.pinnedAt || 1) : 0;
+        if (bPin !== aPin) return bPin - aPin;
+        const ta = new Date(a.lastMessageAt || 0).getTime();
+        const tb = new Date(b.lastMessageAt || 0).getTime();
+        return tb - ta;
+    };
 
     const touchStartX = useRef<number | null>(null);
     const touchStartY = useRef<number | null>(null);
@@ -108,7 +165,7 @@ export default function ChatList({
         if (onCategoryChange) onCategoryChange(catId);
     };
 
-    const useCategoryPager = isMobile && !searchQuery.trim() && CHAT_FOLDERS.some((f) => f.id === activeCategory);
+    const useCategoryPager = isMobile && !searchActive && CHAT_FOLDERS.some((f) => f.id === activeCategory);
 
     const prevCategoryIdRef = useRef(activeCategory);
     const prevIdx = CHAT_FOLDERS.findIndex((c) => c.id === prevCategoryIdRef.current);
@@ -272,13 +329,7 @@ export default function ChatList({
             const archived = !!prefOf(chat.id ?? chat._id).archived;
             return viewingArchive ? archived : !archived;
         });
-        return [...visible].sort((a, b) => {
-            const pa = prefOf(a.id ?? a._id);
-            const pb = prefOf(b.id ?? b._id);
-            const aPin = pa.pinned ? (pa.pinnedAt || 1) : 0;
-            const bPin = pb.pinned ? (pb.pinnedAt || 1) : 0;
-            return bPin - aPin;
-        });
+        return [...visible].sort(compareChatRows);
     };
 
     const archivedCount = (chats || []).filter((c: any) => prefOf(c.id ?? c._id).archived).length;
@@ -286,24 +337,24 @@ export default function ChatList({
         .filter((c: any) => prefOf(c.id ?? c._id).archived)
         .reduce((acc: number, c: any) => acc + (c.unread || 0) + (prefOf(c.id ?? c._id).unreadMarked ? 1 : 0), 0);
 
-    const getCategoryUnreadCount = (catId: string) => {
-        return (chats || [])
-            .filter((chat: any) => matchesFolder(chat, catId) && !prefOf(chat.id ?? chat._id).archived)
-            .reduce((acc: number, chat: any) => {
-                const unread = chat.unread || 0;
-                const marked = prefOf(chat.id ?? chat._id).unreadMarked && unread === 0 ? 1 : 0;
-                return acc + unread + marked;
-            }, 0);
+    const getCategoryUnreadInfo = (catId: string) => {
+        let unmuted = 0;
+        let mutedOnly = 0;
+        for (const chat of chats || []) {
+            if (!matchesFolder(chat, catId)) continue;
+            if (prefOf(chat.id ?? chat._id).archived) continue;
+            if (catId === 'all' && isListingMarketplacePrivateChat(chat)) continue;
+            const unread = chat.unread || 0;
+            const marked = prefOf(chat.id ?? chat._id).unreadMarked && unread === 0 ? 1 : 0;
+            const total = unread + marked;
+            if (total <= 0) continue;
+            if (prefOf(chat.id ?? chat._id).muted) mutedOnly += total;
+            else unmuted += total;
+        }
+        return { unmuted, mutedOnly, total: unmuted + mutedOnly };
     };
 
-    const sortSidebarList = (list: any[]) =>
-        [...list].sort((a, b) => {
-            const pa = prefOf(a.id ?? a._id);
-            const pb = prefOf(b.id ?? b._id);
-            const aPin = pa.pinned ? (pa.pinnedAt || 1) : 0;
-            const bPin = pb.pinned ? (pb.pinnedAt || 1) : 0;
-            return bPin - aPin;
-        });
+    const sortSidebarList = (list: any[]) => [...list].sort(compareChatRows);
 
     const murojaatSections = useMemo(() => {
         if (searchQuery || viewingArchive) {
@@ -342,6 +393,9 @@ export default function ChatList({
                 (chat.searchSource === 'global' || chat.isGlobal) &&
                 (chat.username || chat.message === 'Foydalanuvchi nomi');
             let displayName = isUsernameSearchResult ? `@${chat.username}` : chat.name;
+            if (chat.is_saved_messages) {
+                displayName = t('saved_messages');
+            }
             const isLiveSessionPreview =
                 (chat.message?.includes('darsni boshladi') || chat.message?.includes('sessiyasini boshladi')) &&
                 !chat.message?.startsWith('🚀');
@@ -353,11 +407,49 @@ export default function ChatList({
                       : 'Trade dialog'
                 : isLiveSessionPreview
                   ? chat.message
-                  : chat.message || t('no_messages');
+                  : formatDialogPreview({
+                        type: chat.lastMessageType,
+                        content: chat.message,
+                        metadata: chat.lastMessageMeta || chat.metadata,
+                        encrypted:
+                            typeof chat.message === 'string' &&
+                            (chat.message.includes('Shifrlangan') || chat.message.includes('🔒')),
+                    }) ||
+                    chat.message ||
+                    t('no_messages');
             if (typeof subtitle === 'string') {
                 subtitle = subtitle.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^\s+|\s+$/g, '');
             }
+            if (!isTrade && !isLiveSessionPreview && !isUsernameSearchResult && typeof subtitle === 'string') {
+                const fromMe =
+                    chat.lastSenderId != null &&
+                    currentUser?.id != null &&
+                    String(chat.lastSenderId) === String(currentUser.id);
+                subtitle = withDialogSenderPrefix(subtitle, {
+                    fromMe,
+                    senderName: chat.lastSenderName,
+                    isGroupOrChannel: chat.type === 'group' || chat.type === 'channel',
+                    youLabel,
+                });
+            }
+            const draftText = !searchQuery ? (drafts[String(chat.id ?? chat._id)] || '').trim() : '';
+            const isPeerTyping = !searchQuery && !!typingMap[String(chat.id ?? chat._id)];
+            let subtitleNode: React.ReactNode = subtitle;
+            if (isPeerTyping) {
+                subtitleNode = (
+                    <span className="text-[#8774e1]">{t('typing')}...</span>
+                );
+            } else if (draftText) {
+                const draftLabel = language === 'uz' ? 'Qoralama' : language === 'ru' ? 'Черновик' : 'Draft';
+                subtitleNode = (
+                    <>
+                        <span className="text-[#e53935]">{draftLabel}: </span>
+                        <span>{draftText}</span>
+                    </>
+                );
+            }
             if (isUsernameSearchResult) subtitle = t('username');
+            if (isUsernameSearchResult) subtitleNode = t('username');
             if (isTrade) {
                 displayName =
                     chat.participants?.indexOf(myId) === 0
@@ -378,17 +470,54 @@ export default function ChatList({
                     type="button"
                     key={rowId}
                     onClick={() =>
-                        chat.searchSource === 'global' || chat.isGlobal
+                        chat.searchSource === 'global' ||
+                        chat.searchSource === 'contact' ||
+                        chat.isGlobal ||
+                        chat.type === 'contact'
                             ? handleAddContact(chat)
                             : onChatSelect && onChatSelect(chat)
                     }
                     onContextMenu={(e) => {
-                        if (chat.searchSource === 'global' || chat.isGlobal) return;
+                        if (
+                            chat.searchSource === 'global' ||
+                            chat.searchSource === 'contact' ||
+                            chat.isGlobal ||
+                            chat.type === 'contact'
+                        ) {
+                            return;
+                        }
                         e.preventDefault();
                         e.stopPropagation();
                         setPreview(null);
                         setMenu({ chat, x: e.clientX, y: e.clientY });
                     }}
+                    onTouchStart={(e) => {
+                        if (
+                            chat.searchSource === 'global' ||
+                            chat.searchSource === 'contact' ||
+                            chat.isGlobal ||
+                            chat.type === 'contact'
+                        ) {
+                            return;
+                        }
+                        const touch = e.touches[0];
+                        if (!touch) return;
+                        clearLongPress();
+                        longPressRef.current.x = touch.clientX;
+                        longPressRef.current.y = touch.clientY;
+                        longPressRef.current.timer = setTimeout(() => {
+                            longPressRef.current.timer = null;
+                            setPreview(null);
+                            setMenu({
+                                chat,
+                                x: longPressRef.current.x,
+                                y: longPressRef.current.y,
+                            });
+                        }, 480);
+                    }}
+                    onTouchMove={clearLongPress}
+                    onTouchEnd={clearLongPress}
+                    onTouchCancel={clearLongPress}
                     className={`tg-chat-row w-full flex items-center gap-3 px-3 h-[72px] text-left border-0 ${
                         isActive || (menu && String(menu.chat.id ?? menu.chat._id) === String(chat.id ?? chat._id)) ? 'is-active' : ''
                     }`}
@@ -398,6 +527,13 @@ export default function ChatList({
                             className="w-[54px] h-[54px] rounded-full flex items-center justify-center text-white font-medium text-[22px] overflow-hidden bg-[#8774e1]"
                         >
                             {(() => {
+                                if (chat.is_saved_messages || chat.avatar === 'saved_messages') {
+                                    return (
+                                        <div className="w-full h-full flex items-center justify-center bg-[#2AABEE]">
+                                            <Bookmark className="h-7 w-7 text-white" fill="currentColor" strokeWidth={0} />
+                                        </div>
+                                    );
+                                }
                                 const avatar =
                                     chat.avatar || chat.avatar_url || chat.otherUser?.avatar || chat.otherUser?.avatar_url;
                                 if (avatar && avatar !== 'null' && avatar !== '' && avatar !== 'use_initials' && !isTrade) {
@@ -436,17 +572,28 @@ export default function ChatList({
                                     </svg>
                                 )}
                             </h3>
-                            <span className="text-[12px] text-[#aaaaaa] shrink-0 tabular-nums">{chat.time}</span>
+                            <span className="text-[12px] text-[#aaaaaa] shrink-0 tabular-nums inline-flex items-center gap-0.5">
+                                {currentUser?.id != null &&
+                                    chat.lastSenderId != null &&
+                                    String(chat.lastSenderId) === String(currentUser.id) &&
+                                    !searchQuery && (
+                                        <MessageDeliveryTicks
+                                            status={chat.lastMessageIsRead ? 'read' : 'sent'}
+                                            tone="list"
+                                        />
+                                    )}
+                                {chat.time}
+                            </span>
                         </div>
                         <div className="flex justify-between items-center gap-2 mt-[3px]">
-                            <p className="text-[14px] text-[#aaaaaa] truncate leading-[18px]">{subtitle}</p>
+                            <p className="text-[14px] text-[#aaaaaa] truncate leading-[18px]">{subtitleNode}</p>
                             {showUnread ? (
                                 <div className={`min-w-[22px] h-[22px] rounded-full flex items-center justify-center text-[13px] font-medium text-white px-1.5 shrink-0 ${pref.muted ? 'bg-[#3e546a]' : 'bg-[#8774e1]'}`}>
                                     {chat.unread > 0
                                         ? (chat.unread >= 1000
                                             ? `${(chat.unread / 1000).toFixed(chat.unread >= 10000 ? 0 : 1).replace(/\.0$/, '')}K`
                                             : chat.unread)
-                                        : ''}
+                                        : '·'}
                                 </div>
                             ) : pref.pinned ? (
                                 <svg className="h-4 w-4 shrink-0 text-[#aaaaaa]" viewBox="0 0 24 24" fill="currentColor">
@@ -523,6 +670,27 @@ export default function ChatList({
 
             return (
                 <div>
+                    {!searchQuery && !viewingArchive && archivedCount > 0 && slideCatId === 'all' && (
+                        <button
+                            type="button"
+                            onClick={() => setViewingArchive(true)}
+                            className="tg-chat-row w-full flex items-center gap-3 px-3 h-[72px] text-left"
+                        >
+                            <div className="w-[54px] h-[54px] rounded-full bg-[#8774e1] flex items-center justify-center shrink-0">
+                                <svg className="h-7 w-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v3H4V7zM6 10v9h12v-9M9 14h6" />
+                                </svg>
+                            </div>
+                            <div className="flex-1 min-w-0 py-[8px] border-b border-white/[0.06] self-stretch flex items-center justify-between">
+                                <h3 className="text-white font-medium text-[15px]">{t('archived_chats')}</h3>
+                                {archivedUnread > 0 && (
+                                    <span className="min-w-[22px] h-[22px] rounded-full bg-[#3e546a] px-1.5 text-[13px] font-medium text-white flex items-center justify-center">
+                                        {archivedUnread > 99 ? '99+' : archivedUnread}
+                                    </span>
+                                )}
+                            </div>
+                        </button>
+                    )}
                     {!searchQuery &&
                         !viewingArchive &&
                         slideCatId === 'all' && (
@@ -549,27 +717,6 @@ export default function ChatList({
                                 )}
                             </>
                         )}
-                    {!searchQuery && !viewingArchive && archivedCount > 0 && slideCatId === 'all' && (
-                        <button
-                            type="button"
-                            onClick={() => setViewingArchive(true)}
-                            className="tg-chat-row w-full flex items-center gap-3 px-3 h-[72px] text-left"
-                        >
-                            <div className="w-[54px] h-[54px] rounded-full bg-[#8774e1] flex items-center justify-center shrink-0">
-                                <svg className="h-7 w-7 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16v3H4V7zM6 10v9h12v-9M9 14h6" />
-                                </svg>
-                            </div>
-                            <div className="flex-1 min-w-0 py-[8px] border-b border-white/[0.06] self-stretch flex items-center justify-between">
-                                <h3 className="text-white font-medium text-[15px]">{t('archived_chats')}</h3>
-                                {archivedUnread > 0 && (
-                                    <span className="min-w-[22px] h-[22px] rounded-full bg-[#3e546a] px-1.5 text-[13px] font-medium text-white flex items-center justify-center">
-                                        {archivedUnread > 99 ? '99+' : archivedUnread}
-                                    </span>
-                                )}
-                            </div>
-                        </button>
-                    )}
                     {fc.map((chat: any, index: number) => renderChatItem(chat, index))}
                 </div>
             );
@@ -590,6 +737,11 @@ export default function ChatList({
                         </div>
                         <div className="flex-1 min-w-0 py-[8px] border-b border-white/[0.06] self-stretch flex items-center justify-between">
                             <h3 className="text-white font-medium text-[15px]">{t('archived_chats')}</h3>
+                            {archivedUnread > 0 && (
+                                <span className="min-w-[22px] h-[22px] rounded-full bg-[#3e546a] px-1.5 text-[13px] font-medium text-white flex items-center justify-center">
+                                    {archivedUnread > 99 ? '99+' : archivedUnread}
+                                </span>
+                            )}
                         </div>
                     </button>
                 </div>
@@ -623,7 +775,9 @@ export default function ChatList({
             }`}
         >
             {CHAT_FOLDERS.map((cat) => {
-                const count = getCategoryUnreadCount(cat.id);
+                const { unmuted, mutedOnly } = getCategoryUnreadInfo(cat.id);
+                const count = unmuted > 0 ? unmuted : mutedOnly;
+                const badgeMuted = unmuted === 0 && mutedOnly > 0;
                 const isOn = folderId === cat.id;
                 return (
                     <button
@@ -636,7 +790,11 @@ export default function ChatList({
                     >
                         {t(cat.label as any)}
                         {count > 0 && (
-                            <span className="ml-1.5 inline-flex min-w-[18px] h-[18px] px-1 items-center justify-center rounded-full bg-[#3e546a] text-[11px] font-medium text-white align-middle">
+                            <span
+                                className={`ml-1.5 inline-flex min-w-[18px] h-[18px] px-1 items-center justify-center rounded-full text-[11px] font-medium text-white align-middle ${
+                                    badgeMuted ? 'bg-[#3e546a]' : 'bg-[#8774e1]'
+                                }`}
+                            >
                                 {count > 99 ? '99+' : count}
                             </span>
                         )}
@@ -712,11 +870,18 @@ export default function ChatList({
                     <div className="flex items-center gap-1">
                         <button
                             type="button"
-                            onClick={() => (viewingArchive ? setViewingArchive(false) : setShowMenu(!showMenu))}
+                            onClick={() => {
+                                if (searchActive) {
+                                    exitSearch();
+                                    return;
+                                }
+                                if (viewingArchive) setViewingArchive(false);
+                                else setShowMenu(!showMenu);
+                            }}
                             className="w-10 h-10 shrink-0 rounded-full hover:bg-white/10 flex items-center justify-center text-[#aaaaaa] hover:text-white transition-colors"
-                            aria-label={viewingArchive ? 'Back' : 'Menu'}
+                            aria-label={searchActive || viewingArchive ? 'Back' : 'Menu'}
                         >
-                            {viewingArchive ? (
+                            {searchActive || viewingArchive ? (
                                 <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                                 </svg>
@@ -729,16 +894,25 @@ export default function ChatList({
                                 <Search className="h-4 w-4 text-[#aaaaaa]" />
                             </div>
                             <input
+                                ref={searchInputRef}
                                 type="text"
                                 placeholder={t('search')}
                                 value={searchQuery}
                                 onChange={(e) => onSearchChange(e.target.value)}
+                                onFocus={() => setSearchFocused(true)}
+                                onBlur={() => {
+                                    // keep search mode while query non-empty
+                                    if (!searchQuery.trim()) setSearchFocused(false);
+                                }}
                                 className="w-full bg-[#181818] border-none outline-none text-[15px] text-white rounded-full py-[7px] pl-10 pr-9 placeholder-[#aaaaaa]"
                             />
                             {searchQuery && (
                                 <button
                                     type="button"
-                                    onClick={() => onSearchChange('')}
+                                    onClick={() => {
+                                        onSearchChange('');
+                                        searchInputRef.current?.focus();
+                                    }}
                                     className="absolute inset-y-0 right-3 flex items-center text-[#aaaaaa] hover:text-white"
                                 >
                                     <X className="h-4 w-4" />
@@ -746,7 +920,7 @@ export default function ChatList({
                             )}
                         </div>
                     </div>
-                    {renderFolderTabs()}
+                    {!searchActive && renderFolderTabs()}
                 </div>
             </div>
 
@@ -779,12 +953,14 @@ export default function ChatList({
                 </div>
             )}
 
-            <ComposeFabMenu
-                canCreateGroup={!currentUser?.is_expert || getExpertPanelMode(currentUser) === 'mentor'}
-                onNewChannel={() => setShowCreateChannelModal(true)}
-                onNewGroup={() => setShowGroupModal(true)}
-                onNewPrivateChat={() => setShowContactsModal(true)}
-            />
+            {!searchActive && !viewingArchive && (
+                <ComposeFabMenu
+                    canCreateGroup={!currentUser?.is_expert || getExpertPanelMode(currentUser) === 'mentor'}
+                    onNewChannel={() => setShowCreateChannelModal(true)}
+                    onNewGroup={() => setShowGroupModal(true)}
+                    onNewPrivateChat={() => setShowContactsModal(true)}
+                />
+            )}
 
             {menu && (
                 <ChatListContextMenu

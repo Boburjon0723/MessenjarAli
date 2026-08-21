@@ -10,8 +10,10 @@ import { downloadChatFile } from '@/lib/download-file';
 import { classifyTelegramMessage, describeDocumentKind } from '@/lib/telegram-message-kind';
 import { formatPhoneCallLabel, parsePhoneCallMeta } from '@/lib/phone-call-message';
 import { songPlayer } from '@/lib/song-player-store';
+import { resolveStickerMediaUrl } from '@/lib/sticker-packs';
 import { apiFetch } from '@/lib/api';
 import { useConfirm } from '@/context/ConfirmContext';
+import { MessageDeliveryTicks } from './MessageDeliveryTicks';
 
 const DEFAULT_MONTHLY_MALI = 100;
 
@@ -272,6 +274,8 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
     const audioRef = useRef<HTMLAudioElement | null>(null);
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
     const [mediaLoaded, setMediaLoaded] = useState(false);
+    const [stickerFailed, setStickerFailed] = useState(false);
+    const stickerImgRef = useRef<HTMLImageElement | null>(null);
     const songState = useSyncExternalStore(songPlayer.subscribe, songPlayer.getSnapshot, songPlayer.getSnapshot);
     const songActive = isMusic && songState.track?.id === message.id;
     const isPlaying = isMusic ? (songActive && songState.playing) : localPlaying;
@@ -292,7 +296,43 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
 
     useEffect(() => {
         setMediaLoaded(false);
+        setStickerFailed(false);
     }, [message.id, message.text]);
+
+    const stickerEmoji =
+        (typeof fileMeta.emoji === 'string' && fileMeta.emoji) ||
+        (typeof (fileMeta as { alt?: string }).alt === 'string' && (fileMeta as { alt?: string }).alt) ||
+        '✨';
+    const stickerCode =
+        typeof fileMeta.stickerCode === 'string'
+            ? fileMeta.stickerCode
+            : typeof fileMeta.code === 'string'
+              ? fileMeta.code
+              : undefined;
+    const stickerSrc = useMemo(
+        () => resolveStickerMediaUrl(mediaSrc || message.text, stickerCode),
+        [mediaSrc, message.text, stickerCode]
+    );
+
+    // Cache’dan yuklangan rasmda onLoad ba’zan o‘tkazib yuboriladi — spinner abadiy qolmasin
+    useEffect(() => {
+        if (messageType !== 'sticker' || !stickerSrc) return;
+        const img = stickerImgRef.current;
+        if (img?.complete && img.naturalWidth > 0) {
+            setMediaLoaded(true);
+            return;
+        }
+        const t = window.setTimeout(() => {
+            const el = stickerImgRef.current;
+            if (el?.complete && el.naturalWidth > 0) {
+                setMediaLoaded(true);
+            } else if (!el || el.naturalWidth === 0) {
+                setStickerFailed(true);
+                setMediaLoaded(true);
+            }
+        }, 6000);
+        return () => window.clearTimeout(t);
+    }, [messageType, stickerSrc, message.id]);
 
     const handleMediaContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
@@ -342,6 +382,7 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
         if (!mediaSrc) return;
         try {
             await downloadChatFile(mediaSrc, fileName || 'file');
+            showSuccess(t('save') || 'Saqlandi');
         } catch {
             showError(t('upload_error') || 'Download failed');
         }
@@ -444,7 +485,13 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
             if (!mediaSrc) return;
             try { audioRef.current?.pause(); } catch { /* ignore */ }
             songPlayer.play(
-                { id: message.id, url: mediaSrc, title: musicTitle, filename: fileName || `${musicTitle}.mp3` },
+                {
+                    id: message.id,
+                    url: mediaSrc,
+                    title: musicTitle,
+                    filename: fileName || `${musicTitle}.mp3`,
+                    chatId: chatId ? String(chatId) : undefined,
+                },
                 songPlaylist && songPlaylist.length ? songPlaylist : undefined
             );
             onAudioPlay?.(message.id);
@@ -837,37 +884,46 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                     )}
 
                     {messageType === 'sticker' ? (
-                        <div className="relative" onContextMenu={isSelecting ? undefined : handleMediaContextMenu}>
-                            {!mediaLoaded && (
-                                <div className="absolute inset-0 flex items-center justify-center">
-                                    <div className="h-8 w-8 rounded-full border-2 border-white/20 border-t-white/70 animate-spin" />
+                        /* Telegram: sticker — bubble yo‘q, ~180–200px, faqat media + vaqt */
+                        <div
+                            className="relative max-w-[112px] select-none"
+                            onContextMenu={isSelecting ? undefined : handleMediaContextMenu}
+                        >
+                            {!mediaLoaded && !stickerFailed && (
+                                <div className="absolute inset-0 flex h-[112px] w-[112px] items-center justify-center pointer-events-none">
+                                    <div className="h-6 w-6 rounded-full border-2 border-white/20 border-t-white/70 animate-spin" />
                                 </div>
                             )}
-                            <img
-                                src={mediaSrc || message.text}
-                                alt=""
-                                className={`w-[150px] h-[150px] object-contain drop-shadow-lg ${mediaLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity`}
-                                loading="lazy"
-                                onLoad={() => setMediaLoaded(true)}
-                                onError={() => setMediaLoaded(true)}
-                            />
-                            <div className="absolute bottom-[2px] right-[2px] flex items-center gap-0.5 rounded px-1 bg-black/35">
+                            {stickerFailed ? (
+                                <div className="flex h-[112px] w-[112px] items-center justify-center text-[64px] leading-none">
+                                    {stickerEmoji}
+                                </div>
+                            ) : (
+                                <img
+                                    ref={stickerImgRef}
+                                    key={stickerSrc}
+                                    src={stickerSrc}
+                                    alt={stickerEmoji}
+                                    draggable={false}
+                                    className={`h-[112px] w-[112px] object-contain ${mediaLoaded ? 'opacity-100' : 'opacity-0'} transition-opacity duration-150`}
+                                    loading="eager"
+                                    decoding="async"
+                                    onLoad={() => setMediaLoaded(true)}
+                                    onError={() => {
+                                        setStickerFailed(true);
+                                        setMediaLoaded(true);
+                                    }}
+                                />
+                            )}
+                            <div className="absolute bottom-[2px] right-[2px] flex items-center gap-0.5 rounded px-1 py-0.5 bg-black/40">
                                 <span className="text-[11px] text-white/90 leading-none whitespace-nowrap">{displayTime}</span>
                                 {isOwn && (
-                                    message.isPending ? (
-                                        <svg className="h-3.5 w-3.5 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                        </svg>
-                                    ) : message.is_read ? (
-                                        <svg className="h-4 w-4 text-white" viewBox="0 0 18 18" fill="none">
-                                            <path d="M3.5 9.5l3 3 7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                            <path d="M7 12.5l7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                        </svg>
-                                    ) : (
-                                        <svg className="h-4 w-4 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
-                                        </svg>
-                                    )
+                                    <MessageDeliveryTicks
+                                        status={
+                                            message.isPending ? 'pending' : message.is_read ? 'read' : 'sent'
+                                        }
+                                        tone="bubble"
+                                    />
                                 )}
                             </div>
                         </div>
@@ -1109,20 +1165,12 @@ export const MessageBubble: React.FC<MessageBubbleProps> = ({
                         )}
                         <span className={`text-[11px] leading-4 ${isOwn ? 'text-white/80' : 'text-[#aaaaaa]'}`}>{displayTime}</span>
                         {isOwn && (
-                            message.isPending ? (
-                                <svg className="h-3.5 w-3.5 text-white/70" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                </svg>
-                            ) : message.is_read ? (
-                                <svg className="h-4 w-4 text-white" viewBox="0 0 18 18" fill="none">
-                                    <path d="M3.5 9.5l3 3 7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                    <path d="M7 12.5l7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-                                </svg>
-                            ) : (
-                                <svg className="h-4 w-4 text-white/85" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.2} d="M5 13l4 4L19 7" />
-                                </svg>
-                            )
+                            <MessageDeliveryTicks
+                                status={
+                                    message.isPending ? 'pending' : message.is_read ? 'read' : 'sent'
+                                }
+                                tone="bubble"
+                            />
                         )}
                     </div>
                     </div>

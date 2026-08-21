@@ -1,7 +1,12 @@
 import { createNavigationContainerRef } from '@react-navigation/native';
 
 type RootStackParamList = {
-  ChatDetail: { chatId: string; name: string; avatarUrl?: string | null };
+  ChatDetail: {
+    chatId: string;
+    name: string;
+    avatarUrl?: string | null;
+    startCall?: "audio" | "video";
+  };
 };
 
 export const navigationRef = createNavigationContainerRef<RootStackParamList>();

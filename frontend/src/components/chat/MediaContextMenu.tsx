@@ -146,7 +146,8 @@ export default function MediaContextMenu({
             else if (isFile) downloadName += '.bin';
         }
         try {
-            await downloadChatFile(mediaUrl, downloadName);
+            await downloadChatFile(mediaUrl, downloadName, { saveAs: true });
+            showSuccess(t('save') || 'Saqlandi');
         } catch {
             showError(t('upload_error') || 'Download failed');
         }

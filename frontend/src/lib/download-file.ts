@@ -6,15 +6,22 @@ function apiOrigin(): string {
 }
 
 function triggerBlobDownload(blob: Blob, filename: string) {
-    const objectUrl = URL.createObjectURL(blob);
+    // Ba'zi MIME (pdf/mp3/mp4) brauzerda yangi tabda ochilishi mumkin —
+    // Telegram Web kabi octet-stream + download attr bilan Downloads ga tushadi.
+    const forceBlob =
+        blob.type && /^(image\/(png|jpe?g|gif|webp)|text\/plain)/i.test(blob.type)
+            ? blob
+            : new Blob([blob], { type: 'application/octet-stream' });
+    const objectUrl = URL.createObjectURL(forceBlob);
     const a = document.createElement('a');
     a.href = objectUrl;
     a.download = filename || 'file';
     a.rel = 'noopener';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
     a.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 2500);
 }
 
 async function fetchAsBlob(src: string, headers?: HeadersInit): Promise<Blob> {
@@ -29,13 +36,14 @@ async function fetchAsBlob(src: string, headers?: HeadersInit): Promise<Blob> {
 }
 
 /** GCS / cross-origin chat media — auth bilan backend proxy orqali blob oladi. */
-export async function fetchChatMediaBlob(url: string): Promise<Blob> {
+export async function fetchChatMediaBlob(url: string, filename?: string): Promise<Blob> {
     if (!url) throw new Error('No url');
     try {
         return await fetchAsBlob(url);
     } catch {
         const token = getToken();
-        const proxy = `${apiOrigin()}/api/media/download?url=${encodeURIComponent(url)}`;
+        const nameQ = filename ? `&name=${encodeURIComponent(sanitizeDownloadName(filename))}` : '';
+        const proxy = `${apiOrigin()}/api/media/download?url=${encodeURIComponent(url)}${nameQ}`;
         return fetchAsBlob(proxy, token ? { Authorization: `Bearer ${token}` } : undefined);
     }
 }
@@ -47,7 +55,8 @@ type SaveFilePickerHandle = {
     }>;
 };
 
-async function saveBlobAs(blob: Blob, filename: string): Promise<void> {
+/** Faqat "Save as…" (context menu) — Telegram Desktop dagi ToNewFile. */
+async function saveBlobWithPicker(blob: Blob, filename: string): Promise<void> {
     const picker = (window as Window & {
         showSaveFilePicker?: (opts: {
             suggestedName?: string;
@@ -70,15 +79,30 @@ async function saveBlobAs(blob: Blob, filename: string): Promise<void> {
     triggerBlobDownload(blob, filename);
 }
 
+export type DownloadChatFileOptions = {
+    /**
+     * true → "Save as…" dialog (File System Access API).
+     * false/default → Telegram Web: to‘g‘ridan-to‘g‘ri brauzer Downloads ga (dialogsiz).
+     */
+    saveAs?: boolean;
+};
+
 /**
- * Telegram document: blob + asl nom.
- * Cross-origin `<a download>` ishlamaydi — GCS CORS yoki proxy orqali blob olinadi.
+ * Telegram Web document click: blob + `<a download>` → Downloads.
+ * Desktopdagi `Downloads/Telegram Desktop/` papkasini brauzerda majburlab bo‘lmaydi.
  */
-export async function downloadChatFile(url: string, filename = 'file'): Promise<void> {
+export async function downloadChatFile(
+    url: string,
+    filename = 'file',
+    opts?: DownloadChatFileOptions
+): Promise<void> {
     if (!url) throw new Error('No url');
     const name = sanitizeDownloadName(filename);
+    const blob = await fetchChatMediaBlob(url, name);
 
-    const blob = await fetchChatMediaBlob(url);
-
-    await saveBlobAs(blob, name);
+    if (opts?.saveAs) {
+        await saveBlobWithPicker(blob, name);
+        return;
+    }
+    triggerBlobDownload(blob, name);
 }

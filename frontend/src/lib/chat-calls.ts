@@ -12,11 +12,12 @@ export type ChatCallGateOptions = {
 
 /** Faqat shaxsiy (1:1) chatda qo'ng'iroq — listing chatlar yopiq */
 export function canShowChatCalls(
-    chat: { type?: string; isTrade?: boolean } | null | undefined,
+    chat: { type?: string; isTrade?: boolean; is_saved_messages?: boolean } | null | undefined,
     _opts?: ChatCallGateOptions
 ): boolean {
     if (!CHAT_CALLS_ALLOWED || !chat) return false;
     if (chat.isTrade) return false;
+    if (chat.is_saved_messages) return false;
     if (chat.type !== 'private' && chat.type !== undefined) return false;
 
     if (isExpertListingChat(chat) || isJobListingChat(chat)) return false;

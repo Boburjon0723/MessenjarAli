@@ -590,7 +590,6 @@ export const getContacts = async (req: Request, res: Response) => {
 };
 
 export const removeContact = async (req: Request, res: Response) => {
-    const client = await pool.connect();
     try {
         // @ts-ignore
         const userId = req.user.id;
@@ -598,42 +597,28 @@ export const removeContact = async (req: Request, res: Response) => {
 
         if (!contactId) return res.status(400).json({ message: 'Contact user ID is required' });
 
-        await client.query('BEGIN');
-
-        // 1. Find private chat between these two
-        const chatRes = await client.query(`
-            SELECT c.id FROM chats c
-            JOIN chat_participants p1 ON c.id = p1.chat_id
-            JOIN chat_participants p2 ON c.id = p2.chat_id
-            WHERE c.type = 'private' AND p1.user_id = $1 AND p2.user_id = $2
-        `, [userId, contactId]);
-
-        if (chatRes.rows.length > 0) {
-            const chatId = chatRes.rows[0].id;
-            // 2. Delete chat (This will CASCADE to messages and participants due to schema)
-            await client.query('DELETE FROM chats WHERE id = $1', [chatId]);
-
-            // Optionally notify via Socket.io
-            const io = req.app.get('io');
-            if (io) {
-                io.emit('chat_deleted', { chatId, participants: [userId, contactId] });
-            }
-        }
-
-        // 3. Delete from user_contacts for BOTH users (Mutual deletion)
-        await client.query(
-            'DELETE FROM user_contacts WHERE (user_id = $1 AND contact_user_id = $2) OR (user_id = $2 AND contact_user_id = $1)',
+        // Telegram: faqat o‘zingizning kontakt yozuvingiz o‘chadi — chat/tarix qoladi
+        const result = await pool.query(
+            `DELETE FROM user_contacts
+             WHERE user_id = $1 AND contact_user_id = $2`,
             [userId, contactId]
         );
 
-        await client.query('COMMIT');
-        res.status(200).json({ message: 'Kontakt va barcha yozishmalar ikkala tomon uchun ham o\'chirildi' });
+        if ((result.rowCount ?? 0) === 0) {
+            return res.status(404).json({ message: 'Kontakt topilmadi' });
+        }
+
+        const io = req.app.get('io');
+        if (io) {
+            io.to(String(userId)).emit('contact_removed', {
+                contactUserId: String(contactId),
+            });
+        }
+
+        res.status(200).json({ message: 'Kontakt o‘chirildi (suhbat saqlanadi)' });
     } catch (err) {
-        await client.query('ROLLBACK');
         console.error('Remove Contact Error:', err);
-        res.status(500).json({ message: 'Kontaktni o\'chirishda xatolik yuz berdi' });
-    } finally {
-        client.release();
+        res.status(500).json({ message: "Kontaktni o'chirishda xatolik yuz berdi" });
     }
 };
 
@@ -738,6 +723,99 @@ export const getChatStats = async (req: Request, res: Response) => {
     } catch (e) {
         console.error('Get Chat Stats Error:', e);
         res.status(500).json({ message: 'Statistikani olishda xatolik' });
+    }
+};
+
+/** Telegram profile: Links / Voice / Common groups ro‘yxatlari */
+export const getChatSharedMedia = async (req: Request, res: Response) => {
+    try {
+        const { chatId } = req.params;
+        const kind = String((req.query as { kind?: string }).kind || '').toLowerCase();
+        // @ts-ignore
+        const userId = req.user.id;
+        const cid = String(chatId);
+
+        const part = await pool.query(
+            `SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2 LIMIT 1`,
+            [cid, userId]
+        );
+        if ((part.rowCount ?? 0) === 0) {
+            return res.status(403).json({ message: 'Not authorized' });
+        }
+
+        if (kind === 'links') {
+            const r = await pool.query(
+                `SELECT id, content, type, created_at, sender_id
+                 FROM messages
+                 WHERE chat_id = $1
+                   AND (content ILIKE '%http://%' OR content ILIKE '%https://%')
+                 ORDER BY created_at DESC
+                 LIMIT 100`,
+                [cid]
+            );
+            return res.json(
+                r.rows.map((row: any) => ({
+                    id: String(row.id),
+                    content: row.content,
+                    type: row.type,
+                    created_at: row.created_at,
+                    sender_id: row.sender_id != null ? String(row.sender_id) : null,
+                }))
+            );
+        }
+
+        if (kind === 'voice') {
+            const r = await pool.query(
+                `SELECT id, content, type, metadata, created_at, sender_id
+                 FROM messages
+                 WHERE chat_id = $1 AND type = 'voice'
+                 ORDER BY created_at DESC
+                 LIMIT 100`,
+                [cid]
+            );
+            return res.json(
+                r.rows.map((row: any) => ({
+                    id: String(row.id),
+                    content: row.content,
+                    type: row.type,
+                    metadata: row.metadata,
+                    created_at: row.created_at,
+                    sender_id: row.sender_id != null ? String(row.sender_id) : null,
+                }))
+            );
+        }
+
+        if (kind === 'groups') {
+            const other = await pool.query(
+                `SELECT user_id FROM chat_participants WHERE chat_id = $1 AND user_id != $2 LIMIT 1`,
+                [cid, userId]
+            );
+            if (other.rows.length === 0) return res.json([]);
+            const otherUserId = other.rows[0].user_id;
+            const r = await pool.query(
+                `SELECT c.id, c.name, c.avatar, c.type
+                 FROM chats c
+                 JOIN chat_participants p1 ON c.id = p1.chat_id AND p1.user_id = $1
+                 JOIN chat_participants p2 ON c.id = p2.chat_id AND p2.user_id = $2
+                 WHERE c.type = 'group'
+                 ORDER BY c.name ASC NULLS LAST
+                 LIMIT 100`,
+                [userId, otherUserId]
+            );
+            return res.json(
+                r.rows.map((row: any) => ({
+                    id: String(row.id),
+                    name: row.name || 'Group',
+                    avatar: row.avatar || null,
+                    type: row.type,
+                }))
+            );
+        }
+
+        return res.status(400).json({ message: 'kind=links|voice|groups kerak' });
+    } catch (e) {
+        console.error('Get Chat Shared Media Error:', e);
+        res.status(500).json({ message: 'Shared media olishda xatolik' });
     }
 };
 

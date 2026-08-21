@@ -562,7 +562,7 @@ export function mergeIncomingSocketMessage(
         type: incoming.type ?? 'text',
         clientSideId: incoming.clientSideId,
         metadata: incoming.metadata ?? optimisticMessage?.metadata,
-        is_read: Boolean(incoming.is_read),
+        is_read: Boolean(incoming.is_read) || Boolean(optimisticMessage?.is_read),
         sender_name: incoming.sender_name ?? optimisticMessage?.senderName ?? 'User',
         senderName: incoming.sender_name ?? optimisticMessage?.senderName ?? 'User',
         sender_avatar: incoming.sender_avatar ?? incoming.avatar,

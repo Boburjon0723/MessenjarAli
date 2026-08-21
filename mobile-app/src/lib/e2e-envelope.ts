@@ -25,3 +25,8 @@ export function isE2eEnvelope(raw: unknown): boolean {
 }
 
 export const E2E_PLACEHOLDER = "🔒 Shifrlangan xabar";
+
+export const E2E_FAILED_PLACEHOLDER = "🔒 Xabarni ochib bo‘lmadi";
+
+/** Multi-device kalitlar tayyor bo‘lguncha yangi xabarlar shifrlanmaydi. */
+export const E2E_SEND_ENABLED = false;

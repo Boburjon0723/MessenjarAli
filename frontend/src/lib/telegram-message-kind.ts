@@ -156,3 +156,58 @@ export function describeDocumentKind(name?: string, mime?: string): {
     if (/zip|rar|7z|tar|gzip/.test(m) || /^(zip|rar|7z|tar|gz)$/.test(ext)) return { label: 'ZIP', tone: 'archive' };
     return { label: ext ? ext.toUpperCase() : 'FILE', tone: 'file' };
 }
+
+const MIME_EXT: Record<string, string> = {
+    'image/png': 'png',
+    'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
+    'image/gif': 'gif',
+    'image/webp': 'webp',
+    'image/bmp': 'bmp',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+};
+
+/** Telegram: clipboard paste → fayllar (rasm/video/document). Matn paste uchun []. */
+export function filesFromPasteEvent(e: {
+    clipboardData?: DataTransfer | null;
+}): File[] {
+    const cd = e.clipboardData;
+    if (!cd) return [];
+
+    const out: File[] = [];
+    const seen = new Set<string>();
+
+    const pushFile = (file: File | null) => {
+        if (!file || file.size <= 0) return;
+        const key = `${file.name}:${file.size}:${file.type}:${file.lastModified}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        let name = file.name || '';
+        if (!name || name === 'image.png' || name === 'image.jpg') {
+            const ext =
+                MIME_EXT[file.type] ||
+                (file.type.startsWith('image/') ? file.type.split('/')[1] || 'png' : 'bin');
+            name = `clipboard_${Date.now()}_${out.length}.${ext}`;
+            out.push(new File([file], name, { type: file.type || 'application/octet-stream', lastModified: Date.now() }));
+            return;
+        }
+        out.push(file);
+    };
+
+    if (cd.items && cd.items.length > 0) {
+        for (let i = 0; i < cd.items.length; i++) {
+            const item = cd.items[i];
+            if (item.kind !== 'file') continue;
+            pushFile(item.getAsFile());
+        }
+    }
+
+    if (out.length === 0 && cd.files && cd.files.length > 0) {
+        for (let i = 0; i < cd.files.length; i++) {
+            pushFile(cd.files[i]);
+        }
+    }
+
+    return out;
+}

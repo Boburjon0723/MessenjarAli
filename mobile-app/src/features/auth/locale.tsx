@@ -142,7 +142,16 @@ type Dict = {
   catUser: string;
   catGroup: string;
   catChannel: string;
+  catArchive: string;
   catFinance: string;
+  chatPin: string;
+  chatUnpin: string;
+  chatArchive: string;
+  chatUnarchive: string;
+  chatMarkUnread: string;
+  searchContactsSection: string;
+  createNamePlaceholder: string;
+  createBtn: string;
   searchPlaceholder: string;
   searchNoResult: string;
   chatGroupLabel: string;
@@ -191,6 +200,11 @@ type Dict = {
   msgSave: string;
   msgDelete: string;
   msgCancel: string;
+  msgReply: string;
+  typingStatus: string;
+  videoCall: string;
+  forwardPickChat: string;
+  replyBarTitle: string;
   menuNewContact: string;
   menuNewGroup: string;
   menuNewChannel: string;
@@ -202,6 +216,38 @@ type Dict = {
   expertStatus: string;
   expertVerified: string;
   expertPending: string;
+  savedMessages: string;
+  menuMore: string;
+  menuJobs: string;
+  menuFinance: string;
+  expenseControl: string;
+  expenseBalance: string;
+  expenseIncome: string;
+  expenseOut: string;
+  expenseEmpty: string;
+  expenseAdd: string;
+  expenseSave: string;
+  expenseCategory: string;
+  expenseAmountHint: string;
+  expenseNoDesc: string;
+  expenseDeleteTitle: string;
+  expenseDeleteDesc: string;
+  chatMute: string;
+  chatUnmute: string;
+  chatAiSummary: string;
+  chatShowProfile: string;
+  chatExportHistory: string;
+  chatClearHistory: string;
+  chatDeleteChat: string;
+  chatConfirmClear: string;
+  chatConfirmDeleteChat: string;
+  chatNoMessages: string;
+  chatSummaryTitle: string;
+  chatSummarizing: string;
+  chatSelectedCount: string;
+  chatServiceBusy: string;
+  chatSummaryError: string;
+  chatSelectMessages: string;
 };
 
 const DICTS: Record<AppLanguage, Dict> = {
@@ -315,7 +361,16 @@ const DICTS: Record<AppLanguage, Dict> = {
     catUser: "Shaxsiy",
     catGroup: "Guruh",
     catChannel: "Kanal",
+    catArchive: "Arxiv",
     catFinance: "Moliya",
+    chatPin: "Qadash",
+    chatUnpin: "Qadashni olib tashlash",
+    chatArchive: "Arxivlash",
+    chatUnarchive: "Arxivdan chiqarish",
+    chatMarkUnread: "O'qilmagan deb belgilash",
+    searchContactsSection: "Kontaktlar",
+    createNamePlaceholder: "Nomi",
+    createBtn: "Yaratish",
     searchPlaceholder: "Qidiruv...",
     searchNoResult: "Natija topilmadi",
     chatGroupLabel: "Guruh",
@@ -364,6 +419,11 @@ const DICTS: Record<AppLanguage, Dict> = {
     msgSave: "Galereyaga saqlash",
     msgDelete: "O'chirish",
     msgCancel: "Bekor qilish",
+    msgReply: "Javob berish",
+    typingStatus: "yozmoqda...",
+    videoCall: "Video",
+    forwardPickChat: "Chatni tanlang",
+    replyBarTitle: "Javob",
     menuNewContact: "Kontakt yaratish",
     menuNewGroup: "Guruh yaratish",
     menuNewChannel: "Kanal yaratish",
@@ -375,6 +435,38 @@ const DICTS: Record<AppLanguage, Dict> = {
     expertStatus: "Mutaxassislik holati",
     expertVerified: "Tasdiqlangan",
     expertPending: "Kutilmoqda",
+    savedMessages: "Saqlangan xabarlar",
+    menuMore: "Menyu",
+    menuJobs: "Ishlar",
+    menuFinance: "Moliya",
+    expenseControl: "Xarajatlar nazorati",
+    expenseBalance: "Balans",
+    expenseIncome: "Daromad",
+    expenseOut: "Xarajat",
+    expenseEmpty: "Bu oy uchun yozuvlar yo'q",
+    expenseAdd: "Yozuv qo'shish",
+    expenseSave: "Saqlash",
+    expenseCategory: "Kategoriya",
+    expenseAmountHint: "Summa (UZS)",
+    expenseNoDesc: "Izoh",
+    expenseDeleteTitle: "O'chirish",
+    expenseDeleteDesc: "Bu yozuvni o'chirasizmi?",
+    chatMute: "Ovozsiz",
+    chatUnmute: "Ovozni yoqish",
+    chatAiSummary: "AI xulosa",
+    chatShowProfile: "Profilni ko'rsatish",
+    chatExportHistory: "Tarixni eksport qilish",
+    chatClearHistory: "Tarixni tozalash",
+    chatDeleteChat: "Chatni o'chirish",
+    chatConfirmClear: "Barcha xabarlar o'chiriladi. Davom etasizmi?",
+    chatConfirmDeleteChat: "Chat butunlay o'chiriladi. Davom etasizmi?",
+    chatNoMessages: "Xabarlar yo'q",
+    chatSummaryTitle: "AI xulosa",
+    chatSummarizing: "Yig'ilmoqda...",
+    chatSelectedCount: "tanlangan",
+    chatServiceBusy: "Xizmat band, keyinroq urinib ko'ring",
+    chatSummaryError: "Xulosa olinmadi",
+    chatSelectMessages: "Tanlash",
   },
   ru: {
     loginTagline: "MALI PLATFORM",
@@ -486,7 +578,16 @@ const DICTS: Record<AppLanguage, Dict> = {
     catUser: "Личные",
     catGroup: "Группы",
     catChannel: "Каналы",
+    catArchive: "Архив",
     catFinance: "Финансы",
+    chatPin: "Закрепить",
+    chatUnpin: "Открепить",
+    chatArchive: "В архив",
+    chatUnarchive: "Из архива",
+    chatMarkUnread: "Отметить непрочитанным",
+    searchContactsSection: "Контакты",
+    createNamePlaceholder: "Название",
+    createBtn: "Создать",
     searchPlaceholder: "Поиск...",
     searchNoResult: "Результатов не найдено",
     chatGroupLabel: "Группа",
@@ -535,6 +636,11 @@ const DICTS: Record<AppLanguage, Dict> = {
     msgSave: "Сохранить в галерею",
     msgDelete: "Удалить",
     msgCancel: "Отмена",
+    msgReply: "Ответить",
+    typingStatus: "печатает...",
+    videoCall: "Видео",
+    forwardPickChat: "Выберите чат",
+    replyBarTitle: "Ответ",
     menuNewContact: "Создать контакт",
     menuNewGroup: "Создать группу",
     menuNewChannel: "Создать канал",
@@ -546,6 +652,38 @@ const DICTS: Record<AppLanguage, Dict> = {
     expertStatus: "Статус специалиста",
     expertVerified: "Подтвержден",
     expertPending: "В ожидании",
+    savedMessages: "Избранное",
+    menuMore: "Меню",
+    menuJobs: "Работа",
+    menuFinance: "Финансы",
+    expenseControl: "Контроль расходов",
+    expenseBalance: "Баланс",
+    expenseIncome: "Доход",
+    expenseOut: "Расход",
+    expenseEmpty: "За этот месяц записей нет",
+    expenseAdd: "Добавить запись",
+    expenseSave: "Сохранить",
+    expenseCategory: "Категория",
+    expenseAmountHint: "Сумма (UZS)",
+    expenseNoDesc: "Описание",
+    expenseDeleteTitle: "Удалить",
+    expenseDeleteDesc: "Удалить эту запись?",
+    chatMute: "Без звука",
+    chatUnmute: "Включить звук",
+    chatAiSummary: "AI Сводка",
+    chatShowProfile: "Показать профиль",
+    chatExportHistory: "Экспорт истории чата",
+    chatClearHistory: "Очистить историю",
+    chatDeleteChat: "Удалить чат",
+    chatConfirmClear: "Вся история будет удалена. Продолжить?",
+    chatConfirmDeleteChat: "Чат будет удалён полностью. Продолжить?",
+    chatNoMessages: "Нет сообщений",
+    chatSummaryTitle: "AI Сводка",
+    chatSummarizing: "Создаём...",
+    chatSelectedCount: "выбрано",
+    chatServiceBusy: "Сервис занят, попробуйте позже",
+    chatSummaryError: "Не удалось получить сводку",
+    chatSelectMessages: "Выбрать",
   },
   en: {
     loginTagline: "MALI PLATFORM",
@@ -657,7 +795,16 @@ const DICTS: Record<AppLanguage, Dict> = {
     catUser: "Private",
     catGroup: "Groups",
     catChannel: "Channels",
+    catArchive: "Archive",
     catFinance: "Finance",
+    chatPin: "Pin",
+    chatUnpin: "Unpin",
+    chatArchive: "Archive",
+    chatUnarchive: "Unarchive",
+    chatMarkUnread: "Mark as unread",
+    searchContactsSection: "Contacts",
+    createNamePlaceholder: "Name",
+    createBtn: "Create",
     searchPlaceholder: "Search...",
     searchNoResult: "No results found",
     chatGroupLabel: "Group",
@@ -706,6 +853,11 @@ const DICTS: Record<AppLanguage, Dict> = {
     msgSave: "Save to Gallery",
     msgDelete: "Delete",
     msgCancel: "Cancel",
+    msgReply: "Reply",
+    typingStatus: "typing...",
+    videoCall: "Video",
+    forwardPickChat: "Choose a chat",
+    replyBarTitle: "Reply",
     menuNewContact: "New Contact",
     menuNewGroup: "New Group",
     menuNewChannel: "New Channel",
@@ -717,6 +869,38 @@ const DICTS: Record<AppLanguage, Dict> = {
     expertStatus: "Expert Status",
     expertVerified: "Verified",
     expertPending: "Pending",
+    savedMessages: "Saved Messages",
+    menuMore: "Menu",
+    menuJobs: "Jobs",
+    menuFinance: "Finance",
+    expenseControl: "Expense Control",
+    expenseBalance: "Balance",
+    expenseIncome: "Income",
+    expenseOut: "Expense",
+    expenseEmpty: "No records for this month",
+    expenseAdd: "Add record",
+    expenseSave: "Save",
+    expenseCategory: "Category",
+    expenseAmountHint: "Amount (UZS)",
+    expenseNoDesc: "Note",
+    expenseDeleteTitle: "Delete",
+    expenseDeleteDesc: "Delete this record?",
+    chatMute: "Mute",
+    chatUnmute: "Unmute",
+    chatAiSummary: "AI Summary",
+    chatShowProfile: "Show profile",
+    chatExportHistory: "Export chat history",
+    chatClearHistory: "Clear history",
+    chatDeleteChat: "Delete chat",
+    chatConfirmClear: "All messages will be deleted. Continue?",
+    chatConfirmDeleteChat: "This chat will be deleted permanently. Continue?",
+    chatNoMessages: "No messages",
+    chatSummaryTitle: "AI Summary",
+    chatSummarizing: "Summarizing...",
+    chatSelectedCount: "selected",
+    chatServiceBusy: "Service busy, try again later",
+    chatSummaryError: "Could not get summary",
+    chatSelectMessages: "Select",
   },
 };
 

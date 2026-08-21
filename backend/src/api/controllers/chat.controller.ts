@@ -17,6 +17,10 @@ function parseChatMetadata(raw: unknown): Record<string, any> {
     }
 }
 
+function isSavedMessagesMeta(meta: Record<string, unknown> | null | undefined): boolean {
+    return meta?.kind === 'saved_messages';
+}
+
 /** Foydalanuvchi mavjud va faol (o‘chirilmagan / bloklanmagan akkaunt). */
 export async function isActiveUserId(userId: string | null | undefined): Promise<boolean> {
     if (!userId) return false;
@@ -132,10 +136,25 @@ export async function enrichPrivateChatRow(chat: any, currentUserId: string): Pr
     if (chat.type !== 'private' || !chat.participants) {
         return { ...chat, otherUser: null };
     }
-    const otherParticipantId = chat.participants.find((p: string) => String(p) !== String(currentUserId));
-    if (!otherParticipantId) return { ...chat, otherUser: null };
 
     const meta = parseChatMetadata(chat.metadata);
+    if (isSavedMessagesMeta(meta)) {
+        const user = await UserModel.findById(currentUserId);
+        return {
+            ...chat,
+            is_saved_messages: true,
+            otherUser: {
+                id: currentUserId,
+                name: 'Saqlangan xabarlar',
+                surname: '',
+                avatar: user?.avatar_url,
+                avatar_url: user?.avatar_url,
+            },
+        };
+    }
+
+    const otherParticipantId = chat.participants.find((p: string) => String(p) !== String(currentUserId));
+    if (!otherParticipantId) return { ...chat, otherUser: null };
     if (meta.source === 'expert_listing' && meta.expert_id && meta.snapshot) {
         const isExpertSide = String(meta.expert_id) === String(currentUserId);
         if (isExpertSide) {
@@ -430,6 +449,7 @@ export const getUserChats = async (req: Request, res: Response) => {
                         const ok = parsed.filter(
                             (c: any) =>
                                 c?.type !== 'private' ||
+                                c?.is_saved_messages ||
                                 (c?.otherUser && !c?.peerUnavailable)
                         );
                         // Keshda o'chirilgan sheriklar bo'lsa — DB dan qayta yuklash
@@ -450,7 +470,11 @@ export const getUserChats = async (req: Request, res: Response) => {
         // O'chirilgan / mavjud bo'lmagan sherikli shaxsiy chatlarni yashirish va tozalash
         const visible: any[] = [];
         for (const chat of enriched) {
-            if (chat?.type === 'private' && (chat.peerUnavailable || !chat.otherUser)) {
+            if (
+                chat?.type === 'private' &&
+                !chat.is_saved_messages &&
+                (chat.peerUnavailable || !chat.otherUser)
+            ) {
                 const cid = chat.id != null ? String(chat.id) : '';
                 if (cid) void cleanupOrphanPrivateChat(cid, currentUserId);
                 continue;
@@ -465,6 +489,32 @@ export const getUserChats = async (req: Request, res: Response) => {
     } catch (error) {
         console.error('Get Chats Error:', error);
         res.status(500).json({ message: 'Internal server error' });
+    }
+};
+
+/** Telegram «Saved Messages» — ochish yoki yaratish */
+export const getOrCreateSavedMessages = async (req: Request, res: Response) => {
+    try {
+        const currentUserId = (req as any).user.id;
+        let chat = await ChatModel.findSavedMessages(currentUserId);
+        let created = false;
+        if (!chat) {
+            chat = await ChatModel.createSavedMessages(currentUserId);
+            created = true;
+            await safeDelCache(`user_chats:${currentUserId}`);
+        }
+        const partsRes = await pool.query('SELECT user_id FROM chat_participants WHERE chat_id = $1', [
+            chat.id,
+        ]);
+        const row = {
+            ...chat,
+            participants: partsRes.rows.map((r: { user_id: string }) => r.user_id),
+        };
+        const enriched = await enrichPrivateChatRow(row, currentUserId);
+        res.status(created ? 201 : 200).json(enriched);
+    } catch (error: any) {
+        console.error('Saved Messages Error:', error);
+        res.status(500).json({ message: 'Internal server error', error: error.message });
     }
 };
 
@@ -546,10 +596,14 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             return res.status(400).json({ message: "Noto'g'ri chat ID" });
         }
 
-        const { content, type, metadata } = req.body || {};
+        const { content, type, metadata, parentId, parent_id } = req.body || {};
         if (!content || typeof content !== 'string' || !String(content).trim()) {
             return res.status(400).json({ message: 'Xabar matni kerak' });
         }
+        const replyParentId =
+            (typeof parentId === 'string' && parentId.trim()) ||
+            (typeof parent_id === 'string' && parent_id.trim()) ||
+            null;
 
         const memberCheck = await pool.query(
             `SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2`,
@@ -569,29 +623,33 @@ export const sendChatMessage = async (req: Request, res: Response) => {
         }
 
         if (chatRow.type === 'private') {
-            const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [chatId]);
-            const otherParticipant = participants.rows.find((p: { user_id: string }) => String(p.user_id) !== String(currentUserId));
-            if (otherParticipant) {
-                if (!(await isActiveUserId(String(otherParticipant.user_id)))) {
-                    await cleanupOrphanPrivateChat(chatId, currentUserId);
-                    return res.status(410).json({
-                        message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
-                        peerUnavailable: true,
-                    });
-                }
-                const isBlocked = await UserModel.isBlocked(currentUserId, otherParticipant.user_id);
-                if (isBlocked) {
-                    return res.status(403).json({ message: 'Xabar yuborish imkonsiz: bloklangan' });
-                }
-            } else {
-                return res.status(410).json({
-                    message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
-                    peerUnavailable: true,
-                });
-            }
             const metaRow = await pool.query(`SELECT metadata FROM chats WHERE id = $1 LIMIT 1`, [chatId]);
             const { parseChatMetadata, isListingMessagingUnlocked } = await import('../../services/chatConsent.service');
             const chatMeta = parseChatMetadata(metaRow.rows[0]?.metadata);
+            const saved = isSavedMessagesMeta(chatMeta);
+
+            if (!saved) {
+                const participants = await pool.query(`SELECT user_id FROM chat_participants WHERE chat_id = $1`, [chatId]);
+                const otherParticipant = participants.rows.find((p: { user_id: string }) => String(p.user_id) !== String(currentUserId));
+                if (otherParticipant) {
+                    if (!(await isActiveUserId(String(otherParticipant.user_id)))) {
+                        await cleanupOrphanPrivateChat(chatId, currentUserId);
+                        return res.status(410).json({
+                            message: "Suhbatdosh akkaunti o'chirilgan. Xabar yuborib bo'lmaydi.",
+                            peerUnavailable: true,
+                        });
+                    }
+                    const isBlocked = await UserModel.isBlocked(currentUserId, otherParticipant.user_id);
+                    if (isBlocked) {
+                        return res.status(403).json({ message: 'Xabar yuborish imkonsiz: bloklangan' });
+                    }
+                } else {
+                    return res.status(410).json({
+                        message: "Suhbatdosh topilmadi. Xabar yuborib bo'lmaydi.",
+                        peerUnavailable: true,
+                    });
+                }
+            }
             if (!isListingMessagingUnlocked(chatMeta)) {
                 return res.status(403).json({
                     message: "Murojaat qabul qilinguncha xabar yuborib bo'lmaydi",
@@ -605,7 +663,7 @@ export const sendChatMessage = async (req: Request, res: Response) => {
             String(content).trim(),
             (type && typeof type === 'string' ? type : 'text') as string,
             metadata && typeof metadata === 'object' ? metadata : {},
-            null
+            replyParentId
         );
 
         let created_at = createdAtFromDbForJson(savedMessage.created_at);
@@ -1068,6 +1126,25 @@ export const deleteMessagesBulk = async (req: Request, res: Response) => {
         }
 
         await MessageModel.deleteByIds(chatId as string, messageIds);
+        const io = req.app.get('io');
+        if (io && Array.isArray(messageIds) && messageIds.length > 0) {
+            try {
+                const participantsRes = await pool.query(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                    [chatId]
+                );
+                const targetRooms = [
+                    String(chatId),
+                    ...participantsRes.rows.map((r: { user_id: string }) => String(r.user_id)),
+                ];
+                io.to(targetRooms).emit('messages_deleted', {
+                    chatId: String(chatId),
+                    messageIds: messageIds.map((id: string) => String(id)),
+                });
+            } catch (e) {
+                console.warn('[deleteMessagesBulk] emit failed', e);
+            }
+        }
         res.status(200).json({ message: 'Messages deleted' });
     } catch (error) {
         console.error('Delete Messages Bulk Error:', error);
@@ -1079,10 +1156,35 @@ export const markAsRead = async (req: Request, res: Response) => {
     try {
         const { chatId } = req.params;
         const currentUserId = (req as any).user.id;
+        const cid = String(chatId);
 
-        await ChatModel.markChatAsRead(chatId as string, currentUserId);
+        await ChatModel.markChatAsRead(cid, currentUserId);
+
+        // Telegram: peer chatni ochsa — outgoing xabarlarda 2 galochka (is_read)
+        const updatedMessageIds = await MessageModel.markAllUnreadAsRead(cid, currentUserId);
+        const io = req.app.get('io');
+        if (io && updatedMessageIds.length > 0) {
+            try {
+                const participantsRes = await pool.query(
+                    'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                    [cid]
+                );
+                const targetRooms = [
+                    cid,
+                    ...participantsRes.rows.map((r: { user_id: string }) => String(r.user_id)),
+                ];
+                io.to(targetRooms).emit('messages_read', {
+                    roomId: cid,
+                    messageIds: updatedMessageIds,
+                    readBy: String(currentUserId),
+                });
+            } catch (e) {
+                console.warn('[markAsRead] messages_read emit:', e);
+            }
+        }
+
         await safeDelCache(`user_chats:${currentUserId}`);
-        res.status(200).json({ message: 'Chat marked as read' });
+        res.status(200).json({ message: 'Chat marked as read', messageIds: updatedMessageIds });
     } catch (error) {
         console.error('Mark As Read Error:', error);
         res.status(500).json({ message: 'Internal server error' });

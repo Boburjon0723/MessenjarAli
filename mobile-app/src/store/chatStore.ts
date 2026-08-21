@@ -15,6 +15,9 @@ interface ChatState {
   // UI darajasida kelgan xabarlarni manual ulash uchun
   addMessageLocally: (chatId: string, message: Message) => void;
   updateMessageLocally: (chatId: string, messageId: string, updates: Partial<Message>) => void;
+  removeMessagesLocally: (chatId: string, messageIds: string[]) => void;
+  clearMessagesLocally: (chatId: string) => void;
+  removeChatLocally: (chatId: string) => void;
   updateChatLocally: (chatId: string, updates: Partial<Chat>) => void;
 }
 
@@ -93,6 +96,34 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const current = state.messages[chatId] || [];
       const newMessages = current.map(m => m.id === messageId ? { ...m, ...updates } : m);
       return { messages: { ...state.messages, [chatId]: newMessages } };
+    });
+  },
+
+  removeMessagesLocally: (chatId, messageIds) => {
+    const idSet = new Set(messageIds.map(String));
+    set((state) => {
+      const current = state.messages[chatId] || [];
+      const newMessages = current.filter((m) => !idSet.has(String(m.id)));
+      AsyncStorage.setItem(`@expertline_messages_${chatId}`, JSON.stringify(newMessages)).catch(() => {});
+      return { messages: { ...state.messages, [chatId]: newMessages } };
+    });
+  },
+
+  clearMessagesLocally: (chatId) => {
+    set((state) => {
+      AsyncStorage.setItem(`@expertline_messages_${chatId}`, JSON.stringify([])).catch(() => {});
+      return { messages: { ...state.messages, [chatId]: [] } };
+    });
+  },
+
+  removeChatLocally: (chatId) => {
+    set((state) => {
+      const nextMessages = { ...state.messages };
+      delete nextMessages[chatId];
+      AsyncStorage.removeItem(`@expertline_messages_${chatId}`).catch(() => {});
+      const newChats = state.chats.filter((c) => String(c.id) !== String(chatId));
+      AsyncStorage.setItem("@expertline_chats", JSON.stringify(newChats)).catch(() => {});
+      return { chats: newChats, messages: nextMessages };
     });
   },
   

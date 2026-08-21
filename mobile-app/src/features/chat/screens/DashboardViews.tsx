@@ -10,6 +10,9 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useFocusEffect } from "@react-navigation/native";
 import {
@@ -30,6 +33,7 @@ import {
   Bell,
   Users,
   MessageSquare,
+  X,
 } from "lucide-react-native";
 
 
@@ -48,7 +52,28 @@ import {
   type TokenBalance,
   type TransactionRow,
 } from "../../dashboard/api";
-import { createOrOpenPrivateChat } from "../service";
+import { createOrOpenPrivateChat, addContactRequest } from "../service";
+import {
+  createTopUpRequest,
+  fetchWalletConfig,
+  findAdminUserId,
+  setupWalletPin,
+  transferTokens,
+  walletDigitsOnly,
+  walletResolveRecipientFromPhone,
+  type ContactWithPhone,
+  MIN_TOPUP,
+  MAX_TOPUP,
+  MIN_WITHDRAW,
+} from "../wallet-service";
+import {
+  createP2pAd,
+  fetchP2pAds,
+  startP2pTrade,
+  openP2pTradeChat,
+  type P2pAd,
+} from "../p2p-service";
+import { navigationRef } from "../../../lib/navigationRef";
 
 const { width } = Dimensions.get("window");
 
@@ -61,6 +86,7 @@ type MessagesNav = {
       avatarUrl?: string | null;
       expertId?: string;
       fallbackData?: any;
+      startCall?: "audio" | "video";
     }
   ) => void;
 };
@@ -77,6 +103,36 @@ export function WalletView() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { t } = useAuthLocale();
+  const scrollRef = useRef<ScrollView>(null);
+  const historyY = useRef(0);
+
+  const [modal, setModal] = useState<"none" | "topup" | "send" | "pin" | "withdraw" | "p2p">("none");
+  const [busyAction, setBusyAction] = useState(false);
+  const [formError, setFormError] = useState("");
+  const [adminCard, setAdminCard] = useState<string | null>(null);
+  const [systemMali, setSystemMali] = useState(0);
+
+  const [p2pAds, setP2pAds] = useState<P2pAd[]>([]);
+  const [p2pLoading, setP2pLoading] = useState(false);
+  const [p2pCreateAmount, setP2pCreateAmount] = useState("");
+  const [p2pCreatePrice, setP2pCreatePrice] = useState("");
+  const [p2pTab, setP2pTab] = useState<"market" | "sell">("market");
+
+  const [topUpAmount, setTopUpAmount] = useState("");
+  const [sendPhone, setSendPhone] = useState("");
+  const [sendAmount, setSendAmount] = useState("");
+  const [sendPin, setSendPin] = useState("");
+  const [contacts, setContacts] = useState<ContactWithPhone[]>([]);
+  const [pinNew, setPinNew] = useState("");
+  const [pinConfirm, setPinConfirm] = useState("");
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [withdrawCard, setWithdrawCard] = useState("");
+  const [withdrawPin, setWithdrawPin] = useState("");
+
+  const hasPin = !!balance?.hasPin;
+  const balNum = parseFloat(balance?.balance ?? "0") || 0;
+  const lockedNum = parseFloat(balance?.locked_balance ?? "0") || 0;
+  const uzsApprox = Math.round(balNum * MALI_UZS_APPROX);
 
   const load = useCallback(async (mode: "full" | "pull" = "full") => {
     if (mode === "pull") setRefreshing(true);
@@ -101,12 +157,328 @@ export function WalletView() {
     }, [load])
   );
 
-  const balNum = parseFloat(balance?.balance ?? "0") || 0;
-  const lockedNum = parseFloat(balance?.locked_balance ?? "0") || 0;
-  const uzsApprox = Math.round(balNum * MALI_UZS_APPROX);
+  const closeModal = () => {
+    setModal("none");
+    setFormError("");
+    setBusyAction(false);
+  };
+
+  const ensurePinThen = (next: "send" | "withdraw") => {
+    if (!hasPin) {
+      setPinNew("");
+      setPinConfirm("");
+      setFormError("");
+      setModal("pin");
+      return;
+    }
+    setFormError("");
+    if (next === "send") {
+      setSendPhone("");
+      setSendAmount("");
+      setSendPin("");
+      setModal("send");
+      void fetchContacts().then((list) => setContacts(list as ContactWithPhone[]));
+    } else {
+      setWithdrawAmount("");
+      setWithdrawCard("");
+      setWithdrawPin("");
+      setModal("withdraw");
+    }
+  };
+
+  const openTopUp = async () => {
+    setTopUpAmount("");
+    setFormError("");
+    setModal("topup");
+    const cfg = await fetchWalletConfig();
+    setAdminCard(cfg.adminCard);
+    setSystemMali(cfg.systemAvailableMali);
+  };
+
+  const openP2p = async () => {
+    setFormError("");
+    setP2pTab("market");
+    setP2pCreateAmount("");
+    setP2pCreatePrice("");
+    setModal("p2p");
+    setP2pLoading(true);
+    try {
+      const ads = await fetchP2pAds("sell");
+      setP2pAds(ads);
+    } catch {
+      setP2pAds([]);
+    } finally {
+      setP2pLoading(false);
+    }
+  };
+
+  const buyFromAd = async (ad: P2pAd) => {
+    const maxAmt = Number(ad.amount_mali) || 0;
+    const defaultAmt = String(Math.min(maxAmt, 100) || 10);
+
+    const askAmount = (): Promise<string | null> =>
+      new Promise((resolve) => {
+        if (Platform.OS === "ios") {
+          Alert.prompt(
+            "Sotib olish",
+            `Maks: ${maxAmt} MALI. Qancha olasiz?`,
+            [
+              { text: "Bekor", style: "cancel", onPress: () => resolve(null) },
+              { text: "OK", onPress: (v?: string) => resolve(v || "") },
+            ],
+            "plain-text",
+            defaultAmt
+          );
+        } else {
+          Alert.alert("Sotib olish", `${defaultAmt} MALI olinsinmi? (maks ${maxAmt})`, [
+            { text: "Bekor", style: "cancel", onPress: () => resolve(null) },
+            { text: "Ha", onPress: () => resolve(defaultAmt) },
+          ]);
+        }
+      });
+
+    const ask = await askAmount();
+    if (ask == null) return;
+    const amount = Number(ask);
+    if (!amount || amount <= 0) {
+      Alert.alert("P2P", "Summani kiriting");
+      return;
+    }
+    setBusyAction(true);
+    try {
+      const res = await startP2pTrade(ad.id, amount);
+      if (!res.ok) {
+        Alert.alert("P2P", res.message || "Savdo ochilmadi");
+        return;
+      }
+      const tradeId = res.trade?.id;
+      if (tradeId) {
+        const chat = await openP2pTradeChat(String(tradeId));
+        if (chat?.chatId && navigationRef.isReady()) {
+          setModal("none");
+          navigationRef.navigate("ChatDetail", {
+            chatId: chat.chatId,
+            name: chat.name || "P2P savdo",
+            avatarUrl: null,
+          });
+          return;
+        }
+      }
+      Alert.alert("P2P", "Savdo boshlandi");
+      setModal("none");
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const submitP2pSellAd = async () => {
+    const amount = Number(p2pCreateAmount);
+    const price = Number(p2pCreatePrice) || undefined;
+    if (!amount || amount <= 0) {
+      setFormError("MALI miqdorini kiriting");
+      return;
+    }
+    setBusyAction(true);
+    setFormError("");
+    try {
+      const res = await createP2pAd({ type: "sell", amount_mali: amount, price_uzs: price });
+      if (!res.ok) {
+        setFormError(res.message || "E’lon yaratilmadi");
+        return;
+      }
+      Alert.alert("P2P", "Sotish e’loni yaratildi");
+      setP2pTab("market");
+      const ads = await fetchP2pAds("sell");
+      setP2pAds(ads);
+    } finally {
+      setBusyAction(false);
+    }
+  };
+
+  const onHistory = async () => {
+    scrollRef.current?.scrollTo({ y: Math.max(0, historyY.current - 8), animated: true });
+    try {
+      const list = await fetchRecentTransactions(40);
+      setTxs(list);
+    } catch {
+      /* keep existing */
+    }
+  };
+
+  const submitTopUp = async () => {
+    const n = Number(topUpAmount);
+    if (!n || Number.isNaN(n) || n <= 0) {
+      setFormError("To‘g‘ri summa kiriting");
+      return;
+    }
+    if (n < MIN_TOPUP) {
+      setFormError(`Minimal ${MIN_TOPUP} MALI`);
+      return;
+    }
+    if (n > MAX_TOPUP) {
+      setFormError(`Maksimal ${MAX_TOPUP.toLocaleString()} MALI`);
+      return;
+    }
+    setBusyAction(true);
+    setFormError("");
+    const r = await createTopUpRequest(n);
+    setBusyAction(false);
+    if (!r.ok) {
+      setFormError(r.message || "Xatolik");
+      return;
+    }
+    Alert.alert("Muvaffaqiyat", "To‘ldirish so‘rovi yuborildi. Admin tasdiqlashi kerak.");
+    closeModal();
+    void load("pull");
+  };
+
+  const submitPin = async () => {
+    if (pinNew.length !== 4 || Number.isNaN(Number(pinNew))) {
+      setFormError("4 xonali PIN kiriting");
+      return;
+    }
+    if (pinNew !== pinConfirm) {
+      setFormError("PIN mos kelmadi");
+      return;
+    }
+    setBusyAction(true);
+    const r = await setupWalletPin(pinNew);
+    setBusyAction(false);
+    if (!r.ok) {
+      setFormError(r.message || "Xatolik");
+      return;
+    }
+    Alert.alert("Tayyor", "Hamyon PIN o‘rnatildi");
+    closeModal();
+    void load("pull");
+  };
+
+  const submitSend = async () => {
+    const amount = Number(sendAmount);
+    let receiverId = "";
+    if (sendPhone.trim()) {
+      receiverId = walletResolveRecipientFromPhone(sendPhone, contacts);
+    }
+    if (!receiverId) {
+      setFormError("Kontaktlardan telefon kiriting (faqat sizdagi kontaktlar)");
+      return;
+    }
+    if (!amount || amount <= 0) {
+      setFormError("To‘g‘ri summa kiriting");
+      return;
+    }
+    if (amount > balNum) {
+      setFormError("Balans yetarli emas");
+      return;
+    }
+    if (!sendPin || sendPin.length !== 4) {
+      setFormError("4 xonali PIN kiriting");
+      return;
+    }
+    setBusyAction(true);
+    const r = await transferTokens({ receiverId, amount, pin: sendPin });
+    setBusyAction(false);
+    if (!r.ok) {
+      setFormError(r.message || "Yuborishda xatolik");
+      return;
+    }
+    Alert.alert("Yuborildi", `${amount} MALI o‘tkazildi`);
+    closeModal();
+    void load("pull");
+  };
+
+  const submitWithdraw = async () => {
+    const amount = Number(withdrawAmount);
+    const cleanCard = withdrawCard.replace(/\D/g, "");
+    if (!amount || amount <= 0) {
+      setFormError("To‘g‘ri summa kiriting");
+      return;
+    }
+    if (amount < MIN_WITHDRAW) {
+      setFormError(`Minimal yechish ${MIN_WITHDRAW} MALI`);
+      return;
+    }
+    if (amount > balNum) {
+      setFormError("Balans yetarli emas");
+      return;
+    }
+    if (systemMali > 0 && amount > systemMali) {
+      setFormError("Tizim rezervida yetarli MALI yo‘q");
+      return;
+    }
+    if (cleanCard.length < 16) {
+      setFormError("Karta raqamini to‘liq kiriting");
+      return;
+    }
+    if (!withdrawPin || withdrawPin.length !== 4) {
+      setFormError("4 xonali PIN kiriting");
+      return;
+    }
+    setBusyAction(true);
+    const adminId = await findAdminUserId();
+    if (!adminId) {
+      setBusyAction(false);
+      setFormError("Yechish vaqtincha mavjud emas");
+      return;
+    }
+    const r = await transferTokens({
+      receiverId: adminId,
+      amount,
+      pin: withdrawPin,
+      note: `WITHDRAW_REQUEST:${cleanCard}`,
+    });
+    setBusyAction(false);
+    if (!r.ok) {
+      setFormError(r.message || "Yechish so‘rovi yuborilmadi");
+      return;
+    }
+    Alert.alert("So‘rov yuborildi", "Yechish so‘rovi qabul qilindi");
+    closeModal();
+    void load("pull");
+  };
+
+  const glassModal = (
+    title: string,
+    body: React.ReactNode,
+    onSubmit: () => void,
+    submitLabel: string
+  ) => (
+    <Modal visible transparent animationType="slide" onRequestClose={closeModal}>
+      <KeyboardAvoidingView
+        style={styles.modalOverlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeModal} />
+        <View style={styles.modalCard}>
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>{title}</Text>
+            <Pressable onPress={closeModal} hitSlop={10}>
+              <X color="rgba(255,255,255,0.6)" size={22} />
+            </Pressable>
+          </View>
+          <ScrollView keyboardShouldPersistTaps="handled" style={{ maxHeight: 420 }}>
+            {body}
+            {formError ? <Text style={styles.modalError}>{formError}</Text> : null}
+          </ScrollView>
+          <Pressable
+            style={[styles.modalSubmit, busyAction && { opacity: 0.6 }]}
+            onPress={onSubmit}
+            disabled={busyAction}
+          >
+            {busyAction ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.modalSubmitText}>{submitLabel}</Text>
+            )}
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.viewContainer}
       showsVerticalScrollIndicator={false}
       contentContainerStyle={{ paddingBottom: 150 }}
@@ -139,6 +511,11 @@ export function WalletView() {
                 {t('dashLocked')}: {lockedNum.toLocaleString("uz-UZ", { maximumFractionDigits: 2 })} MALI
               </Text>
             ) : null}
+            {!hasPin && !loading ? (
+              <Pressable style={styles.pinHintBtn} onPress={() => { setFormError(""); setPinNew(""); setPinConfirm(""); setModal("pin"); }}>
+                <Text style={styles.pinHintText}>PIN o‘rnatish</Text>
+              </Pressable>
+            ) : null}
           </>
         )}
       </View>
@@ -148,14 +525,42 @@ export function WalletView() {
       ) : null}
 
       <View style={styles.actionsGrid}>
-        <ActionIconBtn icon={<Plus color="#fff" size={24}/>} label={t('dashFill')} color="rgba(16, 185, 129, 0.6)" />
-        <ActionIconBtn icon={<ArrowUpRight color="#fff" size={24}/>} label={t('dashSend')} color="rgba(59, 130, 246, 0.6)" />
-        <ActionIconBtn icon={<Zap color="#fff" size={24}/>} label={t('dashBuy')} color="rgba(99, 102, 241, 0.6)" />
-        <ActionIconBtn icon={<History color="#fff" size={24}/>} label={t('dashHistory')} color="rgba(245, 158, 11, 0.6)" />
+        <ActionIconBtn
+          icon={<Plus color="#fff" size={24}/>}
+          label={t('dashFill')}
+          color="rgba(16, 185, 129, 0.6)"
+          onPress={() => void openTopUp()}
+        />
+        <ActionIconBtn
+          icon={<ArrowUpRight color="#fff" size={24}/>}
+          label={t('dashSend')}
+          color="rgba(59, 130, 246, 0.6)"
+          onPress={() => ensurePinThen("send")}
+        />
+        <ActionIconBtn
+          icon={<Zap color="#fff" size={24}/>}
+          label={t('dashBuy')}
+          color="rgba(99, 102, 241, 0.6)"
+          onPress={() => void openP2p()}
+        />
+        <ActionIconBtn
+          icon={<History color="#fff" size={24}/>}
+          label={t('dashHistory')}
+          color="rgba(245, 158, 11, 0.6)"
+          onPress={() => void onHistory()}
+        />
       </View>
 
-      <View style={styles.sectionHeader}>
+      <View
+        style={styles.sectionHeader}
+        onLayout={(e) => {
+          historyY.current = e.nativeEvent.layout.y;
+        }}
+      >
         <Text style={styles.sectionTitle}>{t('dashRecent')}</Text>
+        <Pressable onPress={() => ensurePinThen("withdraw")} hitSlop={8}>
+          <Text style={styles.withdrawLink}>Yechish</Text>
+        </Pressable>
       </View>
 
       {loading && txs.length === 0 ? (
@@ -174,6 +579,226 @@ export function WalletView() {
           ))}
         </View>
       )}
+
+      {modal === "topup" &&
+        glassModal(
+          "To‘ldirish",
+          <>
+            <Text style={styles.modalHint}>Admin kartaga o‘tkazing, so‘ng summani yuboring</Text>
+            <View style={styles.adminCardBox}>
+              <Text style={styles.adminCardLabel}>UZCARD</Text>
+              <Text style={styles.adminCardNum}>{adminCard || "Karta ko‘rsatilmagan"}</Text>
+            </View>
+            <Text style={styles.fieldLabel}>Summa (MALI)</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={topUpAmount}
+              onChangeText={setTopUpAmount}
+            />
+          </>,
+          () => void submitTopUp(),
+          "So‘rov yuborish"
+        )}
+
+      {modal === "send" &&
+        glassModal(
+          "Yuborish",
+          <>
+            <Text style={styles.fieldLabel}>Telefon (kontakt)</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="phone-pad"
+              placeholder="+998..."
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={sendPhone}
+              onChangeText={setSendPhone}
+            />
+            <Text style={styles.fieldLabel}>Summa (MALI)</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="decimal-pad"
+              placeholder="0.00"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={sendAmount}
+              onChangeText={setSendAmount}
+            />
+            <Text style={styles.fieldLabel}>PIN</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              placeholder="••••"
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              value={sendPin}
+              onChangeText={setSendPin}
+            />
+          </>,
+          () => void submitSend(),
+          "Yuborish"
+        )}
+
+      {modal === "pin" &&
+        glassModal(
+          "PIN o‘rnatish",
+          <>
+            <Text style={styles.modalHint}>4 xonali hamyon PIN yarating</Text>
+            <Text style={styles.fieldLabel}>Yangi PIN</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              value={pinNew}
+              onChangeText={setPinNew}
+            />
+            <Text style={styles.fieldLabel}>Tasdiqlash</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              value={pinConfirm}
+              onChangeText={setPinConfirm}
+            />
+          </>,
+          () => void submitPin(),
+          "Saqlash"
+        )}
+
+      {modal === "withdraw" &&
+        glassModal(
+          "Yechish",
+          <>
+            <Text style={styles.fieldLabel}>Summa (MALI)</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="decimal-pad"
+              value={withdrawAmount}
+              onChangeText={setWithdrawAmount}
+              placeholderTextColor="rgba(255,255,255,0.3)"
+              placeholder="0.00"
+            />
+            <Text style={styles.fieldLabel}>Karta raqami</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="number-pad"
+              value={withdrawCard}
+              onChangeText={setWithdrawCard}
+              placeholder="8600..."
+              placeholderTextColor="rgba(255,255,255,0.3)"
+            />
+            <Text style={styles.fieldLabel}>PIN</Text>
+            <TextInput
+              style={styles.fieldInput}
+              keyboardType="number-pad"
+              maxLength={4}
+              secureTextEntry
+              value={withdrawPin}
+              onChangeText={setWithdrawPin}
+            />
+          </>,
+          () => void submitWithdraw(),
+          "So‘rov yuborish"
+        )}
+
+      <Modal visible={modal === "p2p"} transparent animationType="slide" onRequestClose={closeModal}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.p2pOverlay}
+        >
+          <Pressable style={StyleSheet.absoluteFill} onPress={closeModal} />
+          <View style={styles.p2pSheet}>
+            <View style={styles.p2pHeader}>
+              <Text style={styles.p2pTitle}>P2P bozor</Text>
+              <Pressable onPress={closeModal} hitSlop={10}>
+                <X color="#aaa" size={22} />
+              </Pressable>
+            </View>
+            <View style={styles.p2pTabs}>
+              <Pressable
+                style={[styles.p2pTab, p2pTab === "market" && styles.p2pTabActive]}
+                onPress={() => {
+                  setP2pTab("market");
+                  void fetchP2pAds("sell").then(setP2pAds);
+                }}
+              >
+                <Text style={styles.p2pTabText}>Sotib olish</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.p2pTab, p2pTab === "sell" && styles.p2pTabActive]}
+                onPress={() => setP2pTab("sell")}
+              >
+                <Text style={styles.p2pTabText}>Sotish e’loni</Text>
+              </Pressable>
+            </View>
+            {formError ? <Text style={styles.inlineError}>{formError}</Text> : null}
+            {p2pTab === "market" ? (
+              p2pLoading ? (
+                <ActivityIndicator color="#fff" style={{ marginVertical: 24 }} />
+              ) : p2pAds.length === 0 ? (
+                <Text style={styles.emptyText}>Hozircha sotuv e’lonlari yo‘q</Text>
+              ) : (
+                <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+                  {p2pAds.map((ad) => (
+                    <View key={ad.id} style={styles.p2pAdRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.p2pAdName}>{ad.user_name || "Foydalanuvchi"}</Text>
+                        <Text style={styles.p2pAdMeta}>
+                          {Number(ad.amount_mali).toLocaleString()} MALI
+                          {ad.price_uzs ? ` · ${Number(ad.price_uzs).toLocaleString()} UZS` : ""}
+                        </Text>
+                      </View>
+                      <Pressable
+                        style={[styles.p2pBuyBtn, busyAction && { opacity: 0.5 }]}
+                        disabled={busyAction}
+                        onPress={() => void buyFromAd(ad)}
+                      >
+                        <Text style={styles.p2pBuyText}>Olish</Text>
+                      </Pressable>
+                    </View>
+                  ))}
+                </ScrollView>
+              )
+            ) : (
+              <View>
+                <Text style={styles.fieldLabel}>Sotiladigan MALI</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  keyboardType="decimal-pad"
+                  value={p2pCreateAmount}
+                  onChangeText={setP2pCreateAmount}
+                  placeholder="100"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                />
+                <Text style={styles.fieldLabel}>Narx (UZS, ixtiyoriy)</Text>
+                <TextInput
+                  style={styles.fieldInput}
+                  keyboardType="decimal-pad"
+                  value={p2pCreatePrice}
+                  onChangeText={setP2pCreatePrice}
+                  placeholder="0"
+                  placeholderTextColor="rgba(255,255,255,0.3)"
+                />
+                <Pressable
+                  style={[styles.modalSubmit, busyAction && { opacity: 0.6 }]}
+                  disabled={busyAction}
+                  onPress={() => void submitP2pSellAd()}
+                >
+                  {busyAction ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.modalSubmitText}>E’lon qilish</Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </ScrollView>
   );
 }
@@ -433,7 +1058,69 @@ export function ContactsView({ navigation }: { navigation: MessagesNav }) {
 
 
   const onAddContact = () => {
-    Alert.alert(t('menuNewContact'), "Yangi kontakt qo'shish xizmati tez kunda ishga tushadi.");
+    const runSearch = async (q: string) => {
+      const query = q.trim();
+      if (query.length < 2) {
+        Alert.alert(t("menuNewContact"), "Kamida 2 ta belgi kiriting");
+        return;
+      }
+      try {
+        const list = await searchExperts(query);
+        if (!list.length) {
+          Alert.alert(t("menuNewContact"), "Foydalanuvchi topilmadi");
+          return;
+        }
+        const pick = list[0];
+        await addContactRequest(
+          pick.id,
+          pick.name || undefined,
+          pick.surname || undefined
+        );
+        Alert.alert("OK", `${pick.name || ""} kontaktlarga qo'shildi`);
+        const rows = await fetchContacts();
+        setContacts(rows);
+      } catch (e) {
+        Alert.alert(t("menuNewContact"), e instanceof Error ? e.message : "Xato");
+      }
+    };
+
+    if (Platform.OS === "ios") {
+      Alert.prompt(
+        t("menuNewContact"),
+        "Username yoki ism bo'yicha qidiring",
+        [
+          { text: t("msgCancel"), style: "cancel" },
+          { text: "Qo'shish", onPress: (val?: string) => void runSearch(val || "") },
+        ],
+        "plain-text"
+      );
+    } else {
+      Alert.alert(t("menuNewContact"), "Kontaktlar ro'yxatidan yoki qidiruv orqali tanlang, yoki ism yozing:", [
+        { text: t("msgCancel"), style: "cancel" },
+        {
+          text: "Qidirish",
+          onPress: () => {
+            // Android: search current field
+            void runSearch(search);
+          },
+        },
+      ]);
+    }
+  };
+
+  const onCallContact = async (c: ExpertSearchRow) => {
+    setSelectedContact(null);
+    try {
+      const { chatId, name, avatarUrl } = await createOrOpenPrivateChat(c.id);
+      navigation.navigate("ChatDetail", {
+        chatId,
+        name,
+        avatarUrl: avatarUrl ?? null,
+        startCall: "audio",
+      });
+    } catch (e) {
+      Alert.alert("Qo'ng'iroq", e instanceof Error ? e.message : "Chat ochilmadi");
+    }
   };
 
   const onOpenChat = async (c: ExpertSearchRow) => {
@@ -512,7 +1199,7 @@ export function ContactsView({ navigation }: { navigation: MessagesNav }) {
                      <MessageSquare color="#fff" size={24} />
                      <Text style={styles.detailActionText}>{t('chatSendMessage')}</Text>
                   </Pressable>
-                  <Pressable style={[styles.detailActionBtn, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]} onPress={() => Alert.alert(t('callConnected'), "Tez kunda...")}>
+                  <Pressable style={[styles.detailActionBtn, { backgroundColor: 'rgba(16, 185, 129, 0.2)' }]} onPress={() => void onCallContact(selectedContact)}>
                      <Bell color="#fff" size={24} />
                      <Text style={styles.detailActionText}>{t('callAccept')}</Text>
                   </Pressable>
@@ -539,9 +1226,19 @@ export function ContactsView({ navigation }: { navigation: MessagesNav }) {
 
 // --- HELPERS ---
 
-function ActionIconBtn({ icon, label, color }: any) {
+function ActionIconBtn({
+  icon,
+  label,
+  color,
+  onPress,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  color: string;
+  onPress?: () => void;
+}) {
   return (
-    <Pressable style={styles.actionItem}>
+    <Pressable style={styles.actionItem} onPress={onPress}>
       <View style={[styles.actionGlassIcon, { borderBottomColor: color }]}>
         {icon}
       </View>
@@ -664,8 +1361,94 @@ const styles = StyleSheet.create({
   actionGlassIcon: { width: 52, height: 52, borderRadius: 18, justifyContent: "center", alignItems: "center", marginBottom: 8, borderWidth: 1.5, borderColor: "rgba(255,255,255,0.3)", backgroundColor: "rgba(255,255,255,0.1)", overflow: "hidden" },
   actionLabel: { color: "rgba(255,255,255,0.5)", fontSize: 7, fontWeight: "900", textAlign: "center" },
 
-  sectionHeader: { marginBottom: 12, marginLeft: 5 },
+  sectionHeader: {
+    marginBottom: 12,
+    marginLeft: 5,
+    marginRight: 5,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
   sectionTitle: { color: "rgba(255,255,255,0.3)", fontSize: 10, fontWeight: "900", letterSpacing: 1 },
+  withdrawLink: { color: "rgba(96,165,250,0.85)", fontSize: 11, fontWeight: "700" },
+  pinHintBtn: {
+    marginTop: 12,
+    alignSelf: "flex-start",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(251,191,36,0.4)",
+    backgroundColor: "rgba(251,191,36,0.12)",
+  },
+  pinHintText: { color: "#fbbf24", fontSize: 12, fontWeight: "700" },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  modalCard: {
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    paddingBottom: 32,
+    borderWidth: 1.5,
+    borderColor: "rgba(255,255,255,0.2)",
+    backgroundColor: "#151820",
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  modalTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  modalHint: { color: "rgba(255,255,255,0.45)", fontSize: 12, marginBottom: 12 },
+  modalError: { color: "#fca5a5", fontSize: 13, marginTop: 10 },
+  fieldLabel: {
+    color: "rgba(255,255,255,0.45)",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.8,
+    marginBottom: 6,
+    marginTop: 10,
+  },
+  fieldInput: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.15)",
+    backgroundColor: "rgba(0,0,0,0.35)",
+    color: "#fff",
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 15,
+  },
+  adminCardBox: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 8,
+    backgroundColor: "rgba(37,99,235,0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  adminCardLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: "700", letterSpacing: 1 },
+  adminCardNum: {
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "700",
+    fontVariant: ["tabular-nums"],
+    marginTop: 10,
+    letterSpacing: 2,
+    textAlign: "center",
+  },
+  modalSubmit: {
+    marginTop: 16,
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    backgroundColor: "#10b981",
+  },
+  modalSubmitText: { color: "#fff", fontSize: 15, fontWeight: "800" },
   emptyHistoryCard: { borderRadius: 25, padding: 40, alignItems: "center", justifyContent: "center", borderWidth: 1.5, borderColor: "rgba(255,255,255,0.2)", backgroundColor: "rgba(255,255,255,0.08)", overflow: "hidden" },
   emptyText: { color: "rgba(255,255,255,0.25)", marginTop: 12, fontSize: 13 },
   txList: {},
@@ -811,4 +1594,58 @@ const styles = StyleSheet.create({
   metaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   metaLabel: { color: 'rgba(255,255,255,0.4)', fontSize: 13, flex: 1 },
   metaVal: { color: '#fff', fontSize: 13, fontWeight: '500' },
+  p2pOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    justifyContent: "flex-end",
+  },
+  p2pSheet: {
+    backgroundColor: "#1a1f2e",
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
+    maxHeight: "82%",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+  },
+  p2pHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  p2pTitle: { color: "#fff", fontSize: 18, fontWeight: "700" },
+  p2pTabs: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  p2pTab: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    alignItems: "center",
+  },
+  p2pTabActive: {
+    backgroundColor: "rgba(99,102,241,0.35)",
+    borderWidth: 1,
+    borderColor: "rgba(129,140,248,0.45)",
+  },
+  p2pTabText: { color: "#fff", fontSize: 13, fontWeight: "600" },
+  p2pAdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "rgba(255,255,255,0.08)",
+  },
+  p2pAdName: { color: "#fff", fontSize: 14, fontWeight: "600" },
+  p2pAdMeta: { color: "rgba(255,255,255,0.5)", fontSize: 12, marginTop: 2 },
+  p2pBuyBtn: {
+    backgroundColor: "#6366f1",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  p2pBuyText: { color: "#fff", fontSize: 12, fontWeight: "700" },
 });

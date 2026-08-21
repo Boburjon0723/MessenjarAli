@@ -5,6 +5,7 @@ import { GlassCard } from '../../ui/GlassCard';
 import { GlassButton } from '../../ui/GlassButton';
 import { GlassDatePicker } from '../../ui/GlassDatePicker';
 import { X, CheckCircle, Bell } from 'lucide-react';
+import { AvatarLightbox } from '../AvatarLightbox';
 
 export type ProfileEditModalsProps = {
     t: (...args: any[]) => string;
@@ -81,7 +82,7 @@ export function ProfileEditModals({
                         style={{ backgroundColor: `rgba(${bgSettings?.rgb?.r || 28}, ${bgSettings?.rgb?.g || 36}, ${bgSettings?.rgb?.b || 47}, 0.8)` }}
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <h3 className="text-white font-bold text-xl mb-6">{t('edit_profile')}</h3>
+                        <h3 className="text-white font-bold text-xl mb-6">{language === 'uz' ? 'Ismni tahrirlash' : language === 'ru' ? 'Изменить имя' : 'Edit name'}</h3>
                         <div className="space-y-5">
                             <div className="space-y-1.5 focus-within:translate-x-1 transition-transform">
                                 <label className="text-white/40 text-[11px] ml-1 uppercase font-bold tracking-wider">{t('name')}</label>
@@ -176,40 +177,17 @@ export function ProfileEditModals({
             />
 
             {avatarPreviewUrl && (
-                <div
-                    className="fixed inset-0 z-[140] flex flex-col bg-black animate-fade-in"
-                    role="dialog"
-                    aria-modal="true"
-                    aria-label={
-                        language === 'ru' ? 'Фото профиля' : language === 'en' ? 'Profile photo' : 'Profil rasmi'
+                <AvatarLightbox
+                    src={avatarPreviewUrl}
+                    alt={
+                        language === 'ru'
+                            ? 'Фото профиля'
+                            : language === 'en'
+                              ? 'Profile photo'
+                              : 'Profil rasmi'
                     }
-                    onClick={() => setAvatarPreviewUrl(null)}
-                >
-                    <div className="flex justify-end p-3 pt-[max(0.75rem,env(safe-area-inset-top))] pr-[max(0.75rem,env(safe-area-inset-right))]">
-                        <button
-                            type="button"
-                            className="rounded-full bg-white/15 p-2.5 text-white hover:bg-white/25 transition-colors touch-manipulation"
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                setAvatarPreviewUrl(null);
-                            }}
-                            aria-label={t('cancel')}
-                        >
-                            <X className="h-6 w-6" />
-                        </button>
-                    </div>
-                    <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto px-3 pb-[max(1rem,env(safe-area-inset-bottom))]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                            src={avatarPreviewUrl}
-                            alt=""
-                            className="max-h-[min(88dvh,100%)] max-w-full object-contain select-none"
-                            style={{ touchAction: 'pinch-zoom' }}
-                            onClick={(e) => e.stopPropagation()}
-                            draggable={false}
-                        />
-                    </div>
-                </div>
+                    onClose={() => setAvatarPreviewUrl(null)}
+                />
             )}
 
             {toast && (

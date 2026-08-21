@@ -6,14 +6,29 @@ export const MALI_UZS_APPROX = 4899;
 export type TokenBalance = {
   balance: string;
   locked_balance: string;
+  hasPin?: boolean;
 };
 
+/** Prefer `/api/token/balance` (hasPin) — fallback to wallet wrapper */
 export async function fetchWalletBalance(): Promise<TokenBalance | null> {
+  const tokenRes = await apiFetch("/api/token/balance");
+  if (tokenRes.ok) {
+    const data = (await tokenRes.json()) as {
+      balance?: number | string;
+      locked_balance?: number | string;
+      hasPin?: boolean;
+    };
+    return {
+      balance: String(data.balance ?? 0),
+      locked_balance: String(data.locked_balance ?? 0),
+      hasPin: !!data.hasPin,
+    };
+  }
   const res = await apiFetch("/api/wallet/balance");
   if (!res.ok) return null;
   const j = (await res.json()) as { success?: boolean; data?: TokenBalance };
   if (!j.success || !j.data) return null;
-  return j.data;
+  return { ...j.data, hasPin: j.data.hasPin ?? false };
 }
 
 export type TransactionRow = {

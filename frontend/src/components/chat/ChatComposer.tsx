@@ -6,6 +6,7 @@ import type { ChatRoom } from '@/types/chat-room';
 import type { Socket } from 'socket.io-client';
 import StickerPicker from './StickerPicker';
 import type { Sticker } from '@/lib/sticker-packs';
+import { filesFromPasteEvent } from '@/lib/telegram-message-kind';
 
 export type ChatComposerProps = {
     t: (...args: any[]) => string;
@@ -36,10 +37,14 @@ export type ChatComposerProps = {
     sendMessage: () => void | Promise<void>;
     stopRecording: () => void;
     startRecording: () => void;
+    cancelRecording?: () => void;
     onSendSticker?: (sticker: Sticker) => void;
     /** Listing/murojaat: rozilik berilmaguncha */
     composerLocked?: boolean;
     composerLockedHint?: string;
+    /** Telegram: clipboard rasm/fayl → preview modal */
+    onPasteFiles?: (files: File[]) => void;
+    onCancelEdit?: () => void;
 };
 
 const iconBtn =
@@ -47,7 +52,7 @@ const iconBtn =
 
 export function ChatComposer({
     t,
-    isSomeoneTyping,
+    isSomeoneTyping: _isSomeoneTyping,
     fileInputRef,
     folderInputRef,
     chatInputRef,
@@ -74,20 +79,18 @@ export function ChatComposer({
     sendMessage,
     stopRecording,
     startRecording,
+    cancelRecording,
     onSendSticker,
     composerLocked = false,
     composerLockedHint,
+    onPasteFiles,
+    onCancelEdit,
 }: ChatComposerProps) {
     const [showAttach, setShowAttach] = useState(false);
     const [showStickerPicker, setShowStickerPicker] = useState(false);
 
     return (
         <div className="relative">
-            {isSomeoneTyping && (
-                <div className="mb-1 px-4 text-[13px] text-[#aaaaaa]">
-                    {t('typing')}...
-                </div>
-            )}
             <div className="flex items-end gap-2">
                 <div className="relative flex min-w-0 flex-1 flex-col rounded-[24px] bg-[#212121] shadow-[0_1px_8px_1px_rgba(0,0,0,0.12)]">
                     <input type="file" ref={fileInputRef} className="hidden" multiple accept="*" onChange={handleFileUpload} />
@@ -111,7 +114,13 @@ export function ChatComposer({
                             </div>
                             <button
                                 type="button"
-                                onClick={() => { setEditingMessage?.(null); setInputValue?.(''); }}
+                                onClick={() => {
+                                    if (onCancelEdit) onCancelEdit();
+                                    else {
+                                        setEditingMessage?.(null);
+                                        setInputValue?.('');
+                                    }
+                                }}
                                 className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#aaaaaa] hover:bg-white/[0.08] hover:text-white"
                             >
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -126,7 +135,15 @@ export function ChatComposer({
                                     {replyTo.sender === 'me' ? t('me') : (replyTo.senderName || t('interlocutor'))}
                                 </p>
                                 <p className="truncate text-[13px] text-[#aaaaaa]">
-                                    {replyTo.type === 'text' ? replyTo.text : (replyTo.type === 'image' ? t('image') : (replyTo.type === 'video' ? t('video') : t('file')))}
+                                    {replyTo.type === 'text'
+                                        ? replyTo.text
+                                        : replyTo.type === 'sticker'
+                                          ? `✨ ${t('sticker') || 'Sticker'}`
+                                          : replyTo.type === 'image'
+                                            ? t('image')
+                                            : replyTo.type === 'video'
+                                              ? t('video')
+                                              : t('file')}
                                 </p>
                             </div>
                             <button
@@ -159,10 +176,17 @@ export function ChatComposer({
                                     <button
                                         type="button"
                                         onClick={() => {
-                                            setIsRecording(false);
-                                            if (timerRef.current) clearInterval(timerRef.current);
-                                            if (mediaRecorderRef.current) mediaRecorderRef.current.ondataavailable = null;
-                                            mediaRecorderRef.current?.stop();
+                                            if (cancelRecording) cancelRecording();
+                                            else {
+                                                setIsRecording(false);
+                                                if (timerRef.current) clearInterval(timerRef.current);
+                                                if (mediaRecorderRef.current) {
+                                                    try {
+                                                        mediaRecorderRef.current.ondataavailable = null;
+                                                        mediaRecorderRef.current.stop();
+                                                    } catch { /* ignore */ }
+                                                }
+                                            }
                                         }}
                                         className="ml-auto text-[13px] text-[#aaaaaa] hover:text-white"
                                     >
@@ -186,10 +210,10 @@ export function ChatComposer({
                                         e.target.style.height = 'auto';
                                         e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
                                         if (socket && chat) {
-                                            socket.emit('typing', { roomId: chat.id });
+                                            socket.emit('typing', chat.id);
                                             if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
                                             typingTimeoutRef.current = setTimeout(() => {
-                                                socket.emit('stop_typing', { roomId: chat.id });
+                                                socket.emit('stop_typing', chat.id);
                                             }, 2000);
                                         }
                                     }}
@@ -204,6 +228,13 @@ export function ChatComposer({
                                         }, 100);
                                     }}
                                     onBlur={() => setInputFocused(false)}
+                                    onPaste={(e) => {
+                                        if (composerLocked || !onPasteFiles) return;
+                                        const files = filesFromPasteEvent(e);
+                                        if (!files.length) return;
+                                        e.preventDefault();
+                                        onPasteFiles(files);
+                                    }}
                                     onKeyDown={(e) => {
                                         if (e.key !== 'Enter') return;
                                         if (e.shiftKey) return;

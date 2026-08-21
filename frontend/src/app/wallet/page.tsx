@@ -21,11 +21,8 @@ import {
     Settings,
     Lock,
     TrendingUp,
-    Plus,
     Send,
-    Banknote,
     ShoppingCart,
-    DollarSign,
 } from 'lucide-react';
 
 const MALI_RATE_UZS = 4899;
@@ -35,7 +32,7 @@ const MIN_WITHDRAW = 10;
 
 export default function WalletPage() {
     const router = useRouter();
-    const { t, language } = useLanguage();
+    const { t } = useLanguage();
     const { socket } = useSocket();
     const { showSuccess, showError } = useNotification();
     const { confirm } = useConfirm();
@@ -197,9 +194,9 @@ export default function WalletPage() {
 
     const handleTopUp = async () => {
         const n = Number(topUpAmount);
-        if (!n || n <= 0) { setTopUpError("Iltimos to'g'ri summa kiriting."); return; }
-        if (n < MIN_TOPUP) { setTopUpError(`Minimal summa ${MIN_TOPUP} MALI.`); return; }
-        if (n > MAX_TOPUP) { setTopUpError(`Maksimal summa ${MAX_TOPUP.toLocaleString()} MALI.`); return; }
+        if (!n || n <= 0) { setTopUpError(t('enter_valid_amount')); return; }
+        if (n < MIN_TOPUP) { setTopUpError(t('topup_min_mali').replace('{n}', String(MIN_TOPUP))); return; }
+        if (n > MAX_TOPUP) { setTopUpError(t('topup_max_mali').replace('{n}', MAX_TOPUP.toLocaleString())); return; }
         setTopUpError(''); setTopUpStatus('loading');
         try {
             const res = await apiFetch('/api/token/topup', { method: 'POST', body: JSON.stringify({ amount: n }) });
@@ -216,47 +213,47 @@ export default function WalletPage() {
     const submitSend = async () => {
         let receiverId = sendRecipientId;
         if (!receiverId && sendPhone.trim()) receiverId = walletResolveRecipientFromPhone(sendPhone, contacts);
-        if (!receiverId) { setSendError("Kontaktlardan tanlang yoki telefon raqamini kiriting."); return; }
+        if (!receiverId) { setSendError(t('pick_contact_or_phone')); return; }
         const n = Number(sendAmount);
-        if (!n || n <= 0) { setSendError("To'g'ri summa kiriting."); return; }
-        if (n > balance.available) { setSendError("Balans yetarli emas."); return; }
-        if (!sendPin || sendPin.length !== 4) { setSendError("4 xonali PIN kiriting."); return; }
+        if (!n || n <= 0) { setSendError(t('enter_valid_amount')); return; }
+        if (n > balance.available) { setSendError(t('balance_insufficient')); return; }
+        if (!sendPin || sendPin.length !== 4) { setSendError(t('enter_pin_4')); return; }
         setSendStatus('loading'); setSendError('');
         try {
             const res = await apiFetch('/api/token/transfer', { method: 'POST', body: JSON.stringify({ receiverId, amount: n, pin: sendPin }) });
-            if (!res.ok) { const e = await res.json().catch(() => ({})); setSendStatus('error'); setSendError(e.message || "Xatolik."); return; }
+            if (!res.ok) { const e = await res.json().catch(() => ({})); setSendStatus('error'); setSendError(e.message || t('server_error')); return; }
             setSendStatus('success'); fetchBalance(); fetchTransactions();
             setTimeout(() => { setShowSendModal(false); setSendStatus('idle'); }, 1200);
-        } catch { setSendStatus('error'); setSendError("Serverga ulanib bo'lmadi."); }
+        } catch { setSendStatus('error'); setSendError(t('server_unreachable')); }
     };
 
     const handleWithdraw = async () => {
         const n = Number(withdrawAmount);
         const card = withdrawCard.replace(/\D/g, '');
-        if (!n || n <= 0) { setWithdrawError("To'g'ri summa kiriting."); return; }
-        if (n < MIN_WITHDRAW) { setWithdrawError(`Minimal ${MIN_WITHDRAW} MALI.`); return; }
-        if (n > balance.available) { setWithdrawError("Balans yetarli emas."); return; }
-        if (card.length < 16) { setWithdrawError("Karta raqamini to'liq kiriting."); return; }
-        if (!withdrawPin || withdrawPin.length !== 4) { setWithdrawError("4 xonali PIN kiriting."); return; }
+        if (!n || n <= 0) { setWithdrawError(t('enter_valid_amount')); return; }
+        if (n < MIN_WITHDRAW) { setWithdrawError(t('withdraw_min_mali').replace('{n}', String(MIN_WITHDRAW))); return; }
+        if (n > balance.available) { setWithdrawError(t('balance_insufficient')); return; }
+        if (card.length < 16) { setWithdrawError(t('enter_full_card')); return; }
+        if (!withdrawPin || withdrawPin.length !== 4) { setWithdrawError(t('enter_pin_4')); return; }
         setWithdrawStatus('loading'); setWithdrawError('');
         try {
             const usersRes = await apiFetch('/api/users');
-            if (!usersRes.ok) { setWithdrawStatus('error'); setWithdrawError("Admin topilmadi."); return; }
+            if (!usersRes.ok) { setWithdrawStatus('error'); setWithdrawError(t('admin_not_found')); return; }
             const users = await usersRes.json();
             const admin = users.find((u: any) => u.role === 'admin');
-            if (!admin?.id) { setWithdrawStatus('error'); setWithdrawError("Yechish vaqtincha mavjud emas."); return; }
+            if (!admin?.id) { setWithdrawStatus('error'); setWithdrawError(t('withdraw_unavailable')); return; }
             const res = await apiFetch('/api/token/transfer', { method: 'POST', body: JSON.stringify({ receiverId: admin.id, amount: n, pin: withdrawPin, note: `WITHDRAW_REQUEST:${card}` }) });
-            if (!res.ok) { const e = await res.json().catch(() => ({})); setWithdrawStatus('error'); setWithdrawError(e.message || "Xatolik."); return; }
+            if (!res.ok) { const e = await res.json().catch(() => ({})); setWithdrawStatus('error'); setWithdrawError(e.message || t('server_error')); return; }
             setWithdrawStatus('success'); setWithdrawAmount(''); setWithdrawCard(''); setWithdrawPin('');
             fetchBalance(); fetchTransactions(); fetchWalletConfig();
             setTimeout(() => { setShowWithdrawModal(false); setWithdrawStatus('idle'); }, 1600);
-        } catch { setWithdrawStatus('error'); setWithdrawError("Serverga ulanib bo'lmadi."); }
+        } catch { setWithdrawStatus('error'); setWithdrawError(t('server_unreachable')); }
     };
 
     const handleRecovery = async () => {
         const ok = await confirm({ title: t('recovery_title'), description: t('recovery_desc_30d'), variant: 'danger', confirmLabel: t('start') });
         if (!ok) return;
-        try { await apiFetch('/api/token/recovery', { method: 'POST' }); showSuccess("Tiklash so'rovi yuborildi."); } catch { showError("Xatolik"); }
+        try { await apiFetch('/api/token/recovery', { method: 'POST' }); showSuccess(t('recovery_request_sent')); } catch { showError(t('server_error')); }
     };
 
     const uzsValue = balance.available * MALI_RATE_UZS;
@@ -274,7 +271,7 @@ export default function WalletPage() {
                             <ArrowLeft className="h-5 w-5 text-[#aaaaaa]" />
                         </button>
                         <div className="w-8 h-8 rounded-lg bg-[#8774e1] flex items-center justify-center text-sm font-bold">E</div>
-                        <span className="font-semibold text-[15px]">ExpertLine Wallet</span>
+                        <span className="font-semibold text-[15px]">{t('wallet_brand')}</span>
                     </div>
                     <div className="flex items-center gap-2">
                         {!balance.hasPin && (
@@ -306,28 +303,31 @@ export default function WalletPage() {
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
                     {/* Value today card */}
                     <div className="lg:col-span-4 bg-[#1a1a1a] rounded-2xl p-5 border border-white/[0.06] relative overflow-hidden">
-                        <p className="text-[#aaaaaa] text-xs font-medium mb-1">Value today</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-3xl font-bold tracking-tight">{uzsValue > 0 ? (uzsValue / 1000).toFixed(1) : '0.00'}</span>
-                            <span className="text-[#aaaaaa] text-lg">K UZS</span>
+                        <p className="text-[#aaaaaa] text-xs font-medium mb-1">{t('value_today')}</p>
+                        <div className="flex items-baseline gap-2 flex-wrap">
+                            <span className="text-3xl font-bold tracking-tight tabular-nums">
+                                {uzsValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                            </span>
+                            <span className="text-[#aaaaaa] text-lg">UZS</span>
                         </div>
                         <div className="flex items-center gap-1 mt-1">
                             <TrendingUp className="h-3.5 w-3.5 text-emerald-400" />
-                            <span className="text-emerald-400 text-xs font-medium">MALI Token</span>
+                            <span className="text-emerald-400 text-xs font-medium">{t('mali_token')}</span>
                         </div>
                         {/* Time range tabs */}
                         <div className="flex gap-1 mt-4">
                             {(['1d', '1w', '1m', '1y'] as const).map(r => (
-                                <button key={r} onClick={() => setTimeRange(r)} className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-colors ${timeRange === r ? 'bg-[#8774e1] text-white' : 'bg-white/[0.06] text-[#aaaaaa] hover:text-white'}`}>
+                                <button key={r} type="button" onClick={() => setTimeRange(r)} className={`px-3 py-1 rounded-lg text-[11px] font-medium transition-colors ${timeRange === r ? 'bg-[#8774e1] text-white' : 'bg-white/[0.06] text-[#aaaaaa] hover:text-white'}`}>
                                     {r}
                                 </button>
                             ))}
                         </div>
-                        {/* Mini chart placeholder */}
-                        <div className="mt-4 h-16 flex items-end gap-[2px]">
+                        {/* Mini chart — deterministic (no flicker) */}
+                        <div className="mt-4 h-16 flex items-end gap-[2px]" aria-hidden>
                             {Array.from({ length: 30 }, (_, i) => {
-                                const h = 20 + Math.sin(i * 0.5) * 15 + Math.random() * 10;
-                                return <div key={i} className="flex-1 rounded-t bg-[#8774e1]/30" style={{ height: `${h}%` }} />;
+                                const rangeMul = timeRange === '1d' ? 0.7 : timeRange === '1w' ? 1 : timeRange === '1m' ? 1.15 : 1.3;
+                                const h = Math.max(12, Math.min(100, (28 + Math.sin(i * 0.55 + timeRange.length) * 22 + (i % 5) * 3) * rangeMul));
+                                return <div key={i} className="flex-1 rounded-t bg-[#8774e1]/35" style={{ height: `${h}%` }} />;
                             })}
                         </div>
                     </div>
@@ -335,16 +335,16 @@ export default function WalletPage() {
                     {/* Balance card */}
                     <div className="lg:col-span-4 bg-[#1a1a1a] rounded-2xl p-5 border border-white/[0.06] flex flex-col justify-between">
                         <div>
-                            <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-3">Available</p>
+                            <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-3">{t('available_label')}</p>
                             <div className="flex items-baseline gap-2">
-                                <span className="text-3xl font-bold tracking-tight">{balance.available.toLocaleString()}</span>
+                                <span className="text-3xl font-bold tracking-tight tabular-nums">{balance.available.toLocaleString()}</span>
                                 <span className="text-[#aaaaaa] text-sm font-medium">MALI</span>
                             </div>
                         </div>
                         <div className="mt-4 pt-4 border-t border-white/[0.06]">
-                            <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-1">Locked</p>
+                            <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-1">{t('locked_label')}</p>
                             <div className="flex items-baseline gap-2">
-                                <span className="text-xl font-bold text-white/60">{balance.locked.toLocaleString()}</span>
+                                <span className="text-xl font-bold text-white/60 tabular-nums">{balance.locked.toLocaleString()}</span>
                                 <span className="text-[#aaaaaa] text-sm">MALI</span>
                             </div>
                         </div>
@@ -352,43 +352,65 @@ export default function WalletPage() {
 
                     {/* Shortcuts card */}
                     <div className="lg:col-span-4 bg-[#1a1a1a] rounded-2xl p-5 border border-white/[0.06]">
-                        <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-4">Shortcuts</p>
+                        <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider mb-4">{t('shortcuts')}</p>
                         <div className="grid grid-cols-2 gap-3">
-                            <button onClick={() => setShowTopUpModal(true)} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-emerald-500/10 border border-white/[0.06] hover:border-emerald-500/20 transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors">
+                            <button type="button" onClick={() => setShowTopUpModal(true)} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-emerald-500/10 border border-white/[0.06] hover:border-emerald-500/20 transition-all text-left">
+                                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 flex items-center justify-center group-hover:bg-emerald-500/20 transition-colors shrink-0">
                                     <ArrowDownLeft className="h-4 w-4 text-emerald-400" />
                                 </div>
-                                <span className="text-sm font-medium">{t('top_up')}</span>
+                                <span className="text-sm font-medium leading-tight">{t('top_up')}</span>
                             </button>
-                            <button onClick={handleSend} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-blue-500/10 border border-white/[0.06] hover:border-blue-500/20 transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors">
+                            <button type="button" onClick={handleSend} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-blue-500/10 border border-white/[0.06] hover:border-blue-500/20 transition-all text-left">
+                                <div className="w-9 h-9 rounded-xl bg-blue-500/10 flex items-center justify-center group-hover:bg-blue-500/20 transition-colors shrink-0">
                                     <Send className="h-4 w-4 text-blue-400" />
                                 </div>
-                                <span className="text-sm font-medium">{t('send_mali')}</span>
+                                <span className="text-sm font-medium leading-tight">{t('send_mali')}</span>
                             </button>
-                            <button onClick={() => { setWithdrawError(''); setWithdrawStatus('idle'); setShowWithdrawModal(true); }} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-rose-500/10 border border-white/[0.06] hover:border-rose-500/20 transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center group-hover:bg-rose-500/20 transition-colors">
+                            <button type="button" onClick={() => { setWithdrawError(''); setWithdrawStatus('idle'); setShowWithdrawModal(true); }} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-rose-500/10 border border-white/[0.06] hover:border-rose-500/20 transition-all text-left">
+                                <div className="w-9 h-9 rounded-xl bg-rose-500/10 flex items-center justify-center group-hover:bg-rose-500/20 transition-colors shrink-0">
                                     <ArrowUpRight className="h-4 w-4 text-rose-400" />
                                 </div>
-                                <span className="text-sm font-medium">{t('withdraw')}</span>
+                                <span className="text-sm font-medium leading-tight">{t('withdraw')}</span>
                             </button>
-                            <button onClick={() => setMarketTab(marketTab === 'none' ? 'buy' : 'none')} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-[#8774e1]/10 border border-white/[0.06] hover:border-[#8774e1]/20 transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-[#8774e1]/10 flex items-center justify-center group-hover:bg-[#8774e1]/20 transition-colors">
+                            <button
+                                type="button"
+                                onClick={() => showSuccess(t('p2p_coming_soon'))}
+                                className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-[#8774e1]/10 border border-white/[0.06] hover:border-[#8774e1]/20 transition-all text-left"
+                            >
+                                <div className="w-9 h-9 rounded-xl bg-[#8774e1]/10 flex items-center justify-center group-hover:bg-[#8774e1]/20 transition-colors shrink-0">
                                     <ShoppingCart className="h-4 w-4 text-[#8774e1]" />
                                 </div>
-                                <span className="text-sm font-medium">P2P</span>
+                                <span className="text-sm font-medium leading-tight">P2P</span>
                             </button>
-                            <button onClick={() => setShowPinSetup(true)} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center group-hover:bg-white/10 transition-colors">
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setPinError('');
+                                    if (balance.hasPin) {
+                                        setShowPinChange(true);
+                                        setOldPin('');
+                                        setNewPin('');
+                                        setConfirmPin('');
+                                    } else {
+                                        setShowPinSetup(true);
+                                        setNewPin('');
+                                        setConfirmPin('');
+                                    }
+                                }}
+                                className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all text-left"
+                            >
+                                <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center group-hover:bg-white/10 transition-colors shrink-0">
                                     <Settings className="h-4 w-4 text-[#aaaaaa]" />
                                 </div>
-                                <span className="text-sm font-medium">{t('settings')}</span>
+                                <span className="text-sm font-medium leading-tight">
+                                    {balance.hasPin ? t('change_pin') : t('setup_pin')}
+                                </span>
                             </button>
-                            <button onClick={handleRecovery} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all">
-                                <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center group-hover:bg-white/10 transition-colors">
+                            <button type="button" onClick={handleRecovery} className="group flex items-center gap-3 p-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.06] transition-all text-left">
+                                <div className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center group-hover:bg-white/10 transition-colors shrink-0">
                                     <Lock className="h-4 w-4 text-[#aaaaaa]" />
                                 </div>
-                                <span className="text-sm font-medium">{t('forgot_pin_recovery')}</span>
+                                <span className="text-sm font-medium leading-tight">{t('pin_recovery_short')}</span>
                             </button>
                         </div>
                     </div>
@@ -448,19 +470,19 @@ export default function WalletPage() {
 
                     {/* Token info */}
                     <div className="lg:col-span-4 bg-[#1a1a1a] rounded-2xl p-5 border border-white/[0.06] space-y-4">
-                        <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider">Token Info</p>
+                        <p className="text-[#aaaaaa] text-xs font-medium uppercase tracking-wider">{t('token_info')}</p>
                         <div className="flex items-center gap-3 p-3 bg-white/[0.03] rounded-xl">
                             <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center font-bold text-sm">M</div>
                             <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm">MALI Token</p>
+                                <p className="font-medium text-sm">{t('mali_token')}</p>
                                 <p className="text-[11px] text-[#aaaaaa]">ExpertLine</p>
                             </div>
                             <p className="font-bold tabular-nums">{balance.available.toLocaleString()}</p>
                         </div>
                         <div className="text-xs text-[#aaaaaa] space-y-2 pt-2 border-t border-white/[0.06]">
-                            <div className="flex justify-between"><span>Narxi</span><span className="text-white">{MALI_RATE_UZS.toLocaleString()} UZS</span></div>
-                            <div className="flex justify-between"><span>Jami qiymati</span><span className="text-white">{uzsValue.toLocaleString()} UZS</span></div>
-                            <div className="flex justify-between"><span>Muzlatilgan</span><span className="text-white">{balance.locked.toLocaleString()} MALI</span></div>
+                            <div className="flex justify-between gap-2"><span>{t('token_price')}</span><span className="text-white tabular-nums">{MALI_RATE_UZS.toLocaleString()} UZS</span></div>
+                            <div className="flex justify-between gap-2"><span>{t('token_total_value')}</span><span className="text-white tabular-nums">{uzsValue.toLocaleString()} UZS</span></div>
+                            <div className="flex justify-between gap-2"><span>{t('token_frozen')}</span><span className="text-white tabular-nums">{balance.locked.toLocaleString()} MALI</span></div>
                         </div>
                     </div>
                 </div>

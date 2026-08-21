@@ -297,15 +297,15 @@ export function ChatWindowBanners({
                     </div>
                 )}
                 {/* Deleted / missing peer */}
-                {isPrivatePeerUnavailable(chat) && !isTrade && (
+                {isPrivatePeerUnavailable(chat) && !isTrade && !chat?.is_saved_messages && (
                     <div className="mt-1 flex h-12 items-center justify-between rounded-[24px] bg-[#3d1f1f] px-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
                         <p className="min-w-0 truncate text-[14px] text-[#ff8a80]">
                             {t('peer_account_deleted')}
                         </p>
                     </div>
                 )}
-                {/* Unknown Contact Bar */}
-                {!isContact && !isTrade && !isPrivatePeerUnavailable(chat) && (
+                {/* Unknown Contact Bar — Telegram: Saved Messages da yo‘q */}
+                {!isContact && !isTrade && !chat?.is_saved_messages && !isPrivatePeerUnavailable(chat) && (
                     <div className="mt-1 flex h-12 items-center justify-between rounded-[24px] bg-[#212121] px-3 shadow-[0_1px_5px_-1px_rgba(0,0,0,0.21)]">
                         <p className="min-w-0 truncate text-[14px] text-white">
                             {(isExpertListing || isJobListing) ? t('listing_save_contact_hint') : t('not_in_contacts')}

@@ -36,15 +36,17 @@ import { AboutAppScreen } from "./src/features/chat/screens/AboutAppScreen";
 import { SupportScreen } from "./src/features/chat/screens/SupportScreen";
 import { JobListScreen } from "./src/features/jobs/screens/JobListScreen";
 import { ExpertDetailScreen } from "./src/features/dashboard/screens/ExpertDetailScreen";
+import { ExpenseTrackerScreen } from "./src/features/finance/ExpenseTrackerScreen";
 import { setupNotifications } from "./src/lib/notifications";
 import * as Notifications from 'expo-notifications';
 import { navigationRef, navigateToChatFromNotification } from "./src/lib/navigationRef";
+import { GlobalCallOverlay } from "./src/features/chat/components/GlobalCallOverlay";
 
 type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Messages: undefined;
-  ChatDetail: { chatId: string; name: string; avatarUrl?: string | null };
+  ChatDetail: { chatId: string; name: string; avatarUrl?: string | null; startCall?: "audio" | "video" };
   ChatPeerInfo: { chatId: string; name: string; avatarUrl?: string | null };
   Settings: undefined;
   ThemeDesign: undefined;
@@ -60,6 +62,7 @@ type RootStackParamList = {
   JobDetail: { jobId: number };
   ExpertDetail: { expertId: string; fallbackData?: any };
   Passcode: { mode: 'set' | 'unlock'; onSuccess?: () => void };
+  Finance: undefined;
 };
 
 
@@ -143,6 +146,7 @@ export default function App() {
         <Stack.Screen name="AboutApp" component={AboutAppScreen} />
         <Stack.Screen name="Support" component={SupportScreen} />
         <Stack.Screen name="Jobs" component={JobListScreen} />
+        <Stack.Screen name="Finance" component={ExpenseTrackerScreen} />
         <Stack.Screen name="ExpertDetail" component={ExpertDetailScreen} options={{ headerShown: false }} />
         <Stack.Screen name="Passcode" component={PasscodeScreen} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
 
@@ -150,6 +154,7 @@ export default function App() {
 
 
       </Stack.Navigator>
+      <GlobalCallOverlay />
     </NavigationContainer>
     </AuthLocaleProvider>
     </SafeAreaProvider>

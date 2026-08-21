@@ -84,26 +84,108 @@ export const saveWhiteboardSnapshot = async (req: Request, res: Response) => {
         const specialist_id = (req as any).user.id;
         const { session_id, snapshot_data, chat_id } = req.body;
 
+        if (!session_id || !snapshot_data || typeof snapshot_data !== 'string') {
+            return res.status(400).json({ message: 'session_id va snapshot_data kerak' });
+        }
+        if (!String(snapshot_data).startsWith('data:image/')) {
+            return res.status(400).json({ message: 'Noto‘g‘ri snapshot formati' });
+        }
+
         const snapshot = await WhiteboardSnapshotModel.create({ session_id, snapshot_data });
 
-        // Chatga faqat qisqa matn — base64 rasmni messages ga yozmaslik (payload portlashini oldini olish)
-        if (chat_id) {
-            await MessageModel.create(
-                chat_id,
+        const targetChatId = chat_id || session_id;
+        let chatMessage: any = null;
+
+        if (targetChatId) {
+            // Guruhga rasm sifatida tushishi: base64 ni messages ga yozmasdan URL ga yuklash
+            const match = String(snapshot_data).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+            if (!match) {
+                return res.status(400).json({ message: 'Snapshot base64 o‘qilmadi' });
+            }
+            const mime = match[1] || 'image/png';
+            const ext = mime.includes('jpeg') || mime.includes('jpg') ? '.jpg' : '.png';
+            const buffer = Buffer.from(match[2], 'base64');
+            if (buffer.length > 12 * 1024 * 1024) {
+                return res.status(413).json({ message: 'Doska rasmi juda katta (max 12MB)' });
+            }
+
+            let imageUrl = '';
+            try {
+                const { bucket } = await import('../../config/firebase');
+                const crypto = await import('crypto');
+                const fileName = `whiteboard-${crypto.randomUUID()}${ext}`;
+                const file = bucket.file(fileName);
+                await file.save(buffer, {
+                    metadata: {
+                        contentType: mime,
+                        contentDisposition: `inline; filename="${fileName}"`,
+                    },
+                });
+                await file.makePublic();
+                imageUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+            } catch (uploadErr) {
+                console.warn('[saveWhiteboardSnapshot] Firebase upload failed, local fallback:', uploadErr);
+                const fs = await import('fs');
+                const path = await import('path');
+                const crypto = await import('crypto');
+                const { uploadsRoot } = await import('../../middleware/upload.middleware');
+                if (!fs.existsSync(uploadsRoot)) fs.mkdirSync(uploadsRoot, { recursive: true });
+                const fileName = `whiteboard-${crypto.randomUUID()}${ext}`;
+                fs.writeFileSync(path.join(uploadsRoot, fileName), buffer);
+                imageUrl = `/uploads/${fileName}`;
+            }
+
+            const caption = '🎨 Dars doskasi (Whiteboard) saqlandi.';
+            chatMessage = await MessageModel.create(
+                String(targetChatId),
                 specialist_id,
-                '🎨 Dars doskasi (Whiteboard) saqlandi.',
-                'text',
+                imageUrl,
+                'image',
                 {
                     is_whiteboard: true,
                     snapshot_id: snapshot.id,
-                    caption: '🎨 Dars doskasi (Whiteboard) saqlandi.',
+                    caption,
+                    url: imageUrl,
+                    mimetype: mime,
+                    name: `whiteboard-${session_id}${ext}`,
+                    file_name: `whiteboard-${session_id}${ext}`,
                 }
             );
+
+            const io = req.app.get('io');
+            if (io && chatMessage) {
+                const ures = await pool.query(
+                    'SELECT name, avatar_url FROM users WHERE id = $1 LIMIT 1',
+                    [specialist_id]
+                );
+                const row = ures.rows[0];
+                const payload = {
+                    ...chatMessage,
+                    roomId: String(targetChatId),
+                    chat_id: String(targetChatId),
+                    sender_name: row?.name || 'Mentor',
+                    sender_avatar: row?.avatar_url || null,
+                };
+                const rooms = [String(targetChatId)];
+                try {
+                    const parts = await pool.query(
+                        'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+                        [targetChatId]
+                    );
+                    for (const p of parts.rows) {
+                        rooms.push(String(p.user_id));
+                    }
+                } catch {
+                    /* ignore */
+                }
+                io.to(rooms).emit('receive_message', payload);
+            }
         }
 
-        res.status(201).json(snapshot);
+        res.status(201).json({ ...snapshot, message: chatMessage });
     } catch (error: any) {
-        res.status(400).json({ message: error.message });
+        console.error('saveWhiteboardSnapshot:', error);
+        res.status(400).json({ message: error.message || 'Saqlash xatosi' });
     }
 };
 
